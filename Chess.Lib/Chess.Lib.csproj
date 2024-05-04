@@ -12,11 +12,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Magick.NET-Q16-AnyCPU" Version="13.6.0" />
+    <PackageReference Include="Magick.NET-Q16-AnyCPU" Version="13.7.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="DejaVuSans.Chess.ttf">
+    <None Update="DejaVuSans.ttf">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>

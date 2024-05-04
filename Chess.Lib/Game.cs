@@ -1,4 +1,5 @@
-﻿using System.Collections.Immutable;
+﻿using System;
+using System.Collections.Immutable;
 
 namespace Chess.Lib;
 
@@ -40,7 +41,13 @@ public class Game
         return game;
     }
 
-    public Side CurrentSide => _currentSide;
+    public Side CurrentSide => IsFinished ? Side.None : _currentSide;
+
+    public Side Winner => IsFinished ? _currentSide : Side.None;
+
+    public bool IsFinished => _gameResult is GameStatus.Checkmate or GameStatus.Stalemate;
+
+    public bool HasValidMoves(Position position) => _board.ValidMoves(_plies, position, _currentSide).Any();
 
     /// <summary>
     /// A copy of the board
@@ -55,7 +62,7 @@ public class Game
 
     public bool TryMove(in Action action)
     {
-        if (_gameResult is not GameStatus.Ongoing)
+        if (IsFinished)
         {
             return false;
         }
@@ -71,10 +78,11 @@ public class Game
         {
             _board = board;
             _plies = plies;
+            _gameResult = status;
 
-            if (status is not GameStatus.Ongoing)
+            if (status is GameStatus.Stalemate)
             {
-                _gameResult = status;
+                _currentSide = Side.None;
             }
             else
             {

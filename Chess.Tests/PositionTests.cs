@@ -29,7 +29,11 @@ public class PositionTests
         PositionTest(Rook, H8, Black, [G8, F8, E8, D8, C8, B8, A8, H7, H6, H5, H4, H3, H2, H1]),
         PositionTest(Queen, D1, White, [A1, B1, C1, E1, F1, G1, H1, C2, B3, A4, E2, F3, G4, H5, D2, D3, D4, D5, D6, D7, D8]),
         PositionTest(Queen, D8, Black, [A8, B8, C8, E8, F8, G8, H8, C7, B6, A5, E7, F6, G5, H4, D7, D6, D5, D4, D3, D2, D1]),
-        PositionTest(King, E5, White, [D4, E4, F4, D5, F5, D6, E6, F6])
+        PositionTest(King, E5, White, [D4, E4, F4, D5, F5, D6, E6, F6]),
+        PositionTest(King, E1, White, [D1, F1, D2, E2, F2, C1, G1]),
+        PositionTest(King, E1, Black, [D1, F1, D2, E2, F2]),
+        PositionTest(King, E8, White, [D8, F8, D7, E7, F7]),
+        PositionTest(King, E8, Black, [D8, F8, D7, E7, F7, C8, G8])
     ];
 
     private static TestCaseData PositionTest(PieceType piece, Position position, Side side, Position[] expectedPositions) => new TestCaseData(piece, position, side, expectedPositions);

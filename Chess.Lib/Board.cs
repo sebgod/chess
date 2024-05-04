@@ -267,6 +267,25 @@ public record struct Board()
         return true;
     }
 
+    public readonly IEnumerable<Action> ValidMoves(ImmutableList<RecordedPly> plies, Position position, Side side)
+    {
+        var piece = this[position];
+        if (piece == Piece.None || piece.Side != side)
+        {
+            yield break;
+        }
+
+        foreach (var to in Position.AllPossibleActions(position, piece))
+        {
+            var action = Action.DoMove(position, to);
+            var ((result, _), _, _) = EvaluateAction(plies, action, skipGameResultCheck: true);
+            if (result.IsMoveOrCapture())
+            {
+                yield return action;
+            }
+        }
+    }
+
     public readonly bool IsCheck(Side side)
     {
         if (KingPosition(side) is { } kingPosition)

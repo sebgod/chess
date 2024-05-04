@@ -126,7 +126,7 @@ public readonly record struct Position(File File, Rank Rank)
     {
         return piece.PieceType switch
         {
-            PieceType.King => AllKingPositions(current),
+            PieceType.King => AllKingPositions(current, piece.Side),
             PieceType.Queen => AllStraight(current).Concat(AllDiagonal(current)),
             PieceType.Rook => AllStraight(current),
             PieceType.Bishop => AllDiagonal(current),
@@ -267,7 +267,7 @@ public readonly record struct Position(File File, Rank Rank)
 
     [DebuggerStepThrough]
     [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
-    private static IEnumerable<Position> AllKingPositions(Position position)
+    private static IEnumerable<Position> AllKingPositions(Position position, Side side)
     {
         for (byte rank = (byte)Math.Max(0, (int)position.Rank - 1); rank < (byte)Math.Min(8, (int)position.Rank + 2); rank++)
         {
@@ -280,6 +280,13 @@ public readonly record struct Position(File File, Rank Rank)
                     yield return possiblePos;
                 }
             }
+        }
+
+        var homeRank = side.HomeRank();
+        if (position == new Position(File.E, homeRank))
+        {
+            yield return FromIndex((int)File.E - 2, (sbyte)homeRank);
+            yield return FromIndex((int)File.E + 2, (sbyte)homeRank);
         }
     }
 
