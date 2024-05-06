@@ -28,7 +28,7 @@ public record struct Board()
         { File.G, PieceType.Knight },
         { File.H, PieceType.Rook }
     };
-    private static readonly ImmutableArray<File> CastlingKingSideFiles = [File.E, File.F, File.G];
+    private static readonly ImmutableArray<File> CastlingKingSideFiles  = [File.E, File.F, File.G];
     private static readonly ImmutableArray<File> CastlingQueenSideFiles = [File.C, File.D, File.E];
 
     private static readonly Board _standardGameBoard = BuildStandardGame();
@@ -328,8 +328,7 @@ public record struct Board()
     /// Assumes basic check for proper pawn take movement has been done (diagonal, distance = 1)
     /// </summary>
     /// <param name="plies"></param>
-    /// <param name="side"></param>
-    /// <param name="moveTo"></param>
+    /// <param name="action"></param>
     /// <returns></returns>
     private readonly bool ValidateEnPassant(ImmutableList<RecordedPly> plies, in Action action)
     {
@@ -369,6 +368,8 @@ public record struct Board()
 
     public Piece this[in Position position]
     {
+        [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+        [DebuggerStepThrough]
         readonly get
         {
             var rank = GetRankValue(position.Rank);
@@ -377,6 +378,8 @@ public record struct Board()
             return new Piece(pieceType, pieceType != 0 ? side : Side.None);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining | MethodImplOptions.AggressiveOptimization)]
+        [DebuggerStepThrough]
         internal set
         {
             var bits = ((uint)value.PieceType & 0b1111u) << 1 | (value.Side == Side.White ? (byte)0b1 : (byte)0b0);

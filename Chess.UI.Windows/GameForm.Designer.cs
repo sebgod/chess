@@ -39,7 +39,7 @@
             DoubleBuffered = true;
             Name = "GameForm";
             Text = "Chess";
-            FormClosed += MainForm_FormClosed;
+            FormClosed += GameForm_FormClosed;
             Shown += MainForm_Shown;
             ResizeEnd += MainForm_ResizeEnd;
             Paint += MainForm_Paint;

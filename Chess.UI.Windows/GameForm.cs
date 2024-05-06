@@ -1,73 +1,44 @@
 using Chess.Lib;
+using Chess.Lib.UI;
 using ImageMagick;
-using System.Drawing.Imaging;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Chess.UI.Windows;
 
 public partial class GameForm : Form
 {
     private Game Game { get; set; } = new Game();
-    private GameUI? GameUI { get; set; }
-
-    private Bitmap? _buffer;
-    private CachedBitmap? _cachedBitmap;
-    private FormWindowState _lastWindowState = FormWindowState.Minimized;
-
-    private Position? _selected;
+    private GraphicsGameUI? GameUI { get; set; }
+    private FontCache FontCache { get; } = new FontCache();
+    private FormWindowState LastWindowState { get; set; } = FormWindowState.Minimized;
+    private Position? Selected { get; set; }
 
     public GameForm()
     {
         InitializeComponent();
     }
 
-    private static GameUI NewGameUI(Game game, Size size)
+    [MemberNotNull(nameof(GameUI))]
+    private void NewGameUI(Size size)
     {
-        var ui = new GameUI(game, size.Width, size.Height);
-        ui.RenderUI();
-        ui.RenderBoard();
-
-        return ui;
-    }
-
-    private void RecreateBuffer()
-    {
-        if (GameUI is { } ui)
-        {
-            _buffer?.Dispose();
-            _buffer = ui.Image.ToBitmap();
-
-            _cachedBitmap?.Dispose();
-            _cachedBitmap = null;
-        }
-    }
-
-    private void MainForm_FormClosed(object sender, FormClosedEventArgs e)
-    {
-        GameUI?.Dispose();
-        GameUI = null;
-
-        _buffer?.Dispose();
-        _buffer = null;
-
-        _cachedBitmap?.Dispose();
-        _cachedBitmap = null;
+        GameUI = new GraphicsGameUI(FontCache, Game, size.Width, size.Height);
     }
 
     private void MainForm_ResizeEnd(object sender, EventArgs e)
     {
-        GameUI = NewGameUI(Game, Size);
-        RecreateBuffer();
+        NewGameUI(Size);
         Invalidate();
     }
 
     private void MainForm_Paint(object sender, PaintEventArgs e)
     {
-        if (_buffer is { } buffer && GameUI is { } ui)
+        if (GameUI is { } ui)
         {
-            var cachedBitmap = _cachedBitmap ??= new CachedBitmap(buffer, e.Graphics);
-            e.Graphics.DrawCachedBitmap(cachedBitmap, 0, 0);
+            var clip = new RectInt((e.ClipRectangle.Right, e.ClipRectangle.Bottom), (e.ClipRectangle.X, e.ClipRectangle.Y));
+            ui.RenderUI(e.Graphics, clip);
+            ui.RenderBoard(e.Graphics, clip);
 
-            if (_selected is { } selected)
+            if (Selected is { } selected)
             {
                 var (x, y) = ui.SquarePos(selected);
                 var sq = ui.SquareSize;
@@ -79,8 +50,7 @@ public partial class GameForm : Form
 
     private void MainForm_Shown(object sender, EventArgs e)
     {
-        GameUI = NewGameUI(Game, Size);
-        RecreateBuffer();
+        NewGameUI(Size);
 
         BackColor = GameUI.BackgroundColor.ToColor();
         Invalidate();
@@ -89,20 +59,18 @@ public partial class GameForm : Form
     private void MainForm_Resize(object sender, EventArgs e)
     {
         // When window state changes
-        if (WindowState != _lastWindowState)
+        if (WindowState != LastWindowState)
         {
-            _lastWindowState = WindowState;
+            LastWindowState = WindowState;
 
             if (WindowState == FormWindowState.Maximized)
             {
-                GameUI = NewGameUI(Game, Size);
-                RecreateBuffer();
+                NewGameUI(Size);
                 Invalidate();
             }
             if (WindowState == FormWindowState.Normal)
             {
-                GameUI = NewGameUI(Game, Size);
-                RecreateBuffer();
+                NewGameUI(Size);
                 Invalidate();
             }
         }
@@ -115,22 +83,26 @@ public partial class GameForm : Form
 
         if (GameUI is { } gameUI && gameUI.FindSelected(x, y) is { } selected)
         {
-            if (_selected is { } prev && prev != selected)
+            if (Selected is { } prev && prev != selected)
             {
                 if (Game.TryMove(prev, selected))
                 {
-                    _selected = default;
-                    GameUI.RenderBoard();
-                    RecreateBuffer();
+                    Selected = default;
+
                     Invalidate();
                 }
             }
             else if (Game.HasValidMoves(selected))
             {
-                _selected = selected;
+                Selected = selected;
 
                 Invalidate();
             }
         }
+    }
+
+    private void GameForm_FormClosed(object sender, FormClosedEventArgs e)
+    {
+        FontCache.Dispose();
     }
 }
