@@ -5,11 +5,12 @@ public readonly record struct RGBAColor8B(byte Red, byte Green, byte Blue, byte 
 public abstract class GameUIBase<TSurface>
 {
     private static readonly string FontFamily = "DejaVuSans.ttf";
-    private static readonly RGBAColor8B FontColorBlack = new RGBAColor8B(0, 0, 0, 0xff);
-    private static readonly RGBAColor8B FontColorWhite =new RGBAColor8B(0xff, 0xff, 0xff, 0xff);
-    private static readonly RGBAColor8B FontColorGrey = new RGBAColor8B(0x70, 0x70, 0x70, 0xff);
+    private static readonly RGBAColor8B FontColorBlack  = new RGBAColor8B(0, 0, 0, 0xff);
+    private static readonly RGBAColor8B FontColorWhite  = new RGBAColor8B(0xff, 0xff, 0xff, 0xff);
+    private static readonly RGBAColor8B FontColorGrey   = new RGBAColor8B(0x70, 0x70, 0x70, 0xff);
     private static readonly RGBAColor8B BlackSquareFill = new RGBAColor8B(0xD1, 0x8B, 0x47, 0xff);
     private static readonly RGBAColor8B WhiteSquareFill = new RGBAColor8B(0xFF, 0xCE, 0x9E, 0xff);
+    private static readonly RGBAColor8B SelectedColor   = new RGBAColor8B(0xCD, 0x5C, 0x5C, 0xff);
 
     private readonly Game _game;
     private readonly int _margin;
@@ -38,15 +39,17 @@ public abstract class GameUIBase<TSurface>
         _capturedFontSize = _squareSize * 0.3f;
     }
 
-    protected abstract void DrawRectangle(TSurface surface, in RectLTRBInt rect, RGBAColor8B strokeColor, int strokeWidth);
-    protected abstract void FillRectangle(TSurface surface, in RectLTRBInt rect, RGBAColor8B fillColor);
+    public Position? Selected { get; set; }
 
-    protected abstract void DrawText(TSurface surface, string text, string fontFamily, float pointSize, RGBAColor8B fontColor, in RectLTRBInt layout,
+    protected abstract void DrawRectangle(TSurface surface, in RectInt rect, RGBAColor8B strokeColor, int strokeWidth);
+    protected abstract void FillRectangle(TSurface surface, in RectInt rect, RGBAColor8B fillColor);
+
+    protected abstract void DrawText(TSurface surface, string text, string fontFamily, float pointSize, RGBAColor8B fontColor, in RectInt layout,
         TextAlign horizAlignment = TextAlign.Center, TextAlign vertAlignment = TextAlign.Near);
 
     public int SquareSize => _squareSize;
 
-    public void RenderUI(TSurface surface, in RectLTRBInt clip)
+    public void RenderUI(TSurface surface, in RectInt clip)
     {
         const int borderWidth = 2;
         var boardWidth = _squareSize * 8 + _margin;
@@ -54,7 +57,14 @@ public abstract class GameUIBase<TSurface>
         var borderEnd = boardWidth + borderWidth / 2;
 
         // board border
-        DrawRectangle(surface, new RectLTRBInt((borderEnd, borderEnd + _topMargin), (borderStart, borderStart  + _topMargin)), _mainFontColor, borderWidth);
+        var borderRect = new RectInt((borderEnd, borderEnd + _topMargin), (borderStart, borderStart  + _topMargin));
+
+        if (clip.IsContainedWithin(borderRect))
+        {
+            return;
+        }
+
+        DrawRectangle(surface, borderRect, _mainFontColor, borderWidth);
 
         // labels
         for (byte idx = 0; idx < 8; idx++)
@@ -66,11 +76,11 @@ public abstract class GameUIBase<TSurface>
             var fileText = pos.File.ToLabel();
             var rankText = pos.Rank.ToLabel();
 
-            var top = new RectLTRBInt((x_y + _squareSize, _topMargin + _margin), (x_y, _topMargin));
-            var bottom = new RectLTRBInt((top.LowerRight.X, top.LowerRight.Y + boardWidth), (top.UpperLeft.X, top.UpperLeft.Y + boardWidth));
+            var top = new RectInt((x_y + _squareSize, _topMargin + _margin), (x_y, _topMargin));
+            var bottom = new RectInt((top.LowerRight.X, top.LowerRight.Y + boardWidth), (top.UpperLeft.X, top.UpperLeft.Y + boardWidth));
 
-            var left = new RectLTRBInt((_margin, x_y + _topMargin + _squareSize), (0, x_y + _topMargin));
-            var right = new RectLTRBInt((left.LowerRight.X + boardWidth, left.LowerRight.Y), (left.UpperLeft.X + boardWidth, left.UpperLeft.Y));
+            var left = new RectInt((_margin, x_y + _topMargin + _squareSize), (0, x_y + _topMargin));
+            var right = new RectInt((left.LowerRight.X + boardWidth, left.LowerRight.Y), (left.UpperLeft.X + boardWidth, left.UpperLeft.Y));
 
             DrawText(surface, fileText, FontFamily, _labelFontSize, _mainFontColor, top, vertAlignment: TextAlign.Center);
             DrawText(surface, fileText, FontFamily, _labelFontSize, _mainFontColor, bottom, vertAlignment: TextAlign.Center);
@@ -108,23 +118,22 @@ public abstract class GameUIBase<TSurface>
                 var count = capturedPieceCounts[((int)side - 1) * pieceTypeStride + pieceIdx];
                 if (count > 0)
                 {
-                    var w = (int)Math.Round(_capturedFontSize * 2);
+                    var w = (int)Math.Round(_capturedFontSize * 1.4);
                     var h = w;
-                    var layoutCount = new RectLTRBInt((pieceX + w, y + h), (pieceX, y));
+                    var layoutCount = new RectInt((pieceX + w, y + h), (pieceX, y));
                     DrawText(surface, Convert.ToString(count), FontFamily, _capturedFontSize, _mainFontColor, layoutCount);
-                    pieceX += w;
+                    pieceX += count <= 9 ? w : 2 * w;
 
-                    var layoutPiece = new RectLTRBInt((pieceX + w, y + h), (pieceX, y));
+                    var layoutPiece = new RectInt((pieceX + w, y + h), (pieceX, y));
                     DrawPiece(surface, new Piece((PieceType)pieceIdx, capturedSide), layoutPiece, _capturedFontSize);
-                    pieceX += 2 * w;
+                    pieceX += (int)(1.5 * w);
                 }
             }
         }
     }
 
-    public void RenderBoard(TSurface surface, in RectLTRBInt clip)
+    public void RenderBoard(TSurface surface, in RectInt clip)
     {
-        // tiles
         for (byte fileIdx = 0; fileIdx < 8; fileIdx++)
         {
             var x = fileIdx * _squareSize;
@@ -133,16 +142,26 @@ public abstract class GameUIBase<TSurface>
                 var sqY = (7 - rankIdx) * _squareSize;
 
                 var lowerY = sqY + _margin + _topMargin;
-                var rect = new RectLTRBInt(
+                var rect = new RectInt(
                     (x + _margin + _squareSize, lowerY + _squareSize),
                     (x + _margin, lowerY)
                 );
 
+                if (!rect.OverlapsWith(clip))
+                {
+                    continue;
+                }
+
+                var position = Position.FromIndex(fileIdx, rankIdx);
+
                 FillRectangle(surface, rect, (fileIdx + rankIdx) % 2 == 0 ? BlackSquareFill : WhiteSquareFill);
 
-                var y = rankIdx * _squareSize;
+                if (Selected == position)
+                {
+                    DrawRectangle(surface, rect, SelectedColor, 4);
+                }
 
-                var piece = _game[Position.FromIndex(fileIdx, rankIdx)];
+                var piece = _game[position];
 
                 if (piece.PieceType is not PieceType.None)
                 {
@@ -152,7 +171,7 @@ public abstract class GameUIBase<TSurface>
         }
     }
 
-    private void DrawPiece(TSurface surface, Piece piece, RectLTRBInt rect, float fontSize)
+    private void DrawPiece(TSurface surface, Piece piece, RectInt rect, float fontSize)
     {
         var whiteText = char.ToString(piece.PieceType.ToUnicode(Side.White));
         var blackText = char.ToString(piece.PieceType.ToUnicode(Side.Black));
@@ -177,10 +196,41 @@ public abstract class GameUIBase<TSurface>
         return default;
     }
 
-    public (int X, int Y) SquarePos(Position position)
+    public RectInt SquareRect(Position position)
     {
         var x = (int)position.File * _squareSize + _margin;
         var y = (7 - (int)position.Rank) * _squareSize + _margin + _topMargin;
-        return (x, y);
+        return new RectInt((x + _squareSize, y + _squareSize), (x, y));
+    }
+
+    public (bool NeedsRefresh, RectInt? ClipRect) TryPerformAction(int x, int y)
+    {
+        if (FindSelected(x, y) is { } selected)
+        {
+            if (Selected is { } prev && prev != selected)
+            {
+                if (_game.TryMove(prev, selected) is { } result && result.IsMoveOrCapture())
+                {
+                    Selected = default;
+
+                    if (result.IsCapture())
+                    {
+                        return (true, null);
+                    }
+                    else
+                    {
+                        return (true, SquareRect(prev).Union(SquareRect(selected)));
+                    }
+                }
+            }
+            else if (_game.HasValidMoves(selected))
+            {
+                Selected = selected;
+
+                return (true, SquareRect(selected));
+            }
+        }
+
+        return (false, null);
     }
 }

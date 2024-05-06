@@ -11,7 +11,7 @@ using var image = new MagickImage(new MagickColor(0xff, 0xff, 0xff), 1000, 1000)
 
 var ui = new ImageGameUI(game, image.Width, image.Height);
 
-var clip = new RectLTRBInt((0, 0), (image.Width, image.Height));
+var clip = new RectInt((0, 0), (image.Width, image.Height));
 ui.RenderUI(image, clip);
 ui.RenderBoard(image, clip);
 

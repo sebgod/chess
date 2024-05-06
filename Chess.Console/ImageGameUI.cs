@@ -6,18 +6,18 @@ namespace Chess.Console;
 
 public class ImageGameUI(Game game, int uiSizeX, int uiSizeY) : GameUIBase<MagickImage>(game, uiSizeX, uiSizeY)
 {
-    protected override void FillRectangle(MagickImage surface, in RectLTRBInt rect, RGBAColor8B fillColor)
+    protected override void FillRectangle(MagickImage surface, in RectInt rect, RGBAColor8B fillColor)
         => surface.Draw(GetDrawableRect(rect), new DrawableFillColor(GetColor(fillColor)), new DrawableFillOpacity(new Percentage(100)));
 
-    protected override void DrawRectangle(MagickImage surface, in RectLTRBInt rect, RGBAColor8B strokeColor, int strokeWidth)
+    protected override void DrawRectangle(MagickImage surface, in RectInt rect, RGBAColor8B strokeColor, int strokeWidth)
         => surface.Draw(GetDrawableRect(rect), new DrawableStrokeColor(GetColor(strokeColor)), new DrawableStrokeWidth(strokeWidth), new DrawableFillOpacity(new Percentage(0)));
 
     private static MagickColor GetColor(RGBAColor8B fillColor) => MagickColor.FromRgba(fillColor.Red, fillColor.Green, fillColor.Blue, fillColor.Alpha);
 
-    private static DrawableRectangle GetDrawableRect(in RectLTRBInt rect)
+    private static DrawableRectangle GetDrawableRect(in RectInt rect)
         => new DrawableRectangle(rect.UpperLeft.X, rect.UpperLeft.Y, rect.LowerRight.X, rect.LowerRight.Y);
 
-    protected override void DrawText(MagickImage surface, string text, string fontFamily, float pointSize, RGBAColor8B fontColor, in RectLTRBInt layout,
+    protected override void DrawText(MagickImage surface, string text, string fontFamily, float pointSize, RGBAColor8B fontColor, in RectInt layout,
         TextAlign horizAlignment = TextAlign.Center, TextAlign vertAlignment = TextAlign.Near)
     {
         int x = layout.UpperLeft.X;

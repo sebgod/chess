@@ -10,7 +10,6 @@ public partial class GameForm : Form
     private GraphicsGameUI? GameUI { get; set; }
     private FontCache FontCache { get; } = new FontCache();
     private FormWindowState LastWindowState { get; set; } = FormWindowState.Minimized;
-    private Position? Selected { get; set; }
 
     public GameForm()
     {
@@ -33,17 +32,10 @@ public partial class GameForm : Form
     {
         if (GameUI is { } ui)
         {
-            var clip = new RectLTRBInt((e.ClipRectangle.Right, e.ClipRectangle.Bottom), (e.ClipRectangle.X, e.ClipRectangle.Y));
-            ui.RenderUI(e.Graphics, clip);
-            ui.RenderBoard(e.Graphics, clip);
-
-            if (Selected is { } selected)
-            {
-                var (x, y) = ui.SquarePos(selected);
-                var sq = ui.SquareSize;
-                using var pen = new Pen(Color.IndianRed, 3.5f);
-                e.Graphics.DrawRectangle(pen, new Rectangle(x, y, sq, sq));
-            }
+            var clip = new RectInt((e.ClipRectangle.Right, e.ClipRectangle.Bottom), (e.ClipRectangle.X, e.ClipRectangle.Y));
+            var graphics = e.Graphics;
+            ui.RenderUI(graphics, clip);
+            ui.RenderBoard(graphics, clip);
         }
     }
 
@@ -79,22 +71,19 @@ public partial class GameForm : Form
         var x = e.X;
         var y = e.Y;
 
-        if (GameUI is { } gameUI && gameUI.FindSelected(x, y) is { } selected)
+        if (GameUI is { } gameUI)
         {
-            if (Selected is { } prev && prev != selected)
+            var (needsRefresh, clipRect) = gameUI.TryPerformAction(x, y);
+            if (needsRefresh)
             {
-                if (Game.TryMove(prev, selected))
+                if (clipRect is { } rect)
                 {
-                    Selected = default;
-
+                    Invalidate(rect.ToRectInt());
+                }
+                else
+                {
                     Invalidate();
                 }
-            }
-            else if (Game.HasValidMoves(selected))
-            {
-                Selected = selected;
-
-                Invalidate();
             }
         }
     }

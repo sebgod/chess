@@ -30,9 +30,10 @@ public class Game
         var plyNo = 1;
         foreach (var ply in plies)
         {
-            if (!game.TryMove(ply.From, ply.To))
+            var result = game.TryMove(ply.From, ply.To);
+            if (!result.IsMoveOrCapture())
             {
-                throw new ArgumentException($"Could not apply ply #{plyNo} {ply}", nameof(plies));
+                throw new ArgumentException($"Could not apply ply #{plyNo} {ply} due to result {result}", nameof(plies));
             }
 
             plyNo++;
@@ -58,18 +59,18 @@ public class Game
 
     public Piece this[in Position position] => _board[position];
 
-    public bool TryMove(in Position from, in Position to) => TryMove(new Action(from, to, IsMove: true));
+    public ActionResult TryMove(in Position from, in Position to) => TryMove(new Action(from, to, IsMove: true));
 
-    public bool TryMove(in Action action)
+    public ActionResult TryMove(in Action action)
     {
         if (IsFinished)
         {
-            return false;
+            return ActionResult.Impossible;
         }
 
         if (this[action.From].Side != _currentSide || !action.IsMove)
         {
-            return false;
+            return ActionResult.Impossible;
         }
 
         var ((result, status), board, plies) = _board.EvaluateAction(_plies, action);
@@ -88,11 +89,9 @@ public class Game
             {
                 _currentSide = _currentSide.ToOpposite();
             }
-
-            return true;
         }
 
-        return false;
+        return result;
     }
 
     public override string ToString() => $"{_board} [{RecordedPly.ToPGN(_plies)}] {_gameResult.ToMessage(_currentSide)}";
