@@ -1,6 +1,5 @@
 using Chess.Lib;
 using Chess.Lib.UI;
-using ImageMagick;
 using System.Diagnostics.CodeAnalysis;
 
 namespace Chess.UI.Windows;
@@ -34,7 +33,7 @@ public partial class GameForm : Form
     {
         if (GameUI is { } ui)
         {
-            var clip = new RectInt((e.ClipRectangle.Right, e.ClipRectangle.Bottom), (e.ClipRectangle.X, e.ClipRectangle.Y));
+            var clip = new RectLTRBInt((e.ClipRectangle.Right, e.ClipRectangle.Bottom), (e.ClipRectangle.X, e.ClipRectangle.Y));
             ui.RenderUI(e.Graphics, clip);
             ui.RenderBoard(e.Graphics, clip);
 
@@ -52,7 +51,6 @@ public partial class GameForm : Form
     {
         NewGameUI(Size);
 
-        BackColor = GameUI.BackgroundColor.ToColor();
         Invalidate();
     }
 
