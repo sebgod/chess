@@ -21,6 +21,7 @@ public static class GameStatusExtensions
         GameStatus.Stalemate => "Stalemate. Game is draw.",
         GameStatus.Checkmate => $"Checkmate. {side} wins.",
         GameStatus.Ongoing => $"{side} to play.",
+        GameStatus.Check => $"{side} is in check.",
         _ => throw new ArgumentException($"Invalid game result {result}", nameof(result))
     };
 }

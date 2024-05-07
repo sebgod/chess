@@ -1,4 +1,5 @@
-﻿using System.Drawing.Text;
+﻿using System.ComponentModel;
+using System.Drawing.Text;
 
 namespace Chess.UI.Windows;
 

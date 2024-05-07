@@ -13,14 +13,32 @@ public readonly record struct RecordedPly(Position From, Position To, ActionResu
 
     public readonly Action Action => new Action(From, To, IsMove: Result.IsMoveOrCapture());
 
-    public override readonly string ToString() => string.Concat(
-        From, 
-        To,
-        Result switch { ActionResult.Promotion => $"={CapturedOrPromoted}", ActionResult.Capture => "x", _ => "" },
-        Status switch { GameStatus.Check => "+", GameStatus.Checkmate => "#", _ => "" }
-    );
+    public override readonly string ToString()
+    {
+        var status = Status switch { GameStatus.Check => "+", GameStatus.Checkmate => "#", _ => "" };
 
-    public static string ToPGN(ImmutableList<RecordedPly> plies)
+        if (Result is ActionResult.Castling)
+        {
+            return string.Concat(To.File == File.C ? "O-O-O" : "O-O", status);
+        }
+        else
+        {
+            return string.Concat(
+                Moved.ToPGN(),
+                From,
+                Result switch { ActionResult.Capture => "x", _ => ""
+                },
+                To,
+                Result switch { ActionResult.Promotion => $"={CapturedOrPromoted}", ActionResult.EnPassant => " e.p.", _ => "" },
+                status
+            );
+        }
+    }
+}
+
+public static class RecordedPlyExtensions
+{
+    public static string ToPGN(this ImmutableList<RecordedPly> plies)
     {
         var sb = new StringBuilder(plies.Count * 10);
 
@@ -28,9 +46,10 @@ public readonly record struct RecordedPly(Position From, Position To, ActionResu
         {
             if (i % 2 == 0)
             {
-                sb.Append(i + 1).Append(". ");
-                sb.Append(plies[i]).Append(' ');
+                sb.AppendFormat("{0,4}", $"{(i / 2) + 1}.").Append(' ');
             }
+
+            sb.Append(plies[i]).Append(' ');
         }
 
         return sb.ToString().TrimEnd();

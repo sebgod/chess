@@ -1,14 +1,10 @@
 using Chess.Lib;
-using Chess.Lib.UI;
-using System.Diagnostics.CodeAnalysis;
+using System.Text;
 
 namespace Chess.UI.Windows;
 
 public partial class GameForm : Form
 {
-    private Game Game { get; set; } = new Game();
-    private GraphicsGameUI? GameUI { get; set; }
-    private FontCache FontCache { get; } = new FontCache();
     private FormWindowState LastWindowState { get; set; } = FormWindowState.Minimized;
 
     public GameForm()
@@ -16,34 +12,9 @@ public partial class GameForm : Form
         InitializeComponent();
     }
 
-    [MemberNotNull(nameof(GameUI))]
-    private void NewGameUI(Size size)
-    {
-        GameUI = new GraphicsGameUI(FontCache, Game, size.Width, size.Height);
-    }
-
     private void MainForm_ResizeEnd(object sender, EventArgs e)
     {
-        NewGameUI(Size);
-        Invalidate();
-    }
-
-    private void MainForm_Paint(object sender, PaintEventArgs e)
-    {
-        if (GameUI is { } ui)
-        {
-            var clip = new RectInt((e.ClipRectangle.Right, e.ClipRectangle.Bottom), (e.ClipRectangle.X, e.ClipRectangle.Y));
-            var graphics = e.Graphics;
-            ui.RenderUI(graphics, clip);
-            ui.RenderBoard(graphics, clip);
-        }
-    }
-
-    private void MainForm_Shown(object sender, EventArgs e)
-    {
-        NewGameUI(Size);
-
-        Invalidate();
+        gamePanel1.ResizeEnd();
     }
 
     private void MainForm_Resize(object sender, EventArgs e)
@@ -53,43 +24,52 @@ public partial class GameForm : Form
         {
             LastWindowState = WindowState;
 
-            if (WindowState == FormWindowState.Maximized)
+            if (WindowState is FormWindowState.Maximized or FormWindowState.Normal)
             {
-                NewGameUI(Size);
-                Invalidate();
-            }
-            if (WindowState == FormWindowState.Normal)
-            {
-                NewGameUI(Size);
-                Invalidate();
+                gamePanel1.ResizeEnd();
             }
         }
     }
 
-    private void MainForm_MouseClick(object sender, MouseEventArgs e)
+    private void gamePanel1_GameUpdated(object sender, EventArgs e)
     {
-        var x = e.X;
-        var y = e.Y;
-
-        if (GameUI is { } gameUI)
+        if (sender is GamePanel gamePanel)
         {
-            var (needsRefresh, clipRect) = gameUI.TryPerformAction(x, y);
-            if (needsRefresh)
-            {
-                if (clipRect is { } rect)
-                {
-                    Invalidate(rect.ToRectInt());
-                }
-                else
-                {
-                    Invalidate();
-                }
-            }
+            UpdateGameStatus(gamePanel);
         }
     }
 
-    private void GameForm_FormClosed(object sender, FormClosedEventArgs e)
+    private void GameForm_Shown(object sender, EventArgs e)
     {
-        FontCache.Dispose();
+        UpdateGameStatus(gamePanel1);
+    }
+
+    private void UpdateGameStatus(GamePanel gamePanel)
+    {
+        var game = gamePanel.Game;
+        var currentSide = game.CurrentSide;
+        var plies = game.Plies;
+
+        var sbMove  = new StringBuilder();
+        var sbWhite = new StringBuilder();
+        var sbBlack = new StringBuilder();
+        for (var i = 0; i <  plies.Count; i++)
+        {
+            var ply = plies[i].ToString();
+            if (i % 2 == 0)
+            {
+                sbMove.Append(i / 2 + 1).AppendLine(".");
+                sbWhite.AppendLine(ply);
+            }
+            else
+            {
+                sbBlack.AppendLine(ply);
+            }
+        }
+
+        labelMoveNumber.Text = sbMove.ToString();
+        labelPliesWhite.Text = sbWhite.ToString();
+        labelPliesBlack.Text = sbBlack.ToString();
+        labelGameState.Text  = game.GameStatus.ToMessage(currentSide);
     }
 }

@@ -12,7 +12,6 @@ public abstract class GameUIBase<TSurface>
     private static readonly RGBAColor8B WhiteSquareFill = new RGBAColor8B(0xFF, 0xCE, 0x9E, 0xff);
     private static readonly RGBAColor8B SelectedColor   = new RGBAColor8B(0xCD, 0x5C, 0x5C, 0xff);
 
-    private readonly Game _game;
     private readonly int _margin;
     private readonly int _squareSize;
     private readonly int _topMargin;
@@ -27,7 +26,7 @@ public abstract class GameUIBase<TSurface>
     {
         const int SquaresNeeded = 12;
 
-        _game = game;
+        Game = game;
         _squareSize = Math.Min(uiSizeX, uiSizeY) / SquaresNeeded;
         _margin = _squareSize / 2;
 
@@ -38,6 +37,8 @@ public abstract class GameUIBase<TSurface>
         _pieceFontSize = _squareSize * 0.8f;
         _capturedFontSize = _squareSize * 0.3f;
     }
+
+    public Game Game { get; }
 
     public Position? Selected { get; set; }
 
@@ -89,7 +90,7 @@ public abstract class GameUIBase<TSurface>
         }
 
         // captured
-        var plies = _game.Plies;
+        var plies = Game.Plies;
         var plyCount = plies.Count;
 
         const int pieceTypeStride = 7;
@@ -161,7 +162,7 @@ public abstract class GameUIBase<TSurface>
                     DrawRectangle(surface, rect, SelectedColor, 4);
                 }
 
-                var piece = _game[position];
+                var piece = Game[position];
 
                 if (piece.PieceType is not PieceType.None)
                 {
@@ -203,34 +204,34 @@ public abstract class GameUIBase<TSurface>
         return new RectInt((x + _squareSize, y + _squareSize), (x, y));
     }
 
-    public (bool NeedsRefresh, RectInt? ClipRect) TryPerformAction(int x, int y)
+    public (bool NeedsRefresh, bool IsUpdate, RectInt? ClipRect) TryPerformAction(int x, int y)
     {
         if (FindSelected(x, y) is { } selected)
         {
             if (Selected is { } prev && prev != selected)
             {
-                if (_game.TryMove(prev, selected) is { } result && result.IsMoveOrCapture())
+                if (Game.TryMove(prev, selected) is { } result && result.IsMoveOrCapture())
                 {
                     Selected = default;
 
                     if (result.IsCapture())
                     {
-                        return (true, null);
+                        return (true, true, null);
                     }
                     else
                     {
-                        return (true, SquareRect(prev).Union(SquareRect(selected)));
+                        return (true, true, SquareRect(prev).Union(SquareRect(selected)));
                     }
                 }
             }
-            else if (_game.HasValidMoves(selected))
+            else if (Game.HasValidMoves(selected))
             {
                 Selected = selected;
 
-                return (true, SquareRect(selected));
+                return (true, false, SquareRect(selected));
             }
         }
 
-        return (false, null);
+        return (false, false, null);
     }
 }

@@ -8,7 +8,7 @@ public class Game
     private ImmutableList<RecordedPly> _plies = [];
     private Board _board;
     private Side _currentSide;
-    private GameStatus _gameResult;
+    private GameStatus _gameStatus;
 
     public Game()
     {
@@ -46,7 +46,9 @@ public class Game
 
     public Side Winner => IsFinished ? _currentSide : Side.None;
 
-    public bool IsFinished => _gameResult is GameStatus.Checkmate or GameStatus.Stalemate;
+    public GameStatus GameStatus => _gameStatus;
+
+    public bool IsFinished => _gameStatus is GameStatus.Checkmate or GameStatus.Stalemate;
 
     public bool HasValidMoves(Position position) => _board.ValidMoves(_plies, position, _currentSide).Any();
 
@@ -79,7 +81,7 @@ public class Game
         {
             _board = board;
             _plies = plies;
-            _gameResult = status;
+            _gameStatus = status;
 
             if (status is GameStatus.Stalemate)
             {
@@ -94,5 +96,5 @@ public class Game
         return result;
     }
 
-    public override string ToString() => $"{_board} [{RecordedPly.ToPGN(_plies)}] {_gameResult.ToMessage(_currentSide)}";
+    public override string ToString() => $"{_board} [{_plies.ToPGN()}] {_gameStatus.ToMessage(_currentSide)}";
 }

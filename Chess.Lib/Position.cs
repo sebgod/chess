@@ -2,7 +2,6 @@ namespace Chess.Lib;
 
 using System.Collections.Immutable;
 using System.Diagnostics;
-using System.Diagnostics.Contracts;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
@@ -16,7 +15,8 @@ public enum File : byte
     E,
     F,
     G,
-    H
+    H,
+    Unknown
 }
 
 public enum Rank : byte
@@ -28,17 +28,18 @@ public enum Rank : byte
     R5,
     R6,
     R7,
-    R8
+    R8,
+    Unknown
 }
 
 public static class FileExtensions
 {
-    public static string ToLabel(this File file) => char.ToString((char)((byte)file + 'a'));
+    public static string ToLabel(this File file) => file is File.Unknown ? "" : char.ToString((char)((byte)file + 'a'));
 }
 
 public static class RankExtensions
 {
-    public static string ToLabel(this Rank rank) => Convert.ToString((byte)rank + 1, CultureInfo.InvariantCulture);
+    public static string ToLabel(this Rank rank) => rank is Rank.Unknown ? "" : Convert.ToString((byte)rank + 1, CultureInfo.InvariantCulture);
 }
 
 public readonly record struct Position(File File, Rank Rank)

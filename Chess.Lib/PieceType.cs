@@ -32,4 +32,15 @@ public static class PieceTypeExtensions
         PieceType.King   when side is Side.Black => '\u265A',
         _ => ' ',
     };
+
+    public static string ToPGN(this PieceType type) => type switch
+    {
+        PieceType.Pawn => "",
+        PieceType.Knight => "N",
+        PieceType.Bishop => "B",
+        PieceType.Rook => "R",
+        PieceType.Queen => "Q",
+        PieceType.King => "K",
+        _ => throw new ArgumentException($"Unhandled piece type {type}", nameof(type))
+    };
 }
