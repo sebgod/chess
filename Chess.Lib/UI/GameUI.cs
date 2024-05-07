@@ -2,7 +2,7 @@
 
 public readonly record struct RGBAColor8B(byte Red, byte Green, byte Blue, byte Alpha);
 
-public abstract class GameUIBase<TSurface>
+public class GameUI<TSurface, TRenderer> where TRenderer : Renderer<TSurface>
 {
     private static readonly string FontFamily = "DejaVuSans.ttf";
     private static readonly RGBAColor8B FontColorBlack  = new RGBAColor8B(0, 0, 0, 0xff);
@@ -10,27 +10,31 @@ public abstract class GameUIBase<TSurface>
     private static readonly RGBAColor8B FontColorGrey   = new RGBAColor8B(0x70, 0x70, 0x70, 0xff);
     private static readonly RGBAColor8B BlackSquareFill = new RGBAColor8B(0xD1, 0x8B, 0x47, 0xff);
     private static readonly RGBAColor8B WhiteSquareFill = new RGBAColor8B(0xFF, 0xCE, 0x9E, 0xff);
-    private static readonly RGBAColor8B SelectedColor   = new RGBAColor8B(0xCD, 0x5C, 0x5C, 0xff);
+    private static readonly RGBAColor8B SelectedSquareFill = new RGBAColor8B(0xCD, 0x5C, 0x5C, 0xff);
 
     private readonly int _margin;
     private readonly int _squareSize;
     private readonly int _topMargin;
+    private readonly int _boardWidth;
 
     private readonly float _labelFontSize;
     private readonly float _pieceFontSize;
     private readonly float _capturedFontSize;
 
+    private readonly TRenderer _renderer;
     private readonly RGBAColor8B _mainFontColor;
 
-    public GameUIBase(Game game, int uiSizeX, int uiSizeY)
+    public GameUI(Game game, TRenderer renderer, int uiSizeX, int uiSizeY)
     {
         const int SquaresNeeded = 12;
 
         Game = game;
+        _renderer = renderer;
         _squareSize = Math.Min(uiSizeX, uiSizeY) / SquaresNeeded;
         _margin = _squareSize / 2;
 
         _topMargin = (int)(_squareSize * 0.8);
+        _boardWidth = _squareSize * 8 + _margin;
 
         _mainFontColor = FontColorBlack;
         _labelFontSize = _squareSize * 0.25f;
@@ -42,22 +46,14 @@ public abstract class GameUIBase<TSurface>
 
     public Position? Selected { get; set; }
 
-    protected abstract void DrawRectangle(TSurface surface, in RectInt rect, RGBAColor8B strokeColor, int strokeWidth);
-    protected abstract void FillRectangle(TSurface surface, in RectInt rect, RGBAColor8B fillColor);
-
-    protected abstract void DrawText(TSurface surface, string text, string fontFamily, float pointSize, RGBAColor8B fontColor, in RectInt layout,
-        TextAlign horizAlignment = TextAlign.Center, TextAlign vertAlignment = TextAlign.Near);
-
     public int SquareSize => _squareSize;
 
     public void RenderUI(TSurface surface, in RectInt clip)
     {
-        const int borderWidth = 2;
-        var boardWidth = _squareSize * 8 + _margin;
-        var borderStart = _margin - borderWidth / 2;
-        var borderEnd = boardWidth + borderWidth / 2;
-
         // board border
+        const int borderWidth = 2;
+        var borderStart = _margin - borderWidth / 2;
+        var borderEnd = _boardWidth + borderWidth / 2;
         var borderRect = new RectInt((borderEnd, borderEnd + _topMargin), (borderStart, borderStart  + _topMargin));
 
         if (clip.IsContainedWithin(borderRect))
@@ -65,7 +61,7 @@ public abstract class GameUIBase<TSurface>
             return;
         }
 
-        DrawRectangle(surface, borderRect, _mainFontColor, borderWidth);
+        _renderer.DrawRectangle(surface, borderRect, _mainFontColor, borderWidth);
 
         // labels
         for (byte idx = 0; idx < 8; idx++)
@@ -78,16 +74,22 @@ public abstract class GameUIBase<TSurface>
             var rankText = pos.Rank.ToLabel();
 
             var top = new RectInt((x_y + _squareSize, _topMargin + _margin), (x_y, _topMargin));
-            var bottom = new RectInt((top.LowerRight.X, top.LowerRight.Y + boardWidth), (top.UpperLeft.X, top.UpperLeft.Y + boardWidth));
+            var bottom = new RectInt((top.LowerRight.X, top.LowerRight.Y + _boardWidth), (top.UpperLeft.X, top.UpperLeft.Y + _boardWidth));
 
             var left = new RectInt((_margin, x_y + _topMargin + _squareSize), (0, x_y + _topMargin));
-            var right = new RectInt((left.LowerRight.X + boardWidth, left.LowerRight.Y), (left.UpperLeft.X + boardWidth, left.UpperLeft.Y));
+            var right = new RectInt((left.LowerRight.X + _boardWidth, left.LowerRight.Y), (left.UpperLeft.X + _boardWidth, left.UpperLeft.Y));
 
-            DrawText(surface, fileText, FontFamily, _labelFontSize, _mainFontColor, top, vertAlignment: TextAlign.Center);
-            DrawText(surface, fileText, FontFamily, _labelFontSize, _mainFontColor, bottom, vertAlignment: TextAlign.Center);
-            DrawText(surface, rankText, FontFamily, _labelFontSize, _mainFontColor, left, TextAlign.Center, vertAlignment: TextAlign.Center);
-            DrawText(surface, rankText, FontFamily, _labelFontSize, _mainFontColor, right, TextAlign.Center, vertAlignment: TextAlign.Center);
+            _renderer.DrawText(surface, fileText, FontFamily, _labelFontSize, _mainFontColor, top, vertAlignment: TextAlign.Center);
+            _renderer.DrawText(surface, fileText, FontFamily, _labelFontSize, _mainFontColor, bottom, vertAlignment: TextAlign.Center);
+            _renderer.DrawText(surface, rankText, FontFamily, _labelFontSize, _mainFontColor, left, TextAlign.Center, vertAlignment: TextAlign.Center);
+            _renderer.DrawText(surface, rankText, FontFamily, _labelFontSize, _mainFontColor, right, TextAlign.Center, vertAlignment: TextAlign.Center);
         }
+
+        // active player indicator
+        var currentSide = Game.CurrentSide;
+        var activePlayerRect = ActivePlayerRect(currentSide);
+        _renderer.FillEllipse(surface, ActivePlayerRect(currentSide), _mainFontColor);
+        _renderer.FillEllipse(surface, activePlayerRect.Inflate(-borderWidth), currentSide is Side.White ? FontColorWhite : FontColorBlack);
 
         // captured
         var plies = Game.Plies;
@@ -107,7 +109,7 @@ public abstract class GameUIBase<TSurface>
             capturedPieceCounts[idx]++;
         }
 
-        DrawCapturedText(Side.White, _margin, _topMargin + boardWidth + _margin);
+        DrawCapturedText(Side.White, _margin, _topMargin + _boardWidth + _margin);
         DrawCapturedText(Side.Black, _margin, _topMargin - _margin);
 
         void DrawCapturedText(Side side, int x, int y)
@@ -122,7 +124,7 @@ public abstract class GameUIBase<TSurface>
                     var w = (int)Math.Round(_capturedFontSize * 1.4);
                     var h = w;
                     var layoutCount = new RectInt((pieceX + w, y + h), (pieceX, y));
-                    DrawText(surface, Convert.ToString(count), FontFamily, _capturedFontSize, _mainFontColor, layoutCount);
+                    _renderer.DrawText(surface, Convert.ToString(count), FontFamily, _capturedFontSize, _mainFontColor, layoutCount);
                     pieceX += count <= 9 ? w : 2 * w;
 
                     var layoutPiece = new RectInt((pieceX + w, y + h), (pieceX, y));
@@ -155,12 +157,13 @@ public abstract class GameUIBase<TSurface>
 
                 var position = Position.FromIndex(fileIdx, rankIdx);
 
-                FillRectangle(surface, rect, (fileIdx + rankIdx) % 2 == 0 ? BlackSquareFill : WhiteSquareFill);
+                var squareFill = Selected == position
+                    ? SelectedSquareFill
+                    : (fileIdx + rankIdx) % 2 == 0
+                        ? BlackSquareFill
+                        : WhiteSquareFill;
 
-                if (Selected == position)
-                {
-                    DrawRectangle(surface, rect, SelectedColor, 4);
-                }
+                _renderer.FillRectangle(surface, rect, squareFill);
 
                 var piece = Game[position];
 
@@ -177,8 +180,8 @@ public abstract class GameUIBase<TSurface>
         var whiteText = char.ToString(piece.PieceType.ToUnicode(Side.White));
         var blackText = char.ToString(piece.PieceType.ToUnicode(Side.Black));
 
-        DrawText(surface, blackText, FontFamily, fontSize, piece.Side is Side.White ? FontColorWhite : FontColorBlack, rect);
-        DrawText(surface, whiteText, FontFamily, fontSize, piece.Side is Side.White ? FontColorBlack : FontColorGrey,  rect);
+        _renderer.DrawText(surface, blackText, FontFamily, fontSize, piece.Side is Side.White ? FontColorWhite : FontColorBlack, rect);
+        _renderer.DrawText(surface, whiteText, FontFamily, fontSize, piece.Side is Side.White ? FontColorBlack : FontColorGrey,  rect);
     }
 
     public Position? FindSelected(int x, int y)
@@ -204,7 +207,16 @@ public abstract class GameUIBase<TSurface>
         return new RectInt((x + _squareSize, y + _squareSize), (x, y));
     }
 
-    public (bool NeedsRefresh, bool IsUpdate, RectInt? ClipRect) TryPerformAction(int x, int y)
+    public RectInt ActivePlayerRect(Side side)
+    {
+        var off = _margin / 2;
+        var x = _boardWidth + off;
+        var y = _topMargin + (side is Side.White ? _boardWidth + off : - off);
+
+        return new RectInt((x + _margin, y + _margin), (x, y));
+    }
+
+    public (bool NeedsRefresh, bool IsUpdate, RectInt[] ClipRects) TryPerformAction(int x, int y)
     {
         if (FindSelected(x, y) is { } selected)
         {
@@ -216,11 +228,13 @@ public abstract class GameUIBase<TSurface>
 
                     if (result.IsCapture())
                     {
-                        return (true, true, null);
+                        return (true, true, []);
                     }
                     else
                     {
-                        return (true, true, SquareRect(prev).Union(SquareRect(selected)));
+                        return (true, true,
+                            [SquareRect(prev), SquareRect(selected), ActivePlayerRect(Side.White), ActivePlayerRect(Side.Black)]
+                        );
                     }
                 }
             }
@@ -228,10 +242,10 @@ public abstract class GameUIBase<TSurface>
             {
                 Selected = selected;
 
-                return (true, false, SquareRect(selected));
+                return (true, false, [SquareRect(selected)]);
             }
         }
 
-        return (false, false, null);
+        return (false, false, []);
     }
 }

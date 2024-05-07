@@ -15,5 +15,5 @@ public readonly record struct RectInt((int X, int Y) LowerRight, (int X, int Y) 
         => LowerRight.X <= other.LowerRight.X && LowerRight.Y <= other.LowerRight.Y && UpperLeft.X >= other.UpperLeft.X && UpperLeft.Y >= other.UpperLeft.Y; 
 
     public readonly RectInt Inflate(int inflate)
-        => new RectInt((LowerRight.X + inflate, LowerRight.Y + inflate), (UpperLeft.X + inflate, UpperLeft.Y + inflate));
+        => new RectInt((LowerRight.X + inflate, LowerRight.Y + inflate), (UpperLeft.X - inflate, UpperLeft.Y - inflate));
 }

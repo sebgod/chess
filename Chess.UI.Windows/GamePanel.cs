@@ -7,6 +7,7 @@ namespace Chess.UI.Windows
 {
     public partial class GamePanel : UserControl
     {
+        private GraphisRenderer? _renderer;
         private Game _game = new Game();
 
         [Browsable(false)]
@@ -24,12 +25,13 @@ namespace Chess.UI.Windows
         private void NewGameUI()
         {
             var size = ClientSize;
-            GameUI = new GraphicsGameUI(FontCache, _game, size.Width, size.Height);
+            var renderer = _renderer ??= new GraphisRenderer(FontCache);
+            GameUI = new GameUI<Graphics, GraphisRenderer>(_game, renderer, size.Width, size.Height);
             Invalidate();
         }
 
         [Browsable(false)]
-        public GraphicsGameUI? GameUI { get; set; }
+        public GameUI<Graphics, GraphisRenderer>? GameUI { get; set; }
         
         [Browsable(false)]
         private FontCache FontCache { get; } = new FontCache();
@@ -51,13 +53,16 @@ namespace Chess.UI.Windows
 
             if (GameUI is { } gameUI)
             {
-                var (needsRefresh, isUpdate, clipRect) = gameUI.TryPerformAction(x, y);
+                var (needsRefresh, isUpdate, clipRects) = gameUI.TryPerformAction(x, y);
 
                 if (needsRefresh)
                 {
-                    if (clipRect is { } rect)
+                    if (clipRects.Length > 0)
                     {
-                        Invalidate(rect.ToRectInt());
+                        for (var i = 0; i < clipRects.Length; i++)
+                        {
+                            Invalidate(clipRects[i].ToRectInt());
+                        }
                     }
                     else
                     {
