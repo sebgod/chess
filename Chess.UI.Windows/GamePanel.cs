@@ -1,4 +1,4 @@
-﻿using Chess.Lib;
+﻿ using Chess.Lib;
 using Chess.Lib.UI;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
@@ -11,6 +11,7 @@ namespace Chess.UI.Windows
         private Game _game = new Game();
 
         [Browsable(false)]
+        [Bindable(BindableSupport.No)]
         public Game Game
         {
             get => _game;
@@ -22,18 +23,37 @@ namespace Chess.UI.Windows
         }
 
         [MemberNotNull(nameof(GameUI))]
-        private void NewGameUI()
+        public void NewGameUI()
         {
             var size = ClientSize;
-            var renderer = _renderer ??= new GraphisRenderer(FontCache);
-            GameUI = new GameUI<Graphics, GraphisRenderer>(_game, renderer, size.Width, size.Height);
+            var squareSize = GameUI.CalculateSquareSize(size.Width, size.Height);
+            Position? selected;
+            Position? pendingPromotion;
+            if (GameUI is { } ui)
+            {
+                selected = ui.Selected;
+                pendingPromotion = ui.PendingPromotion;
+
+                // exit early as the effective size didn't change
+                if (ui.SquareSize == squareSize)
+                {
+                    return;
+                }
+            }
+            else
+            {
+                selected = default;
+                pendingPromotion = default;
+            }
+
+            GameUI = new GameUI(_game, size.Width, size.Height, selected, pendingPromotion);
             Invalidate();
         }
 
         [Browsable(false)]
-        public GameUI<Graphics, GraphisRenderer>? GameUI { get; set; }
-        
-        [Browsable(false)]
+        [Bindable(BindableSupport.No)]
+        public GameUI? GameUI { get; private set; }
+
         private FontCache FontCache { get; } = new FontCache();
 
         [Browsable(true)]
@@ -53,9 +73,9 @@ namespace Chess.UI.Windows
 
             if (GameUI is { } gameUI)
             {
-                var (needsRefresh, isUpdate, clipRects) = gameUI.TryPerformAction(x, y);
+                var (uiResponse, clipRects) = gameUI.TryPerformAction(x, y);
 
-                if (needsRefresh)
+                if (uiResponse.HasFlag(UIResponse.NeedsRefresh))
                 {
                     if (clipRects.Length > 0)
                     {
@@ -71,26 +91,21 @@ namespace Chess.UI.Windows
 
                 }
 
-                if (isUpdate)
+                if (uiResponse.HasFlag(UIResponse.IsUpdate))
                 {
                     GameUpdated?.Invoke(this, EventArgs.Empty);
                 }
             }
         }
 
-        public void ResizeEnd()
-        {
-            NewGameUI();;
-        }
-
         private void GamePanel_Paint(object sender, PaintEventArgs e)
         {
             if (GameUI is { } ui)
             {
+                var renderer = _renderer ??= new GraphisRenderer(FontCache);
                 var clip = new RectInt((e.ClipRectangle.Right, e.ClipRectangle.Bottom), (e.ClipRectangle.X, e.ClipRectangle.Y));
                 var graphics = e.Graphics;
-                ui.RenderUI(graphics, clip);
-                ui.RenderBoard(graphics, clip);
+                ui.Render(renderer, graphics, clip);
             }
         }
 

@@ -1,59 +1,72 @@
-﻿namespace Chess.Lib.UI;
+﻿using System.Drawing;
+
+namespace Chess.Lib.UI;
 
 public readonly record struct RGBAColor8B(byte Red, byte Green, byte Blue, byte Alpha);
 
-public class GameUI<TSurface, TRenderer> where TRenderer : Renderer<TSurface>
+public class GameUI
 {
     private static readonly string FontFamily = "DejaVuSans.ttf";
     private static readonly RGBAColor8B FontColorBlack  = new RGBAColor8B(0, 0, 0, 0xff);
-    private static readonly RGBAColor8B FontColorWhite  = new RGBAColor8B(0xff, 0xff, 0xff, 0xff);
+    private static readonly RGBAColor8B FontColorWhite  = new RGBAColor8B(0xfd, 0xfd, 0xfd, 0xff);
     private static readonly RGBAColor8B FontColorGrey   = new RGBAColor8B(0x70, 0x70, 0x70, 0xff);
     private static readonly RGBAColor8B BlackSquareFill = new RGBAColor8B(0xD1, 0x8B, 0x47, 0xff);
     private static readonly RGBAColor8B WhiteSquareFill = new RGBAColor8B(0xFF, 0xCE, 0x9E, 0xff);
+    private static readonly RGBAColor8B OverlayFill = new RGBAColor8B(0xFF, 0xCE, 0x9E, 0xCC);
     private static readonly RGBAColor8B SelectedSquareFill = new RGBAColor8B(0xCD, 0x5C, 0x5C, 0xff);
 
     private readonly int _margin;
     private readonly int _squareSize;
     private readonly int _topMargin;
-    private readonly int _boardWidth;
+    private readonly int _boardEnd;
 
     private readonly float _labelFontSize;
     private readonly float _pieceFontSize;
     private readonly float _capturedFontSize;
 
-    private readonly TRenderer _renderer;
     private readonly RGBAColor8B _mainFontColor;
 
-    public GameUI(Game game, TRenderer renderer, int uiSizeX, int uiSizeY)
-    {
-        const int SquaresNeeded = 12;
+    private const int SquaresNeeded = 12;
+    private const int PieceTypeStride = 7;
+    private const int BorderWidth = 2;
 
+    public GameUI(Game game, int uiSizeX, int uiSizeY, Position? selected = null, Position? pendingPromotion = null)
+    {
         Game = game;
-        _renderer = renderer;
-        _squareSize = Math.Min(uiSizeX, uiSizeY) / SquaresNeeded;
+        _squareSize = CalculateSquareSize(uiSizeX, uiSizeY);
         _margin = _squareSize / 2;
 
-        _topMargin = (int)(_squareSize * 0.8);
-        _boardWidth = _squareSize * 8 + _margin;
+        _topMargin = (int)(_squareSize * 0.6);
+        _boardEnd = _squareSize * 8 + _margin;
 
         _mainFontColor = FontColorBlack;
         _labelFontSize = _squareSize * 0.25f;
         _pieceFontSize = _squareSize * 0.8f;
         _capturedFontSize = _squareSize * 0.3f;
+
+        Selected = selected;
+        PendingPromotion = pendingPromotion;
     }
+
+    public static int CalculateSquareSize(int uiSizeX, int uiSizeY) => Math.Min(uiSizeX, uiSizeY) / SquaresNeeded;
 
     public Game Game { get; }
 
-    public Position? Selected { get; set; }
+    public Position? Selected { get; private set; }
+
+    public Position? PendingPromotion { get; private set; }
 
     public int SquareSize => _squareSize;
 
-    public void RenderUI(TSurface surface, in RectInt clip)
+    public void Render<TSurface, TRenderer>(TRenderer renderer, TSurface surface, in RectInt clip)
+        where TRenderer : Renderer<TSurface>
     {
+        // board
+        RenderBoard(renderer, surface, clip);
+
         // board border
-        const int borderWidth = 2;
-        var borderStart = _margin - borderWidth / 2;
-        var borderEnd = _boardWidth + borderWidth / 2;
+        var borderStart = _margin - BorderWidth / 2;
+        var borderEnd = _boardEnd + BorderWidth / 2;
         var borderRect = new RectInt((borderEnd, borderEnd + _topMargin), (borderStart, borderStart  + _topMargin));
 
         if (clip.IsContainedWithin(borderRect))
@@ -61,7 +74,7 @@ public class GameUI<TSurface, TRenderer> where TRenderer : Renderer<TSurface>
             return;
         }
 
-        _renderer.DrawRectangle(surface, borderRect, _mainFontColor, borderWidth);
+        renderer.DrawRectangle(surface, borderRect, _mainFontColor, BorderWidth);
 
         // labels
         for (byte idx = 0; idx < 8; idx++)
@@ -74,68 +87,90 @@ public class GameUI<TSurface, TRenderer> where TRenderer : Renderer<TSurface>
             var rankText = pos.Rank.ToLabel();
 
             var top = new RectInt((x_y + _squareSize, _topMargin + _margin), (x_y, _topMargin));
-            var bottom = new RectInt((top.LowerRight.X, top.LowerRight.Y + _boardWidth), (top.UpperLeft.X, top.UpperLeft.Y + _boardWidth));
+            var bottom = new RectInt((top.LowerRight.X, top.LowerRight.Y + _boardEnd), (top.UpperLeft.X, top.UpperLeft.Y + _boardEnd));
 
             var left = new RectInt((_margin, x_y + _topMargin + _squareSize), (0, x_y + _topMargin));
-            var right = new RectInt((left.LowerRight.X + _boardWidth, left.LowerRight.Y), (left.UpperLeft.X + _boardWidth, left.UpperLeft.Y));
+            var right = new RectInt((left.LowerRight.X + _boardEnd, left.LowerRight.Y), (left.UpperLeft.X + _boardEnd, left.UpperLeft.Y));
 
-            _renderer.DrawText(surface, fileText, FontFamily, _labelFontSize, _mainFontColor, top, vertAlignment: TextAlign.Center);
-            _renderer.DrawText(surface, fileText, FontFamily, _labelFontSize, _mainFontColor, bottom, vertAlignment: TextAlign.Center);
-            _renderer.DrawText(surface, rankText, FontFamily, _labelFontSize, _mainFontColor, left, TextAlign.Center, vertAlignment: TextAlign.Center);
-            _renderer.DrawText(surface, rankText, FontFamily, _labelFontSize, _mainFontColor, right, TextAlign.Center, vertAlignment: TextAlign.Center);
+            renderer.DrawText(surface, fileText, FontFamily, _labelFontSize, _mainFontColor, top, vertAlignment: TextAlign.Center);
+            renderer.DrawText(surface, fileText, FontFamily, _labelFontSize, _mainFontColor, bottom, vertAlignment: TextAlign.Center);
+            renderer.DrawText(surface, rankText, FontFamily, _labelFontSize, _mainFontColor, left, TextAlign.Center, vertAlignment: TextAlign.Center);
+            renderer.DrawText(surface, rankText, FontFamily, _labelFontSize, _mainFontColor, right, TextAlign.Center, vertAlignment: TextAlign.Center);
         }
 
         // active player indicator
         var currentSide = Game.CurrentSide;
         var activePlayerRect = ActivePlayerRect(currentSide);
-        _renderer.FillEllipse(surface, ActivePlayerRect(currentSide), _mainFontColor);
-        _renderer.FillEllipse(surface, activePlayerRect.Inflate(-borderWidth), currentSide is Side.White ? FontColorWhite : FontColorBlack);
+        renderer.FillEllipse(surface, ActivePlayerRect(currentSide), _mainFontColor);
+        renderer.FillEllipse(surface, activePlayerRect.Inflate(-BorderWidth), currentSide is Side.White ? FontColorWhite : FontColorBlack);
 
         // captured
         var plies = Game.Plies;
         var plyCount = plies.Count;
 
-        const int pieceTypeStride = 7;
-        var capturedPieceCounts = new byte[2 * pieceTypeStride];
+        Span<byte> capturedPieceCounts = stackalloc byte[2 * PieceTypeStride];
 
         for (var plyIdx = 0; plyIdx < plyCount; plyIdx++)
         {
             var ply = plies[plyIdx];
-            if (ply is not { Result: ActionResult.Capture } and { CapturedOrPromoted: PieceType.None })
+            if (ply is not { Result: ActionResult.Capture or ActionResult.CaptureAndPromotion } and { Captured: PieceType.None })
             {
                 continue;
             }
-            var idx = plyIdx % 2 * pieceTypeStride + (int)ply.CapturedOrPromoted;
+            var idx = plyIdx % 2 * PieceTypeStride + (int)ply.Captured;
             capturedPieceCounts[idx]++;
         }
 
-        DrawCapturedText(Side.White, _margin, _topMargin + _boardWidth + _margin);
-        DrawCapturedText(Side.Black, _margin, _topMargin - _margin);
+        DrawCapturedText(renderer, surface, capturedPieceCounts, Side.White, _margin, _topMargin + _boardEnd + _margin);
+        DrawCapturedText(renderer, surface, capturedPieceCounts, Side.Black, _margin, _topMargin - _margin);
 
-        void DrawCapturedText(Side side, int x, int y)
+        // promote piece type selection box
+        if (PendingPromotion is { })
         {
-            var pieceX = x;
-            var capturedSide = side.ToOpposite();
-            for (var pieceIdx = 1; pieceIdx < pieceTypeStride; pieceIdx++)
-            {
-                var count = capturedPieceCounts[((int)side - 1) * pieceTypeStride + pieceIdx];
-                if (count > 0)
-                {
-                    var w = (int)Math.Round(_capturedFontSize * 1.4);
-                    var h = w;
-                    var layoutCount = new RectInt((pieceX + w, y + h), (pieceX, y));
-                    _renderer.DrawText(surface, Convert.ToString(count), FontFamily, _capturedFontSize, _mainFontColor, layoutCount);
-                    pieceX += count <= 9 ? w : 2 * w;
+            var overlay = new RectInt((_boardEnd, _topMargin + _boardEnd), (_margin, _topMargin + _margin));
+            renderer.FillRectangle(surface, overlay, OverlayFill);
 
-                    var layoutPiece = new RectInt((pieceX + w, y + h), (pieceX, y));
-                    DrawPiece(surface, new Piece((PieceType)pieceIdx, capturedSide), layoutPiece, _capturedFontSize);
-                    pieceX += (int)(1.5 * w);
-                }
+            var box = PromotePieceTypeSelectionBox(currentSide);
+            var offX = box.UpperLeft.X;
+            var offY = box.UpperLeft.Y;
+
+            renderer.DrawRectangle(surface, box.Inflate(BorderWidth / 2), _mainFontColor, BorderWidth);
+
+            for (var i = 0; i < 4; i++)
+            {
+                var squareRect = new RectInt((offX + _squareSize * (i + 1), offY + _squareSize), (offX + _squareSize * i, offY));
+                renderer.FillRectangle(surface, squareRect, i % 2 == 0 ? WhiteSquareFill : BlackSquareFill);
+
+                DrawPiece(renderer, surface, new Piece((PieceType)(i + (int)PieceType.Knight), currentSide), squareRect, _pieceFontSize);
             }
         }
     }
 
-    public void RenderBoard(TSurface surface, in RectInt clip)
+    private void DrawCapturedText<TRenderer, TSurface>(TRenderer renderer, TSurface surface, ReadOnlySpan<byte> capturedPieceCounts, Side side, int x, int y)
+        where TRenderer : Renderer<TSurface>
+    {
+        var pieceX = x;
+        var capturedSide = side.ToOpposite();
+        for (var pieceIdx = 1; pieceIdx < PieceTypeStride; pieceIdx++)
+        {
+            var count = capturedPieceCounts[((int)side - 1) * PieceTypeStride + pieceIdx];
+            if (count > 0)
+            {
+                var w = (int)Math.Round(_capturedFontSize * 1.4);
+                var h = w;
+                var layoutCount = new RectInt((pieceX + w, y + h), (pieceX, y));
+                renderer.DrawText(surface, Convert.ToString(count), FontFamily, _capturedFontSize, _mainFontColor, layoutCount);
+                pieceX += count <= 9 ? w : 2 * w;
+
+                var layoutPiece = new RectInt((pieceX + w, y + h), (pieceX, y));
+                DrawPiece(renderer, surface, new Piece((PieceType)pieceIdx, capturedSide), layoutPiece, _capturedFontSize);
+                pieceX += (int)(1.5 * w);
+            }
+        }
+    }
+
+    private void RenderBoard<TRenderer, TSurface>(TRenderer renderer, TSurface surface, in RectInt clip)
+        where TRenderer : Renderer<TSurface>
     {
         for (byte fileIdx = 0; fileIdx < 8; fileIdx++)
         {
@@ -163,25 +198,26 @@ public class GameUI<TSurface, TRenderer> where TRenderer : Renderer<TSurface>
                         ? BlackSquareFill
                         : WhiteSquareFill;
 
-                _renderer.FillRectangle(surface, rect, squareFill);
+                renderer.FillRectangle(surface, rect, squareFill);
 
                 var piece = Game[position];
 
                 if (piece.PieceType is not PieceType.None)
                 {
-                    DrawPiece(surface, piece, rect, _pieceFontSize);
+                    DrawPiece(renderer, surface, piece, rect, _pieceFontSize);
                 }
             }
         }
     }
 
-    private void DrawPiece(TSurface surface, Piece piece, RectInt rect, float fontSize)
+    private static void DrawPiece<TRenderer, TSurface>(TRenderer renderer, TSurface surface, Piece piece, RectInt rect, float fontSize)
+        where TRenderer : Renderer<TSurface>
     {
         var whiteText = char.ToString(piece.PieceType.ToUnicode(Side.White));
         var blackText = char.ToString(piece.PieceType.ToUnicode(Side.Black));
 
-        _renderer.DrawText(surface, blackText, FontFamily, fontSize, piece.Side is Side.White ? FontColorWhite : FontColorBlack, rect);
-        _renderer.DrawText(surface, whiteText, FontFamily, fontSize, piece.Side is Side.White ? FontColorBlack : FontColorGrey,  rect);
+        renderer.DrawText(surface, blackText, FontFamily, fontSize, piece.Side is Side.White ? FontColorWhite : FontColorBlack, rect);
+        renderer.DrawText(surface, whiteText, FontFamily, fontSize, piece.Side is Side.White ? FontColorBlack : FontColorGrey,  rect);
     }
 
     public Position? FindSelected(int x, int y)
@@ -200,52 +236,98 @@ public class GameUI<TSurface, TRenderer> where TRenderer : Renderer<TSurface>
         return default;
     }
 
+    public PieceType? FindPromotionType(int x, int y)
+    {
+        var box = PromotePieceTypeSelectionBox(Game.CurrentSide);
+        if (box.Contains(x, y))
+        {
+            var transX = x - box.UpperLeft.X;
+            return (PieceType)(transX / _squareSize + (int)PieceType.Knight);
+        }
+
+        return default;
+    }
+
     public RectInt SquareRect(Position position)
     {
         var x = (int)position.File * _squareSize + _margin;
         var y = (7 - (int)position.Rank) * _squareSize + _margin + _topMargin;
+
         return new RectInt((x + _squareSize, y + _squareSize), (x, y));
     }
 
     public RectInt ActivePlayerRect(Side side)
     {
         var off = _margin / 2;
-        var x = _boardWidth + off;
-        var y = _topMargin + (side is Side.White ? _boardWidth + off : - off);
+        var x = _boardEnd + off;
+        var y = _topMargin + (side is Side.White ? _boardEnd + off : -off);
 
         return new RectInt((x + _margin, y + _margin), (x, y));
     }
 
-    public (bool NeedsRefresh, bool IsUpdate, RectInt[] ClipRects) TryPerformAction(int x, int y)
+    public RectInt PromotePieceTypeSelectionBox(Side side)
     {
-        if (FindSelected(x, y) is { } selected)
+        var offX = _margin;
+        var offY = side is Side.White ? _margin : _boardEnd + _topMargin - _margin / 2;
+
+        return new RectInt((offX + _squareSize * 4, offY + _squareSize), (offX, offY));
+    }
+
+    public (UIResponse Response, RectInt[] ClipRects) TryPerformAction(int x, int y)
+    {
+        if (PendingPromotion is { } pendingPromotion)
+        {
+            if (Selected is { } prev && FindPromotionType(x, y) is { } promoteType)
+            {
+                var result = Game.TryMove(Action.Promote(prev, pendingPromotion, promoteType));
+
+                if (result.IsPromotion())
+                {
+                    PendingPromotion = default;
+                    Selected = default;
+                    return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
+                }
+                else
+                {
+                    return (UIResponse.None, []);
+                }
+            }
+        }
+        else if (FindSelected(x, y) is { } selected)
         {
             if (Selected is { } prev && prev != selected)
             {
-                if (Game.TryMove(prev, selected) is { } result && result.IsMoveOrCapture())
+                var result = Game.TryMove(prev, selected);
+                if (result.IsMoveOrCapture())
                 {
                     Selected = default;
 
-                    if (result.IsCapture())
+                    if (result.IsCapture() || result is ActionResult.Castling)
                     {
-                        return (true, true, []);
+                        return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
                     }
                     else
                     {
-                        return (true, true,
+                        return (UIResponse.NeedsRefresh | UIResponse.IsUpdate,
                             [SquareRect(prev), SquareRect(selected), ActivePlayerRect(Side.White), ActivePlayerRect(Side.Black)]
                         );
                     }
+                }
+                else if (result is ActionResult.NeedsPromotionType)
+                {
+                    PendingPromotion = selected;
+
+                    return (UIResponse.NeedsRefresh | UIResponse.NeedsPromotionType, []);
                 }
             }
             else if (Game.HasValidMoves(selected))
             {
                 Selected = selected;
 
-                return (true, false, [SquareRect(selected)]);
+                return (UIResponse.NeedsRefresh, [SquareRect(selected)]);
             }
         }
 
-        return (false, false, []);
+        return (UIResponse.None, []);
     }
 }

@@ -16,4 +16,6 @@ public readonly record struct RectInt((int X, int Y) LowerRight, (int X, int Y) 
 
     public readonly RectInt Inflate(int inflate)
         => new RectInt((LowerRight.X + inflate, LowerRight.Y + inflate), (UpperLeft.X - inflate, UpperLeft.Y - inflate));
+
+    public bool Contains(int x, int y) => x <= LowerRight.X && y <= LowerRight.Y && x >= UpperLeft.X && y >= UpperLeft.Y;
 }

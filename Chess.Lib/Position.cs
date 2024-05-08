@@ -188,7 +188,7 @@ public readonly record struct Position(File File, Rank Rank)
     private static IEnumerable<Position> AllPawnPositions(Position position, Side side)
     {
         var newRank = (sbyte)((int)position.Rank + side.PawnDirection());
-        if (newRank > 0 && newRank < 8)
+        if (newRank >= 0 && newRank < 8)
         {
             var file = (sbyte)position.File;
             var fileLeft = (sbyte)(file - 1);

@@ -3,10 +3,10 @@ using System.Text;
 
 namespace Chess.Lib;
 
-public readonly record struct RecordedPly(Position From, Position To, ActionResult Result, PieceType Moved, PieceType CapturedOrPromoted = PieceType.None, GameStatus Status = GameStatus.Ongoing)
+public readonly record struct RecordedPly(Position From, Position To, ActionResult Result, PieceType Moved, PieceType Captured = PieceType.None, PieceType Promoted = PieceType.None, GameStatus Status = GameStatus.Ongoing)
 {
-    public RecordedPly(Action action, ActionResult result, in Piece from, in Piece to, GameStatus status = GameStatus.Ongoing)
-        : this(action.From, action.To, result, from.PieceType, to.PieceType, status)
+    public RecordedPly(Action action, ActionResult result, in Piece from, in Piece to, PieceType promoted = PieceType.None, GameStatus status = GameStatus.Ongoing)
+        : this(action.From, action.To, result, from.PieceType, to.PieceType, promoted, status)
     {
         // calls base
     }
@@ -26,10 +26,10 @@ public readonly record struct RecordedPly(Position From, Position To, ActionResu
             return string.Concat(
                 Moved.ToPGN(),
                 From,
-                Result switch { ActionResult.Capture => "x", _ => ""
+                Result switch { ActionResult.Capture or ActionResult.CaptureAndPromotion => "x", _ => ""
                 },
                 To,
-                Result switch { ActionResult.Promotion => $"={CapturedOrPromoted}", ActionResult.EnPassant => " e.p.", _ => "" },
+                Result switch { ActionResult.Promotion or ActionResult.CaptureAndPromotion => $"={Promoted.ToPGN()}", ActionResult.EnPassant => " e.p.", _ => "" },
                 status
             );
         }

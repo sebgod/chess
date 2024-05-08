@@ -3,7 +3,7 @@ using Chess.Lib.UI;
 
 namespace Chess.UI.Windows;
 
-public class GraphisRenderer(FontCache fontCache) : Renderer<Graphics>
+public sealed class GraphisRenderer(FontCache fontCache) : Renderer<Graphics>
 {
     public override void DrawRectangle(Graphics surface, in RectInt rect, RGBAColor8B strokeColor, int strokeWidth)
     {

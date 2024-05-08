@@ -14,7 +14,7 @@ public partial class GameForm : Form
 
     private void MainForm_ResizeEnd(object sender, EventArgs e)
     {
-        gamePanel1.ResizeEnd();
+        gamePanel1.NewGameUI();
     }
 
     private void MainForm_Resize(object sender, EventArgs e)
@@ -26,7 +26,7 @@ public partial class GameForm : Form
 
             if (WindowState is FormWindowState.Maximized or FormWindowState.Normal)
             {
-                gamePanel1.ResizeEnd();
+                gamePanel1.NewGameUI();
             }
         }
     }

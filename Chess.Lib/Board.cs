@@ -102,7 +102,7 @@ public record struct Board()
 
             if (isValidPawnForwardMove && action.To.Rank == oppositeSide.HomeRank())
             {
-                result = action.Promoted.IsValidPromotion() ? ActionResult.Promotion : ActionResult.Impossible;
+                result = action.Promoted.IsValidPromotion() ? ActionResult.Promotion : ActionResult.NeedsPromotionType;
             }
             else if (isValidPawnForwardMove)
             {
@@ -140,7 +140,7 @@ public record struct Board()
         {
             var board = this;
             board[action.From] = Piece.None;
-            board[action.To] = result is ActionResult.Promotion ? new Piece(action.Promoted, side) : pieceFrom;
+            board[action.To] = result.IsPromotion() ? new Piece(action.Promoted, side) : pieceFrom;
 
             (Board Board, RecordedPly Ply) afterMove;
             if (result is ActionResult.EnPassant)
@@ -159,8 +159,9 @@ public record struct Board()
             }
             else
             {
-                var capturedOrPromoted = result switch { ActionResult.Promotion => board[action.To], ActionResult.Capture => this[action.To], _ => Piece.None };
-                afterMove = (board, new RecordedPly(action, result, pieceFrom, capturedOrPromoted));
+                var captured = result.IsCapture() ? this[action.To] : Piece.None;
+                var promoted = result.IsPromotion() ? action.Promoted : PieceType.None;
+                afterMove = (board, new RecordedPly(action, result, pieceFrom, captured, promoted));
             }
 
             var afterMovePlies = plies.Add(afterMove.Ply);
@@ -205,6 +206,10 @@ public record struct Board()
         else if (action.IsMove && pieceTo.PieceType is PieceType.King)
         {
             return ActionResult.Impossible;
+        }
+        else if (action.IsMove && action.To.Rank == pieceTo.Side.HomeRank())
+        {
+            return action.Promoted.IsValidPromotion() ? ActionResult.CaptureAndPromotion : ActionResult.NeedsPromotionType;
         }
         else if (action.IsMove)
         {
@@ -275,9 +280,12 @@ public record struct Board()
             yield break;
         }
 
+        var oppositeHomeRank = side.ToOpposite().HomeRank();
         foreach (var to in Position.AllPossibleActions(position, piece))
         {
-            var action = Action.DoMove(position, to);
+            var action = piece is { PieceType: PieceType.Pawn } && to.Rank == oppositeHomeRank
+                ? Action.Promote(position, to, PieceType.Queen)
+                : Action.DoMove(position, to);
             var ((result, _), _, _) = EvaluateAction(plies, action, skipGameResultCheck: true);
             if (result.IsMoveOrCapture())
             {
@@ -314,7 +322,7 @@ public record struct Board()
             foreach (var to in Position.AllPossibleActions(from, piece))
             {
                 var ((result, _), _, _) = EvaluateAction(plies, Action.DoMove(from, to), skipGameResultCheck: true);
-                if (result is not ActionResult.Impossible and not ActionResult.IllegalDueToInCheck and not ActionResult.Cover)
+                if (result is not ActionResult.Impossible and not ActionResult.IllegalDueToInCheck and not ActionResult.Cover and not ActionResult.NeedsPromotionType)
                 {
                     return isCheck ? GameStatus.Check : GameStatus.Ongoing;
                 }

@@ -15,7 +15,7 @@ public class GameTests
 {
     [Test]
     [TestCaseSource(nameof(DataSource))]
-    public void EvaluateMoves(Game game, Lib.Action action, ActionResult expectedResult, Board? expectedBoard, GameStatus expectedStatus, PieceType expectedCaptureOrPromotion)
+    public void EvaluateMoves(Game game, Lib.Action action, ActionResult expectedResult, Board? expectedBoard, GameStatus expectedStatus, PieceType expectedCapture, PieceType expectedPromotion)
     {
         var copy = game.Board;
         var ((result, status), newBoard, pliesAfter) = game.Board.EvaluateAction(game.Plies, action);
@@ -23,7 +23,8 @@ public class GameTests
         result.ShouldBe(expectedResult);
         newBoard.ShouldBe(expectedBoard ?? copy);
         status.ShouldBe(expectedStatus);
-        pliesAfter.LastOrDefault().CapturedOrPromoted.ShouldBe(expectedCaptureOrPromotion);
+        pliesAfter.LastOrDefault().Captured.ShouldBe(expectedCapture);
+        pliesAfter.LastOrDefault().Promoted.ShouldBe(expectedPromotion);
     }
 
     public static IEnumerable<TestCaseData> DataSource() => [
@@ -49,8 +50,7 @@ public class GameTests
                 [A2] = (White, Rook), [B2] = (White, Pawn), [G2] = (White, Pawn),
                 [A1] = (White, Rook), [G1] = (White, King), [H1] = (Black, Rook)
             },
-            Checkmate,
-            PieceType.None
+            Checkmate
         ),
         Custom(
             new Board {
@@ -72,8 +72,7 @@ public class GameTests
                 [E4] = (Black, Queen),
                 [G1] = (White, Rook)
             },
-            Checkmate,
-            PieceType.None
+            Checkmate
         ),
         Custom(
             new Board {
@@ -90,8 +89,7 @@ public class GameTests
                 [F4] = (White, Queen),
                 [E1] = (White, King)
             },
-            Ongoing,
-            PieceType.None
+            Ongoing
         ),
         Custom(
             new Board {
@@ -106,8 +104,7 @@ public class GameTests
             DoMove(E8, G8),
             Impossible,
             default,
-            Ongoing,
-            PieceType.None
+            Ongoing
         ),
         Custom(
             Board.StandardBoard + DoMove(H2, H5) + DoMove(G7, G5), 
@@ -128,7 +125,8 @@ public class GameTests
             [], 
             Promote(A7, A8, Queen), Promotion, 
             new Board { [A8] = (White, Queen), [H7] = (Black, King), [D3] = (White, King) }, 
-            Ongoing, 
+            Ongoing,
+            PieceType.None,
             Queen
         ),
         FromPlies([], new RecordedPly(A2, A3, Move, Pawn)),
@@ -151,7 +149,8 @@ public class GameTests
             move.Result,
             game.Board + action,
             move.Status,
-            move.CapturedOrPromoted
+            move.Captured,
+            move.Promoted
         );
     }
 
@@ -163,8 +162,9 @@ public class GameTests
         ActionResult expectedResult,
         Board? expectedBoard,
         GameStatus expectedStatus,
-        PieceType capturedOrPromoted)
-        => Custom(new Game(board, side, plies), move, expectedResult, expectedBoard, expectedStatus, capturedOrPromoted);
+        PieceType captured = PieceType.None,
+        PieceType promoted = PieceType.None)
+        => Custom(new Game(board, side, plies), move, expectedResult, expectedBoard, expectedStatus, captured, promoted);
 
     public static TestCaseData Custom(
         Game game,
@@ -172,6 +172,7 @@ public class GameTests
         ActionResult expectedResult,
         Board? expectedBoard,
         GameStatus expectedStatus,
-        PieceType capturedOrPromoted)
-    => new TestCaseData(game, move, expectedResult, expectedBoard, expectedStatus, capturedOrPromoted);
+        PieceType captured,
+        PieceType promoted)
+    => new TestCaseData(game, move, expectedResult, expectedBoard, expectedStatus, captured, promoted);
 }

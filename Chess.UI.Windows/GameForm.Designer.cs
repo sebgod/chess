@@ -28,7 +28,6 @@
         /// </summary>
         private void InitializeComponent()
         {
-            Lib.Game game1 = new Lib.Game();
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(GameForm));
             gamePanel1 = new GamePanel();
             tableLayoutPanel1 = new TableLayoutPanel();
@@ -45,8 +44,6 @@
             // gamePanel1
             // 
             gamePanel1.Dock = DockStyle.Fill;
-            gamePanel1.Game = game1;
-            gamePanel1.GameUI = null;
             gamePanel1.Location = new Point(3, 35);
             gamePanel1.Name = "gamePanel1";
             tableLayoutPanel1.SetRowSpan(gamePanel1, 2);
