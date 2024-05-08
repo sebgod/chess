@@ -208,7 +208,7 @@ public record struct Board()
         {
             return ActionResult.Impossible;
         }
-        else if (action.IsMove && action.To.Rank == pieceTo.Side.HomeRank())
+        else if (pieceFrom.PieceType is PieceType.Pawn && action.IsMove && action.To.Rank == pieceTo.Side.HomeRank())
         {
             return action.Promoted.IsValidPromotion() ? ActionResult.CaptureAndPromotion : ActionResult.NeedsPromotionType;
         }
