@@ -39,6 +39,8 @@ namespace Chess.UI.Windows
                 {
                     return;
                 }
+
+                FontCache.ClearCachedFonts();
             }
             else
             {

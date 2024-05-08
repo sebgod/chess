@@ -27,11 +27,10 @@ public sealed class GraphisRenderer(FontCache fontCache) : Renderer<Graphics>
         TextAlign horizAlignment = TextAlign.Near, TextAlign vertAlignment = TextAlign.Center)
     {
         var fontFamily = fontCache.GetFontFamily(fontFileOrFamily);
-
-        using var gdiFont = new Font(fontFamily, fontSize, GraphicsUnit.Pixel);
+        var font = fontCache.GetFont(fontFamily, fontSize, GraphicsUnit.Pixel);
 
         var textFormatFlags = horizAlignment.ToHorizontalFlag() | vertAlignment.ToVerticalFlag();
 
-        TextRenderer.DrawText(surface, text, gdiFont, rect.ToRectInt(), fontColor.ToColor(), textFormatFlags);
+        TextRenderer.DrawText(surface, text, font, rect.ToRectInt(), fontColor.ToColor(), textFormatFlags);
     }
 }
