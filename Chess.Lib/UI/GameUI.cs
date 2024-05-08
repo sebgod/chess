@@ -40,9 +40,9 @@ public class GameUI
         _boardEnd = _squareSize * 8 + _margin;
 
         _mainFontColor = FontColorBlack;
-        _labelFontSize = _squareSize * 0.25f;
+        _labelFontSize = _squareSize * 0.3f;
         _pieceFontSize = _squareSize * 0.8f;
-        _capturedFontSize = _squareSize * 0.3f;
+        _capturedFontSize = _squareSize * 0.4f;
 
         Selected = selected;
         PendingPromotion = pendingPromotion;
@@ -216,8 +216,8 @@ public class GameUI
         var whiteText = char.ToString(piece.PieceType.ToUnicode(Side.White));
         var blackText = char.ToString(piece.PieceType.ToUnicode(Side.Black));
 
-        renderer.DrawText(surface, blackText, FontFamily, fontSize, piece.Side is Side.White ? FontColorWhite : FontColorBlack, rect);
-        renderer.DrawText(surface, whiteText, FontFamily, fontSize, piece.Side is Side.White ? FontColorBlack : FontColorGrey,  rect);
+        renderer.DrawText(surface, blackText, FontFamily, fontSize, piece.Side is Side.White ? FontColorWhite : FontColorBlack, rect, vertAlignment: TextAlign.Center);
+        renderer.DrawText(surface, whiteText, FontFamily, fontSize, piece.Side is Side.White ? FontColorBlack : FontColorGrey,  rect, vertAlignment: TextAlign.Center);
     }
 
     public Position? FindSelected(int x, int y)

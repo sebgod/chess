@@ -23,20 +23,15 @@ public sealed class GraphisRenderer(FontCache fontCache) : Renderer<Graphics>
         surface.FillEllipse(brush, rect.ToRectF());
     }
 
-    public override void DrawText(Graphics surface, string text, string fontFileOrFamily, float pointSize, RGBAColor8B fontColor, in RectInt rect,
+    public override void DrawText(Graphics surface, string text, string fontFileOrFamily, float fontSize, RGBAColor8B fontColor, in RectInt rect,
         TextAlign horizAlignment = TextAlign.Near, TextAlign vertAlignment = TextAlign.Center)
     {
         var fontFamily = fontCache.GetFontFamily(fontFileOrFamily);
 
-        using var gdiFont = new Font(fontFamily, (float)pointSize, GraphicsUnit.Point);
-        using var brush = new SolidBrush(fontColor.ToColor());
-        using var format = new StringFormat
-        {
-            Alignment = horizAlignment.ToStringAlignment(),
-            LineAlignment = vertAlignment.ToStringAlignment(),
-            FormatFlags = StringFormatFlags.NoFontFallback | StringFormatFlags.NoClip
-        };
-        
-        surface.DrawString(text, gdiFont, brush, rect.ToRectF(), format);
+        using var gdiFont = new Font(fontFamily, fontSize, GraphicsUnit.Pixel);
+
+        var textFormatFlags = horizAlignment.ToHorizontalFlag() | vertAlignment.ToVerticalFlag();
+
+        TextRenderer.DrawText(surface, text, gdiFont, rect.ToRectInt(), fontColor.ToColor(), textFormatFlags);
     }
 }

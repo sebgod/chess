@@ -1,4 +1,5 @@
-﻿using System.Collections.Immutable;
+﻿using System.Collections.Frozen;
+using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -18,7 +19,7 @@ public record struct Board()
     private uint _r8;
 
     private static readonly ImmutableArray<Side> Sides = [Side.White, Side.Black];
-    private static readonly IReadOnlyDictionary<File, PieceType> HomeRankPieceTypes = new SortedDictionary<File, PieceType>() {
+    private static readonly FrozenDictionary<File, PieceType> HomeRankPieceTypes = new Dictionary<File, PieceType>() {
         { File.A, PieceType.Rook },
         { File.B, PieceType.Knight },
         { File.C, PieceType.Bishop },
@@ -27,7 +28,7 @@ public record struct Board()
         { File.F, PieceType.Bishop },
         { File.G, PieceType.Knight },
         { File.H, PieceType.Rook }
-    };
+    }.ToFrozenDictionary();
     private static readonly ImmutableArray<File> CastlingKingSideFiles  = [File.E, File.F, File.G];
     private static readonly ImmutableArray<File> CastlingQueenSideFiles = [File.C, File.D, File.E];
 
@@ -467,6 +468,48 @@ public record struct Board()
         }
 
         return default;
+    }
+
+    public readonly string ToFEN()
+    {
+        var sb = new StringBuilder(200);
+
+        for (byte rankIdx = 0; rankIdx < 8; rankIdx++)
+        {
+            var rank = (Rank)(7 - rankIdx);
+            var rankValue = GetRankValue(rank);
+            int empty = 0;
+
+            if (rankIdx > 0)
+            {
+                sb.Append('/');
+            }
+
+            foreach (var file in Position.AllFiles)
+            {
+                ExtractPieceAndSide(rankValue, file, out Side pieceSide, out var pieceType);
+                if (pieceSide is not Side.None && pieceType is not PieceType.None)
+                {
+                    if (empty > 0)
+                    {
+                        sb.Append(empty);
+                        empty = 0;
+                    }
+                    sb.Append(new Piece(pieceType, pieceSide).ToFEN());
+                }
+                else
+                {
+                    empty++;
+                }
+            }
+
+            if (empty > 0)
+            {
+                sb.Append(empty);
+            }
+        }
+
+        return sb.ToString().Trim();
     }
 
     public override readonly string ToString()

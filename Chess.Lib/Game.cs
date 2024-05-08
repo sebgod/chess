@@ -96,5 +96,5 @@ public class Game
         return result;
     }
 
-    public override string ToString() => $"{_board} [{_plies.ToPGN()}] {_gameStatus.ToMessage(_currentSide)}";
+    public override string ToString() => $"{_board.ToFEN()} [{_plies.ToPGN()}] {_gameStatus.ToMessage(_currentSide)}";
 }

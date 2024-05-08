@@ -6,7 +6,8 @@ using ImageMagick;
 var game = new Game();
 using var image = new MagickImage(new MagickColor(0xff, 0xff, 0xff), 200 * 12, 200 * 12)
 {
-    Format = MagickFormat.Png
+    Format = MagickFormat.Png,
+    Density = new Density(90, DensityUnit.PixelsPerInch)
 };
 
 var imageRenderer = new MagickImageRenderer();

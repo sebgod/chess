@@ -30,7 +30,7 @@ public class MagickImageRenderer() : Renderer<MagickImage>()
         return new DrawableEllipse(x + rX, y + rY, rX, rY, 0, 360);
     }
 
-    public override void DrawText(MagickImage surface, string text, string fontFamily, float pointSize, RGBAColor8B fontColor, in RectInt layout,
+    public override void DrawText(MagickImage surface, string text, string fontFamily, float fontSize, RGBAColor8B fontColor, in RectInt layout,
         TextAlign horizAlignment = TextAlign.Center, TextAlign vertAlignment = TextAlign.Near)
     {
         int x = layout.UpperLeft.X;
@@ -38,15 +38,21 @@ public class MagickImageRenderer() : Renderer<MagickImage>()
         int w = layout.LowerRight.X - x;
         int h = layout.LowerRight.Y - y;
 
+        var origDensity = surface.Density.ChangeUnits(DensityUnit.PixelsPerInch);
+        var density = origDensity.X == 0 || origDensity.Y == 0 ? new Density(72, DensityUnit.PixelsPerInch) : origDensity;
+
+        var factor = density.Y / 72f;
+
         var readSettings = new MagickReadSettings
         {
             Font = fontFamily,
             Width = w,
             Height = h,
             TextGravity = GetGravity(horizAlignment, vertAlignment),
-            FontPointsize = pointSize,
+            FontPointsize = fontSize / factor, 
             BackgroundColor = new MagickColor(0, 0, 0, 0),
-            FillColor =  GetColor(fontColor)
+            FillColor =  GetColor(fontColor),
+            Density = density,
         };
         using var overlayImage = new MagickImage("caption:" + text, readSettings);
         surface.Composite(overlayImage, Gravity.Northwest, x, y, CompositeOperator.Atop);
