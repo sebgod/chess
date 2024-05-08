@@ -1,4 +1,5 @@
-﻿using System.Drawing;
+﻿using System.Collections.Immutable;
+using System.Drawing;
 
 namespace Chess.Lib.UI;
 
@@ -236,7 +237,7 @@ public class GameUI
         return default;
     }
 
-    public PieceType? FindPromotionType(int x, int y)
+    public PieceType FindPromotionType(int x, int y)
     {
         var box = PromotePieceTypeSelectionBox(Game.CurrentSide);
         if (box.Contains(x, y))
@@ -245,7 +246,7 @@ public class GameUI
             return (PieceType)(transX / _squareSize + (int)PieceType.Knight);
         }
 
-        return default;
+        return PieceType.None;
     }
 
     public RectInt SquareRect(Position position)
@@ -273,59 +274,84 @@ public class GameUI
         return new RectInt((offX + _squareSize * 4, offY + _squareSize), (offX, offY));
     }
 
-    public (UIResponse Response, RectInt[] ClipRects) TryPerformAction(int x, int y)
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TryPerformAction(int x, int y)
     {
         if (PendingPromotion is { } pendingPromotion)
         {
-            if (Selected is { } prev && FindPromotionType(x, y) is { } promoteType)
+            if (Selected is { } prev && FindPromotionType(x, y) is { } promoteType and not PieceType.None)
             {
-                var result = Game.TryMove(Action.Promote(prev, pendingPromotion, promoteType));
-
-                if (result.IsPromotion())
-                {
-                    PendingPromotion = default;
-                    Selected = default;
-                    return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
-                }
-                else
-                {
-                    return (UIResponse.None, []);
-                }
+                return TryPerformAction(Action.Promote(prev, pendingPromotion, promoteType));
             }
         }
         else if (FindSelected(x, y) is { } selected)
         {
             if (Selected is { } prev && prev != selected)
             {
-                var result = Game.TryMove(prev, selected);
-                if (result.IsMoveOrCapture())
-                {
-                    Selected = default;
-
-                    if (result.IsCapture() || result is ActionResult.Castling)
-                    {
-                        return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
-                    }
-                    else
-                    {
-                        return (UIResponse.NeedsRefresh | UIResponse.IsUpdate,
-                            [SquareRect(prev), SquareRect(selected), ActivePlayerRect(Side.White), ActivePlayerRect(Side.Black)]
-                        );
-                    }
-                }
-                else if (result is ActionResult.NeedsPromotionType)
-                {
-                    PendingPromotion = selected;
-
-                    return (UIResponse.NeedsRefresh | UIResponse.NeedsPromotionType, []);
-                }
+                return TryPerformAction(Action.DoMove(prev, selected));
             }
-            else if (Game.HasValidMoves(selected))
+            else
             {
-                Selected = selected;
-
-                return (UIResponse.NeedsRefresh, [SquareRect(selected)]);
+                return TrySelect(selected);
             }
+        }
+
+        return (UIResponse.None, []);
+    }
+
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TryPerformAction(Action action)
+    {
+        if (action is { IsMove: true } promotion and not { Promoted: PieceType.None })
+        {
+            var result = Game.TryMove(promotion);
+
+            if (result.IsPromotion())
+            {
+                PendingPromotion = default;
+                Selected = default;
+
+                return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
+            }
+            else
+            {
+                return (UIResponse.None, []);
+            }
+        }
+        else if (action is { IsMove: true})
+        {
+            var result = Game.TryMove(action);
+            if (result.IsMoveOrCapture())
+            {
+                Selected = default;
+
+                if (result.IsCapture() || result is ActionResult.Castling)
+                {
+                    return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
+                }
+                else
+                {
+                    return (UIResponse.NeedsRefresh | UIResponse.IsUpdate,
+                        [SquareRect(action.From), SquareRect(action.To), ActivePlayerRect(Side.White), ActivePlayerRect(Side.Black)]
+                    );
+                }
+            }
+            else if (result is ActionResult.NeedsPromotionType)
+            {
+                PendingPromotion = action.To;
+
+                return (UIResponse.NeedsRefresh | UIResponse.NeedsPromotionType, []);
+            }
+        }
+
+        return (UIResponse.None, []);
+    }
+
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TrySelect(Position position)
+    {
+        if (Game.HasValidMoves(position))
+        {
+            Selected = position;
+
+            return (UIResponse.NeedsRefresh, [SquareRect(position)]);
         }
 
         return (UIResponse.None, []);

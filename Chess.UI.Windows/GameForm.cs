@@ -53,6 +53,7 @@ public partial class GameForm : Form
         var sbMove  = new StringBuilder();
         var sbWhite = new StringBuilder();
         var sbBlack = new StringBuilder();
+
         for (var i = 0; i <  plies.Count; i++)
         {
             var ply = plies[i].ToString();
