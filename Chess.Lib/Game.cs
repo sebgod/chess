@@ -42,7 +42,7 @@ public class Game
         return game;
     }
 
-    public Side CurrentSide => IsFinished ? Side.None : _currentSide;
+    public Side CurrentSide => _currentSide;
 
     public Side Winner => IsFinished ? _currentSide : Side.None;
 
@@ -87,7 +87,7 @@ public class Game
             {
                 _currentSide = Side.None;
             }
-            else
+            else if (status is not GameStatus.Checkmate)
             {
                 _currentSide = _currentSide.ToOpposite();
             }

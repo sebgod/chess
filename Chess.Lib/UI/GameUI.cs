@@ -353,7 +353,7 @@ public class GameUI
 
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TrySelect(Position position)
     {
-        if (Game.HasValidMoves(position))
+        if (!Game.IsFinished && Game.HasValidMoves(position))
         {
             Selected = position;
 

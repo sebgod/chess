@@ -57,7 +57,6 @@ public partial class GameForm : Form
     private void UpdateGameStatus(GamePanel gamePanel)
     {
         var game = gamePanel.Game;
-        var currentSide = game.CurrentSide;
         var plies = game.Plies;
 
         var sbMove  = new StringBuilder();
@@ -81,6 +80,6 @@ public partial class GameForm : Form
         labelMoveNumber.Text = sbMove.ToString();
         labelPliesWhite.Text = sbWhite.ToString();
         labelPliesBlack.Text = sbBlack.ToString();
-        labelGameState.Text  = game.GameStatus.ToMessage(currentSide);
+        labelGameState.Text  = game.GameStatus.ToMessage(game.IsFinished ? game.Winner : game.CurrentSide);
     }
 }
