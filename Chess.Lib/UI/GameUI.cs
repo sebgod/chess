@@ -7,7 +7,9 @@ public readonly record struct RGBAColor8B(byte Red, byte Green, byte Blue, byte 
 
 public class GameUI
 {
-    private static readonly string FontFamily = "DejaVuSans.ttf";
+    private const string FontDejaVuSans = "Fonts/DejaVuSans.ttf";
+    private const string FontMerida = "Fonts/Merida.ttf";
+
     private static readonly RGBAColor8B FontColorBlack  = new RGBAColor8B(0, 0, 0, 0xff);
     private static readonly RGBAColor8B FontColorWhite  = new RGBAColor8B(0xfd, 0xfd, 0xfd, 0xff);
     private static readonly RGBAColor8B FontColorGrey   = new RGBAColor8B(0x70, 0x70, 0x70, 0xff);
@@ -21,7 +23,9 @@ public class GameUI
     private readonly int _topMargin;
     private readonly int _boardEnd;
 
+    private readonly string _labelFont;
     private readonly float _labelFontSize;
+    private readonly string _pieceFont;
     private readonly float _pieceFontSize;
     private readonly float _capturedFontSize;
 
@@ -31,7 +35,7 @@ public class GameUI
     private const int PieceTypeStride = 7;
     private const int BorderWidth = 2;
 
-    public GameUI(Game game, int uiSizeX, int uiSizeY, Position? selected = null, Position? pendingPromotion = null)
+    public GameUI(Game game, int uiSizeX, int uiSizeY, Position? selected = null, Position? pendingPromotion = null, string labelFont = FontDejaVuSans, string pieceFont = FontMerida)
     {
         Game = game;
         _squareSize = CalculateSquareSize(uiSizeX, uiSizeY);
@@ -41,7 +45,9 @@ public class GameUI
         _boardEnd = _squareSize * 8 + _margin;
 
         _mainFontColor = FontColorBlack;
+        _labelFont = labelFont;
         _labelFontSize = _squareSize * 0.3f;
+        _pieceFont = pieceFont;
         _pieceFontSize = _squareSize * 0.8f;
         _capturedFontSize = _squareSize * 0.4f;
 
@@ -93,10 +99,10 @@ public class GameUI
             var left = new RectInt((_margin, x_y + _topMargin + _squareSize), (0, x_y + _topMargin));
             var right = new RectInt((left.LowerRight.X + _boardEnd, left.LowerRight.Y), (left.UpperLeft.X + _boardEnd, left.UpperLeft.Y));
 
-            renderer.DrawText(surface, fileText, FontFamily, _labelFontSize, _mainFontColor, top, vertAlignment: TextAlign.Center);
-            renderer.DrawText(surface, fileText, FontFamily, _labelFontSize, _mainFontColor, bottom, vertAlignment: TextAlign.Center);
-            renderer.DrawText(surface, rankText, FontFamily, _labelFontSize, _mainFontColor, left, TextAlign.Center, vertAlignment: TextAlign.Center);
-            renderer.DrawText(surface, rankText, FontFamily, _labelFontSize, _mainFontColor, right, TextAlign.Center, vertAlignment: TextAlign.Center);
+            renderer.DrawText(surface, fileText, _labelFont, _labelFontSize, _mainFontColor, top, vertAlignment: TextAlign.Center);
+            renderer.DrawText(surface, fileText, _labelFont, _labelFontSize, _mainFontColor, bottom, vertAlignment: TextAlign.Center);
+            renderer.DrawText(surface, rankText, _labelFont, _labelFontSize, _mainFontColor, left, TextAlign.Center, vertAlignment: TextAlign.Center);
+            renderer.DrawText(surface, rankText, _labelFont, _labelFontSize, _mainFontColor, right, TextAlign.Center, vertAlignment: TextAlign.Center);
         }
 
         // active player indicator
@@ -160,7 +166,7 @@ public class GameUI
                 var w = (int)Math.Round(_capturedFontSize * 1.4);
                 var h = w;
                 var layoutCount = new RectInt((pieceX + w, y + h), (pieceX, y));
-                renderer.DrawText(surface, Convert.ToString(count), FontFamily, _capturedFontSize, _mainFontColor, layoutCount);
+                renderer.DrawText(surface, Convert.ToString(count), _labelFont, _capturedFontSize, _mainFontColor, layoutCount, vertAlignment: TextAlign.Center);
                 pieceX += count <= 9 ? w : 2 * w;
 
                 var layoutPiece = new RectInt((pieceX + w, y + h), (pieceX, y));
@@ -211,14 +217,14 @@ public class GameUI
         }
     }
 
-    private static void DrawPiece<TRenderer, TSurface>(TRenderer renderer, TSurface surface, Piece piece, RectInt rect, float fontSize)
+    private void DrawPiece<TRenderer, TSurface>(TRenderer renderer, TSurface surface, Piece piece, RectInt rect, float fontSize)
         where TRenderer : Renderer<TSurface>
     {
         var whiteText = char.ToString(piece.PieceType.ToUnicode(Side.White));
         var blackText = char.ToString(piece.PieceType.ToUnicode(Side.Black));
 
-        renderer.DrawText(surface, blackText, FontFamily, fontSize, piece.Side is Side.White ? FontColorWhite : FontColorBlack, rect, vertAlignment: TextAlign.Center);
-        renderer.DrawText(surface, whiteText, FontFamily, fontSize, piece.Side is Side.White ? FontColorBlack : FontColorGrey,  rect, vertAlignment: TextAlign.Center);
+        renderer.DrawText(surface, blackText, _pieceFont, fontSize, piece.Side is Side.White ? FontColorWhite : FontColorBlack, rect, vertAlignment: TextAlign.Center);
+        renderer.DrawText(surface, whiteText, _pieceFont, fontSize, piece.Side is Side.White ? FontColorBlack : FontColorGrey,  rect, vertAlignment: TextAlign.Center);
     }
 
     public Position? FindSelected(int x, int y)

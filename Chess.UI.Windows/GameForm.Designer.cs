@@ -28,6 +28,7 @@
         /// </summary>
         private void InitializeComponent()
         {
+            Lib.Game game1 = new Lib.Game();
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(GameForm));
             gamePanel1 = new GamePanel();
             tableLayoutPanel1 = new TableLayoutPanel();
@@ -44,10 +45,11 @@
             // gamePanel1
             // 
             gamePanel1.Dock = DockStyle.Fill;
+            gamePanel1.Game = game1;
             gamePanel1.Location = new Point(3, 35);
             gamePanel1.Name = "gamePanel1";
             tableLayoutPanel1.SetRowSpan(gamePanel1, 2);
-            gamePanel1.Size = new Size(705, 694);
+            gamePanel1.Size = new Size(698, 694);
             gamePanel1.TabIndex = 0;
             gamePanel1.GameUpdated += gamePanel1_GameUpdated;
             // 
@@ -71,7 +73,7 @@
             tableLayoutPanel1.RowStyles.Add(new RowStyle(SizeType.Absolute, 32F));
             tableLayoutPanel1.RowStyles.Add(new RowStyle(SizeType.Absolute, 20F));
             tableLayoutPanel1.RowStyles.Add(new RowStyle());
-            tableLayoutPanel1.Size = new Size(949, 732);
+            tableLayoutPanel1.Size = new Size(939, 732);
             tableLayoutPanel1.TabIndex = 1;
             // 
             // labelMoveNumber
@@ -79,9 +81,9 @@
             labelMoveNumber.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             labelMoveNumber.AutoSize = true;
             labelMoveNumber.Font = new Font("Segoe UI Symbol", 12F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            labelMoveNumber.Location = new Point(714, 52);
+            labelMoveNumber.Location = new Point(707, 52);
             labelMoveNumber.Name = "labelMoveNumber";
-            labelMoveNumber.Size = new Size(41, 680);
+            labelMoveNumber.Size = new Size(40, 680);
             labelMoveNumber.TabIndex = 5;
             labelMoveNumber.Text = "No";
             labelMoveNumber.TextAlign = ContentAlignment.TopRight;
@@ -91,7 +93,7 @@
             label1.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left;
             label1.AutoSize = true;
             label1.Font = new Font("Segoe UI", 14.25F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            label1.Location = new Point(761, 0);
+            label1.Location = new Point(753, 0);
             label1.Name = "label1";
             label1.Size = new Size(67, 32);
             label1.TabIndex = 4;
@@ -104,7 +106,7 @@
             flowLayoutPanel1.Dock = DockStyle.Fill;
             flowLayoutPanel1.Location = new Point(3, 3);
             flowLayoutPanel1.Name = "flowLayoutPanel1";
-            flowLayoutPanel1.Size = new Size(705, 26);
+            flowLayoutPanel1.Size = new Size(698, 26);
             flowLayoutPanel1.TabIndex = 1;
             // 
             // labelGameState
@@ -124,9 +126,9 @@
             labelPliesWhite.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             labelPliesWhite.AutoSize = true;
             labelPliesWhite.Font = new Font("Segoe UI Symbol", 12F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            labelPliesWhite.Location = new Point(761, 52);
+            labelPliesWhite.Location = new Point(753, 52);
             labelPliesWhite.Name = "labelPliesWhite";
-            labelPliesWhite.Size = new Size(88, 680);
+            labelPliesWhite.Size = new Size(87, 680);
             labelPliesWhite.TabIndex = 3;
             labelPliesWhite.Text = "White";
             // 
@@ -135,9 +137,9 @@
             labelPliesBlack.Anchor = AnchorStyles.Top | AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
             labelPliesBlack.AutoSize = true;
             labelPliesBlack.Font = new Font("Segoe UI Symbol", 12F, FontStyle.Regular, GraphicsUnit.Point, 0);
-            labelPliesBlack.Location = new Point(855, 52);
+            labelPliesBlack.Location = new Point(846, 52);
             labelPliesBlack.Name = "labelPliesBlack";
-            labelPliesBlack.Size = new Size(91, 680);
+            labelPliesBlack.Size = new Size(90, 680);
             labelPliesBlack.TabIndex = 2;
             labelPliesBlack.Text = "Black";
             // 
@@ -146,7 +148,7 @@
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             BackColor = SystemColors.ControlLight;
-            ClientSize = new Size(949, 732);
+            ClientSize = new Size(939, 732);
             Controls.Add(tableLayoutPanel1);
             Icon = (Icon)resources.GetObject("$this.Icon");
             Name = "GameForm";

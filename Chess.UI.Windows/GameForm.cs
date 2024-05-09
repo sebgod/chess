@@ -14,11 +14,21 @@ public partial class GameForm : Form
 
     private void MainForm_ResizeEnd(object sender, EventArgs e)
     {
+        if (DesignMode)
+        {
+            return;
+        }
+
         gamePanel1.NewGameUI();
     }
 
     private void MainForm_Resize(object sender, EventArgs e)
     {
+        if (DesignMode)
+        {
+            return;
+        }
+
         // When window state changes
         if (WindowState != LastWindowState)
         {

@@ -18,7 +18,10 @@ namespace Chess.UI.Windows
             set
             {
                 _game = value;
-                NewGameUI();
+                if (!IsAncestorSiteInDesignMode)
+                {
+                    NewGameUI();
+                }
             }
         }
 
