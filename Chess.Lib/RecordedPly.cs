@@ -40,18 +40,26 @@ public static class RecordedPlyExtensions
 {
     public static string ToPGN(this ImmutableList<RecordedPly> plies)
     {
-        var sb = new StringBuilder(plies.Count * 10);
+        var sb = new StringBuilder(plies.Count * 20);
 
         for (var i = 0; i < plies.Count; i++)
         {
+            var (idxStr, plyStr) = plies.ToPGN(i);
             if (i % 2 == 0)
             {
-                sb.AppendFormat("{0,4}", $"{(i / 2) + 1}.").Append(' ');
+                sb.Append(idxStr).Append(' ');
             }
 
-            sb.Append(plies[i]).Append(' ');
+            sb.Append(plyStr).Append(' ');
         }
 
         return sb.ToString().TrimEnd();
+    }
+
+    public static (string Idx, string Ply) ToPGN(this ImmutableList<RecordedPly> plies, int index)
+    {
+        var idxStr = string.Format("{0,4}{1}", (index / 2) + 1, index % 2 == 0 ? "." : "...");
+
+        return (idxStr, plies[index].ToString());
     }
 }

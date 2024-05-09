@@ -52,12 +52,21 @@ public partial class GameForm : Form
     private void GameForm_Shown(object sender, EventArgs e)
     {
         UpdateGameStatus(gamePanel1);
+        UpdateMovePanel(tlpMoves);
+    }
+
+    private static void UpdateMovePanel(TableLayoutPanel panel)
+    {
+        panel.HorizontalScroll.Maximum = 0;
+        panel.AutoScroll = false;
+        panel.VerticalScroll.Visible = false;
+        panel.AutoScroll = true;
     }
 
     private void UpdateGameStatus(GamePanel gamePanel)
     {
-        var game = gamePanel.Game;
-        var plies = game.Plies;
+        var game    = gamePanel.Game;
+        var plies   = game.Plies;
 
         var sbMove  = new StringBuilder();
         var sbWhite = new StringBuilder();
@@ -65,21 +74,20 @@ public partial class GameForm : Form
 
         for (var i = 0; i <  plies.Count; i++)
         {
-            var ply = plies[i].ToString();
+            var (idxStr, plyStr) = plies.ToPGN(i);
             if (i % 2 == 0)
             {
-                sbMove.Append(i / 2 + 1).AppendLine(".");
-                sbWhite.AppendLine(ply);
+                sbMove.AppendLine(idxStr);
+                sbWhite.AppendLine(plyStr);
             }
             else
             {
-                sbBlack.AppendLine(ply);
+                sbBlack.AppendLine(plyStr);
             }
         }
 
         labelMoveNumber.Text = sbMove.ToString();
         labelPliesWhite.Text = sbWhite.ToString();
         labelPliesBlack.Text = sbBlack.ToString();
-        labelGameState.Text  = game.GameStatus.ToMessage(game.IsFinished ? game.Winner : game.CurrentSide);
     }
 }

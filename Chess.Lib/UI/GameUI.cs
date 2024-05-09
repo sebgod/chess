@@ -31,9 +31,9 @@ public class GameUI
 
     private readonly RGBAColor8B _mainFontColor;
 
-    private const int SquaresNeeded = 12;
     private const int PieceTypeStride = 7;
     private const int BorderWidth = 2;
+    private const float SquaresNeeded = 10.5f;
 
     public GameUI(Game game, int uiSizeX, int uiSizeY, Position? selected = null, Position? pendingPromotion = null, string labelFont = FontDejaVuSans, string pieceFont = FontMerida)
     {
@@ -41,7 +41,7 @@ public class GameUI
         _squareSize = CalculateSquareSize(uiSizeX, uiSizeY);
         _margin = _squareSize / 2;
 
-        _topMargin = (int)(_squareSize * 0.6);
+        _topMargin = (int)(_squareSize * 0.5);
         _boardEnd = _squareSize * 8 + _margin;
 
         _mainFontColor = FontColorBlack;
@@ -55,7 +55,7 @@ public class GameUI
         PendingPromotion = pendingPromotion;
     }
 
-    public static int CalculateSquareSize(int uiSizeX, int uiSizeY) => Math.Min(uiSizeX, uiSizeY) / SquaresNeeded;
+    public static int CalculateSquareSize(int uiSizeX, int uiSizeY) => (int)(Math.Min(uiSizeY, uiSizeX) / SquaresNeeded);
 
     public Game Game { get; }
 
