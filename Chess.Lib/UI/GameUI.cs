@@ -1,5 +1,4 @@
 ﻿using System.Collections.Immutable;
-using System.Drawing;
 
 namespace Chess.Lib.UI;
 
@@ -154,6 +153,7 @@ public class GameUI
         else if (Game is { GameStatus: GameStatus.Checkmate or GameStatus.Checkmate })
         {
             renderer.FillRectangle(surface, boardRect, OverlayFill);
+
             var message = Game.GameStatus.ToMessage(Game.IsFinished ? Game.Winner : Game.CurrentSide);
             renderer.DrawText(surface, message, _labelFont, _capturedFontSize, _mainFontColor, boardRect, vertAlignment: TextAlign.Center);
         }
@@ -342,12 +342,13 @@ public class GameUI
         }
         else if (action is { IsMove: true})
         {
+            var prevStatus = Game.GameStatus;
             var result = Game.TryMove(action);
             if (result.IsMoveOrCapture())
             {
                 Selected = default;
 
-                if (result.IsCapture() || result is ActionResult.Castling || Game.GameStatus is not GameStatus.Ongoing)
+                if (result.IsCapture() || result is ActionResult.Castling || Game.GameStatus != prevStatus)
                 {
                     return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
                 }
