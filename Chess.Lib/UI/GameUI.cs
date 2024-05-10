@@ -10,13 +10,14 @@ public class GameUI
     private const string FontDejaVuSans = "Fonts/DejaVuSans.ttf";
     private const string FontMerida = "Fonts/Merida.ttf";
 
-    private static readonly RGBAColor8B FontColorBlack  = new RGBAColor8B(0, 0, 0, 0xff);
-    private static readonly RGBAColor8B FontColorWhite  = new RGBAColor8B(0xfd, 0xfd, 0xfd, 0xff);
-    private static readonly RGBAColor8B FontColorGrey   = new RGBAColor8B(0x70, 0x70, 0x70, 0xff);
-    private static readonly RGBAColor8B BlackSquareFill = new RGBAColor8B(0xD1, 0x8B, 0x47, 0xff);
-    private static readonly RGBAColor8B WhiteSquareFill = new RGBAColor8B(0xFF, 0xCE, 0x9E, 0xff);
-    private static readonly RGBAColor8B OverlayFill = new RGBAColor8B(0xFF, 0xCE, 0x9E, 0xCC);
+    private static readonly RGBAColor8B FontColorBlack     = new RGBAColor8B(0, 0, 0, 0xff);
+    private static readonly RGBAColor8B FontColorWhite     = new RGBAColor8B(0xfd, 0xfd, 0xfd, 0xff);
+    private static readonly RGBAColor8B FontColorGrey      = new RGBAColor8B(0x70, 0x70, 0x70, 0xff);
+    private static readonly RGBAColor8B BlackSquareFill    = new RGBAColor8B(0xD1, 0x8B, 0x47, 0xff);
+    private static readonly RGBAColor8B WhiteSquareFill    = new RGBAColor8B(0xFF, 0xCE, 0x9E, 0xff);
+    private static readonly RGBAColor8B OverlayFill        = new RGBAColor8B(0xFF, 0xCE, 0x9E, 0xCC);
     private static readonly RGBAColor8B SelectedSquareFill = new RGBAColor8B(0xCD, 0x5C, 0x5C, 0xff);
+    private static readonly RGBAColor8B CheckSquareFill    = new RGBAColor8B(0xE9, 0xD5, 0x02, 0xff);
 
     private readonly int _margin;
     private readonly int _squareSize;
@@ -72,9 +73,9 @@ public class GameUI
         RenderBoard(renderer, surface, clip);
 
         // board border
-        var borderStart = _margin - BorderWidth / 2;
-        var borderEnd = _boardEnd + BorderWidth / 2;
-        var borderRect = new RectInt((borderEnd, borderEnd + _topMargin), (borderStart, borderStart  + _topMargin));
+
+        var boardRect = new RectInt((_boardEnd, _topMargin + _boardEnd), (_margin, _topMargin + _margin));
+        var borderRect = boardRect.Inflate(-BorderWidth / 2);
 
         if (clip.IsContainedWithin(borderRect))
         {
@@ -134,8 +135,7 @@ public class GameUI
         // promote piece type selection box
         if (PendingPromotion is { })
         {
-            var overlay = new RectInt((_boardEnd, _topMargin + _boardEnd), (_margin, _topMargin + _margin));
-            renderer.FillRectangle(surface, overlay, OverlayFill);
+            renderer.FillRectangle(surface, boardRect, OverlayFill);
 
             var box = PromotePieceTypeSelectionBox(currentSide);
             var offX = box.UpperLeft.X;
@@ -150,6 +150,12 @@ public class GameUI
 
                 DrawPiece(renderer, surface, new Piece((PieceType)(i + (int)PieceType.Knight), currentSide), squareRect, _pieceFontSize);
             }
+        }
+        else if (Game is { GameStatus: GameStatus.Checkmate or GameStatus.Checkmate })
+        {
+            renderer.FillRectangle(surface, boardRect, OverlayFill);
+            var message = Game.GameStatus.ToMessage(Game.IsFinished ? Game.Winner : Game.CurrentSide);
+            renderer.DrawText(surface, message, _labelFont, _capturedFontSize, _mainFontColor, boardRect, vertAlignment: TextAlign.Center);
         }
     }
 
@@ -198,16 +204,28 @@ public class GameUI
                 }
 
                 var position = Position.FromIndex(fileIdx, rankIdx);
+                var piece = Game[position];
 
-                var squareFill = Selected == position
-                    ? SelectedSquareFill
-                    : (fileIdx + rankIdx) % 2 == 0
-                        ? BlackSquareFill
-                        : WhiteSquareFill;
+                RGBAColor8B squareFill;
+
+                if (Selected == position)
+                {
+                    squareFill = SelectedSquareFill;
+                }
+                else if (piece is { PieceType: PieceType.King } && Game is { GameStatus: GameStatus.Check } && piece.Side == Game.CurrentSide)
+                {
+                    squareFill = CheckSquareFill;
+                }
+                else if ((fileIdx + rankIdx) % 2 == 0)
+                {
+                    squareFill = BlackSquareFill;
+                }
+                else
+                {
+                    squareFill = WhiteSquareFill;
+                }
 
                 renderer.FillRectangle(surface, rect, squareFill);
-
-                var piece = Game[position];
 
                 if (piece.PieceType is not PieceType.None)
                 {
@@ -329,7 +347,7 @@ public class GameUI
             {
                 Selected = default;
 
-                if (result.IsCapture() || result is ActionResult.Castling)
+                if (result.IsCapture() || result is ActionResult.Castling || Game.GameStatus is not GameStatus.Ongoing)
                 {
                     return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
                 }
