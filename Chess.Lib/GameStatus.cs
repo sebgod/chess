@@ -19,9 +19,12 @@ public static class GameStatusExtensions
     public static string ToMessage(this GameStatus result, Side side) => result switch
     {
         GameStatus.Stalemate => "Stalemate. Game is draw.",
-        GameStatus.Checkmate => $"Checkmate. {side} wins.",
-        GameStatus.Ongoing => $"{side} to play.",
-        GameStatus.Check => $"{side} is in check.",
+        GameStatus.Checkmate when side is Side.White => "Checkmate. White wins.",
+        GameStatus.Checkmate when side is Side.Black => "Checkmate. Black wins.",
+        GameStatus.Ongoing when side is Side.White => "White to play.",
+        GameStatus.Ongoing when side is Side.Black => "Black to play.",
+        GameStatus.Check when side is Side.White => "White king is in check.",
+        GameStatus.Check when side is Side.Black => "Black king is in check.",
         _ => throw new ArgumentException($"Invalid game result {result}", nameof(result))
     };
 }
