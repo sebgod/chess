@@ -27,6 +27,9 @@
             Load += GamePanel_Load;
             Paint += GamePanel_Paint;
             MouseClick += GamePanel_MouseClick;
+            MouseDown += GamePanel_MouseDown;
+            MouseMove += GamePanel_MouseMove;
+            MouseUp += GamePanel_MouseUp;
             ResumeLayout(false);
         }
 

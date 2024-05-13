@@ -44,22 +44,21 @@ public static class RecordedPlyExtensions
 
         for (var i = 0; i < plies.Count; i++)
         {
-            var (idxStr, plyStr) = plies.ToPGN(i);
+            var (idxStr, ply) = plies.GetRecordAndPGNIdx(i);
             if (i % 2 == 0)
             {
                 sb.Append(idxStr).Append(' ');
             }
 
-            sb.Append(plyStr).Append(' ');
+            sb.Append(ply).Append(' ');
         }
 
         return sb.ToString().TrimEnd();
     }
 
-    public static (string Idx, string Ply) ToPGN(this ImmutableList<RecordedPly> plies, int index)
+    public static (string Idx, RecordedPly Ply) GetRecordAndPGNIdx(this ImmutableList<RecordedPly> plies, int index)
     {
         var idxStr = string.Format("{0,4}{1}", (index / 2) + 1, index % 2 == 0 ? "." : "...");
-
-        return (idxStr, plies[index].ToString());
+        return (idxStr, plies[index]);
     }
 }

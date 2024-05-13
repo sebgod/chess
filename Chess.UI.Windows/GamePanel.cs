@@ -1,4 +1,4 @@
-﻿ using Chess.Lib;
+﻿using Chess.Lib;
 using Chess.Lib.UI;
 using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
@@ -9,6 +9,7 @@ namespace Chess.UI.Windows
     {
         private GraphisRenderer? _renderer;
         private Game _game = new Game();
+        private Point? _mouseLeftDown;
 
         [Browsable(false)]
         [Bindable(BindableSupport.No)]
@@ -37,13 +38,11 @@ namespace Chess.UI.Windows
                 selected = ui.Selected;
                 pendingPromotion = ui.PendingPromotion;
 
-                // exit early as the effective size didn't change
-                if (ui.SquareSize == squareSize)
+                // clear cache due to font size change
+                if (ui.SquareSize != squareSize)
                 {
-                    return;
+                    FontCache.ClearCachedFonts();
                 }
-
-                FontCache.ClearCachedFonts();
             }
             else
             {
@@ -135,6 +134,31 @@ namespace Chess.UI.Windows
                 components?.Dispose();
             }
             base.Dispose(disposing);
+        }
+
+        private void GamePanel_MouseDown(object sender, MouseEventArgs e)
+        {
+            if (e.Button is MouseButtons.Left)
+            {
+                _mouseLeftDown = e.Location;
+            }
+        }
+
+        private void GamePanel_MouseUp(object sender, MouseEventArgs e)
+        {
+            if (e.Button is MouseButtons.Left)
+            {
+                _mouseLeftDown = null;
+            }
+        }
+
+        private void GamePanel_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (_mouseLeftDown is { } prev && GameUI is { } ui)
+            {
+                var deltaY = e.Location.Y - prev.Y;
+                ui.ScrollPliesDelta = deltaY;
+            }
         }
     }
 }

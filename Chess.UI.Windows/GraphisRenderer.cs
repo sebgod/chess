@@ -23,7 +23,7 @@ public sealed class GraphisRenderer(FontCache fontCache) : Renderer<Graphics>
         surface.FillEllipse(brush, rect.ToRectF());
     }
 
-    public override void DrawText(Graphics surface, string text, string fontFileOrFamily, float fontSize, RGBAColor8B fontColor, in RectInt rect,
+    public override void DrawText(Graphics surface, ReadOnlySpan<char> text, string fontFileOrFamily, float fontSize, RGBAColor8B fontColor, in RectInt rect,
         TextAlign horizAlignment = TextAlign.Near, TextAlign vertAlignment = TextAlign.Center)
     {
         var fontFamily = fontCache.GetFontFamily(fontFileOrFamily);

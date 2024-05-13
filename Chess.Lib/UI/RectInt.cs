@@ -2,6 +2,10 @@
 
 public readonly record struct RectInt((int X, int Y) LowerRight, (int X, int Y) UpperLeft)
 {
+    public int Width => Math.Abs(LowerRight.X - UpperLeft.X);
+
+    public int Height => Math.Abs(LowerRight.Y - UpperLeft.Y);
+
     public readonly bool OverlapsWith(in RectInt other)
         => other.LowerRight.X >= UpperLeft.X && other.LowerRight.Y >= UpperLeft.Y && other.UpperLeft.X <= LowerRight.X && other.UpperLeft.Y <= LowerRight.Y;
 

@@ -29,7 +29,7 @@ public class MagickImageRenderer() : Renderer<MagickImage>()
         return new DrawableEllipse(x + rX, y + rY, rX, rY, 0, 360);
     }
 
-    public override void DrawText(MagickImage surface, string text, string fontFamily, float fontSize, RGBAColor8B fontColor, in RectInt layout,
+    public override void DrawText(MagickImage surface, ReadOnlySpan<char> text, string fontFamily, float fontSize, RGBAColor8B fontColor, in RectInt layout,
         TextAlign horizAlignment = TextAlign.Center, TextAlign vertAlignment = TextAlign.Near)
     {
         int x = layout.UpperLeft.X;
@@ -53,7 +53,7 @@ public class MagickImageRenderer() : Renderer<MagickImage>()
             FillColor =  GetColor(fontColor),
             Density = density,
         };
-        using var overlayImage = new MagickImage("caption:" + text, readSettings);
+        using var overlayImage = new MagickImage(string.Concat("caption:", text), readSettings);
         surface.Composite(overlayImage, Gravity.Northwest, x, y, CompositeOperator.Atop);
     }
 

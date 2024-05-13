@@ -14,14 +14,14 @@ public sealed class FontCache() : IDisposable
 
     public void Dispose()
     {
-        foreach (var familiy in _loadedFamilies.Values)
-        {
-            familiy.Dispose();
-        }
-
         foreach (var font in _cachedFonts.Values)
         {
             font.Dispose();
+        }
+
+        foreach (var familiy in _loadedFamilies.Values)
+        {
+            familiy.Dispose();
         }
 
         _fontCollection.Dispose();
