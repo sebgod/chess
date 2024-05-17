@@ -1,5 +1,4 @@
-﻿using Chess.Lib;
-using Chess.Lib.UI;
+﻿using Chess.Lib.UI;
 
 namespace Chess.UI.Windows;
 

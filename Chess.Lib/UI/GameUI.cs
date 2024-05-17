@@ -5,6 +5,8 @@ namespace Chess.Lib.UI;
 
 public readonly record struct RGBAColor8B(byte Red, byte Green, byte Blue, byte Alpha);
 
+public enum ScrollType { Pixel, Rows }
+
 public class GameUI
 {
     private const string FontDejaVuSans = "Fonts/DejaVuSans.ttf";
@@ -93,7 +95,7 @@ public class GameUI
 
     public Position? PendingPromotion { get; private set; }
 
-    public int ScrollPliesDelta { get; set; }
+    public int PlyListOffset { get; private set; }
 
     public int SquareSize => _squareSize;
 
@@ -147,7 +149,8 @@ public class GameUI
         var plies = Game.Plies;
         var plyCount = plies.Count;
 
-        if (plyCount > 0)
+        var plyRect = PlyDisplayRect();
+        if (plyCount > 0 && plyRect.IsContainedWithin(clip))
         {
 #if DEBUG
             Span<byte> capturedPieceCounts = new byte[2 * PieceTypeStride];
@@ -157,10 +160,9 @@ public class GameUI
             var sbPlyNo = new StringBuilder();
             var sbWhite = new StringBuilder();
             var sbBlack = new StringBuilder();
-            var plyRect = PlyDisplayRect();
-            var plyFontSize = MathF.Min(_labelFontSize, MathF.Min(plyRect.Width * 0.07f, plyRect.Height * 0.8f));
-            var rowSize = plyFontSize * 1.2f;
-            var maxRows = (int)(plyRect.Height / rowSize);
+            var plyFontSize = GetPlyFontSize(plyRect);
+            var (_, maxRows) = GetPlyRowCount(plyRect, plyFontSize);
+            var plyShownRows = 0;
 
             for (var plyIdx = 0; plyIdx < plyCount; plyIdx++)
             {
@@ -172,7 +174,11 @@ public class GameUI
                     capturedPieceCounts[idx]++;
                 }
 
-                if (plyIdx - maxRows < plyCount)
+                var rowsDiff = (int)MathF.Ceiling(plyCount * 0.5f - maxRows);
+                int skipRows = rowsDiff <= 0 ? 0 : Math.Clamp(rowsDiff + PlyListOffset, -rowsDiff, +rowsDiff);
+                var plyDisplayRow = plyIdx / 2 - skipRows;
+
+                if (plyDisplayRow >= 0 && plyShownRows < maxRows)
                 {
                     if (plyIdx % 2 == 0)
                     {
@@ -181,14 +187,24 @@ public class GameUI
                     }
                     else
                     {
+                        plyShownRows++;
                         sbBlack.AppendLine(ply.ToString());
                     }
                 }
             }
 
-            DrawCapturedText(renderer, surface, capturedPieceCounts, Side.White, _margin, _topMargin + _boardEnd + _margin);
-            DrawCapturedText(renderer, surface, capturedPieceCounts, Side.Black, _margin, _topMargin - _margin);
-            
+            var whiteCapturedTextY = _topMargin + _boardEnd + _margin;
+            if (clip.Contains(_margin, whiteCapturedTextY))
+            {
+                DrawCapturedText(renderer, surface, capturedPieceCounts, Side.White, _margin, whiteCapturedTextY);
+            }
+
+            var blackCapturedTextY = _topMargin - _margin;
+            if (clip.Contains(_margin, blackCapturedTextY))
+            {
+                DrawCapturedText(renderer, surface, capturedPieceCounts, Side.Black, _margin, blackCapturedTextY);
+            }
+
             var plyNoRect = new RectInt(((int)(plyRect.LowerRight.X - plyRect.Width * 0.85f), plyRect.LowerRight.Y), plyRect.UpperLeft);
             var whiteRect = new RectInt(((int)(plyRect.LowerRight.X - plyRect.Width * 0.4f), plyRect.LowerRight.Y), ((int)(plyRect.UpperLeft.X + plyRect.Width * 0.2f), plyRect.UpperLeft.Y));
             var blackRect = new RectInt(plyRect.LowerRight, ((int)(plyRect.UpperLeft.X + plyRect.Width * 0.6f), plyRect.UpperLeft.Y));
@@ -372,11 +388,55 @@ public class GameUI
         var diff = _uiSizeX - _uiSizeY;
         var landscape = diff >= _squareSize * PortraitFlipFactor;
         var xStart = landscape ? xy : _margin;
-        var yStart = landscape ? _topMargin : xy + _topMargin + (int)MathF.Ceiling(_margin * 0.2f);
+        var yStart = landscape ? _topMargin : xy + _topMargin + (int)MathF.Ceiling(_margin * 0.4f);
         var xEnd = Math.Min(_uiSizeX - _margin / 2, xStart + _squareSize * 5);
-        var yEnd = _uiSizeY - _margin;
+        var yEnd = _uiSizeY - _margin / 2;
 
         return new RectInt((xEnd, yEnd), (xStart, yStart));
+    }
+
+    private float GetPlyFontSize(in RectInt plyRect) => MathF.Min(_labelFontSize, MathF.Min(plyRect.Width * 0.07f, plyRect.Height * 0.8f));
+
+    private static (float RowSize, int MaxRows) GetPlyRowCount(in RectInt plyRect, float plyFontSize)
+    {
+        var rowSize = plyFontSize * 1.2f;
+        var maxRows = (int)(plyRect.Height / rowSize);
+        return (rowSize, maxRows);
+    }
+
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) PlyListScroll(int delta, ScrollType scrollType)
+    {
+        var rect = PlyDisplayRect();
+        var fontSize = GetPlyFontSize(rect);
+        var (rowSize, maxRows) = GetPlyRowCount(rect, fontSize);
+        var deltaY = scrollType switch
+        {
+            ScrollType.Pixel => delta / rowSize,
+            ScrollType.Rows => delta,
+            _ => throw new ArgumentException($"Invalid scroll type {scrollType}", nameof(scrollType))
+        };
+
+        var plies = Game.Plies;
+        int newOffset;
+        if (maxRows >= plies.Count / 2)
+        {
+            newOffset = 0;
+        }
+        else
+        {
+            var diff = (int)MathF.Ceiling(plies.Count * 0.5f - maxRows);
+            newOffset = Math.Clamp((int)MathF.Round(deltaY), -diff, +diff);
+        }
+
+        if (newOffset != PlyListOffset)
+        {
+            PlyListOffset = newOffset;
+            return (UIResponse.NeedsRefresh, [rect]);
+        }
+        else
+        {
+            return (UIResponse.None, []);
+        }
     }
 
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TryPerformAction(int x, int y)
@@ -421,7 +481,7 @@ public class GameUI
                 return (UIResponse.None, []);
             }
         }
-        else if (action is { IsMove: true})
+        else if (action is { IsMove: true })
         {
             var prevStatus = Game.GameStatus;
             var result = Game.TryMove(action);

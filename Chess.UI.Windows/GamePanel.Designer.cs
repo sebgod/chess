@@ -19,8 +19,8 @@
             // 
             // GamePanel
             // 
-            AutoScaleDimensions = new SizeF(7F, 15F);
-            AutoScaleMode = AutoScaleMode.Font;
+            AutoScaleDimensions = new SizeF(96F, 96F);
+            AutoScaleMode = AutoScaleMode.Dpi;
             DoubleBuffered = true;
             Name = "GamePanel";
             Size = new Size(529, 515);
@@ -28,6 +28,7 @@
             Paint += GamePanel_Paint;
             MouseClick += GamePanel_MouseClick;
             MouseDown += GamePanel_MouseDown;
+            MouseEnter += GamePanel_MouseEnter;
             MouseMove += GamePanel_MouseMove;
             MouseUp += GamePanel_MouseUp;
             ResumeLayout(false);
