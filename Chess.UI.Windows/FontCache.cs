@@ -31,7 +31,16 @@ public sealed class FontCache() : IDisposable
     {
         if (!_loadedFamilies.TryGetValue(fontFileOrFamily, out var fontFamily))
         {
-            _fontCollection.AddFontFile(fontFileOrFamily);
+            if (fontFileOrFamily.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase) || fontFileOrFamily.EndsWith(".otf", StringComparison.OrdinalIgnoreCase))
+            {
+                var loc = Path.GetDirectoryName(typeof(FontCache).Assembly.Location);
+                var fontPath = loc is { } ? Path.Combine(loc, fontFileOrFamily) : fontFileOrFamily;
+                _fontCollection.AddFontFile(fontPath);
+            }
+            else
+            {
+                _fontCollection.AddFontFile(fontFileOrFamily);
+            }
             fontFamily = _fontCollection.Families[^1];
 
             _loadedFamilies.Add(fontFileOrFamily, fontFamily);
