@@ -33,7 +33,7 @@ public static class GraphicsExtensions
     };
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static Color ToColor(this RGBAColor8B color) => Color.FromArgb(color.Alpha, color.Red, color.Green, color.Blue);
+    public static Color ToColor(this RGBAColor32 color) => Color.FromArgb(color.Alpha, color.Red, color.Green, color.Blue);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static RectangleF ToRectF(this in RectInt rect) => RectangleF.FromLTRB(rect.UpperLeft.X, rect.UpperLeft.Y, rect.LowerRight.X, rect.LowerRight.Y);

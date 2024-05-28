@@ -4,7 +4,7 @@ using Chess.Lib.UI;
 using ImageMagick;
 
 var game = new Game();
-using var image = new MagickImage(new MagickColor(0xff, 0xff, 0xff), 200 * 12, 200 * 12)
+using var image = new MagickImage(MagickColors.White, 200 * 12, 200 * 12)
 {
     Format = MagickFormat.Png,
     Density = new Density(90, DensityUnit.PixelsPerInch)

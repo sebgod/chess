@@ -7,9 +7,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Chess.Lib", "Chess.Lib\Ches
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Chess.Tests", "Chess.Tests\Chess.Tests.csproj", "{6E8FC927-6D05-4F75-BC60-0751A62566D9}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Chess.UI.Windows", "Chess.UI.Windows\Chess.UI.Windows.csproj", "{4665628B-2252-4821-B642-09C5D3ADE317}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Chess.UI.Windows", "Chess.UI.Windows\Chess.UI.Windows.csproj", "{4665628B-2252-4821-B642-09C5D3ADE317}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Chess.Console", "Chess.Console\Chess.Console.csproj", "{C37F3973-87C4-4FA2-AD35-B033A6FB27E4}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Chess.Console", "Chess.Console\Chess.Console.csproj", "{C37F3973-87C4-4FA2-AD35-B033A6FB27E4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

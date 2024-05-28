@@ -3,7 +3,7 @@ using System.Text;
 
 namespace Chess.Lib.UI;
 
-public readonly record struct RGBAColor8B(byte Red, byte Green, byte Blue, byte Alpha);
+public readonly record struct RGBAColor32(byte Red, byte Green, byte Blue, byte Alpha);
 
 public enum ScrollType { Pixel, Rows }
 
@@ -12,14 +12,14 @@ public class GameUI
     private const string FontDejaVuSans = "Fonts/DejaVuSans.ttf";
     private const string FontMerida     = "Fonts/Merida.ttf";
 
-    private static readonly RGBAColor8B FontColorBlack     = new RGBAColor8B(0, 0, 0, 0xff);
-    private static readonly RGBAColor8B FontColorWhite     = new RGBAColor8B(0xfd, 0xfd, 0xfd, 0xff);
-    private static readonly RGBAColor8B FontColorGrey      = new RGBAColor8B(0x70, 0x70, 0x70, 0xff);
-    private static readonly RGBAColor8B BlackSquareFill    = new RGBAColor8B(0xD1, 0x8B, 0x47, 0xff);
-    private static readonly RGBAColor8B WhiteSquareFill    = new RGBAColor8B(0xFF, 0xCE, 0x9E, 0xff);
-    private static readonly RGBAColor8B OverlayFill        = new RGBAColor8B(0xFF, 0xCE, 0x9E, 0xCC);
-    private static readonly RGBAColor8B SelectedSquareFill = new RGBAColor8B(0xCD, 0x5C, 0x5C, 0xff);
-    private static readonly RGBAColor8B CheckSquareFill    = new RGBAColor8B(0xE9, 0xD5, 0x02, 0xff);
+    private static readonly RGBAColor32 FontColorBlack     = new RGBAColor32(0, 0, 0, 0xff);
+    private static readonly RGBAColor32 FontColorWhite     = new RGBAColor32(0xfd, 0xfd, 0xfd, 0xff);
+    private static readonly RGBAColor32 FontColorGrey      = new RGBAColor32(0x70, 0x70, 0x70, 0xff);
+    private static readonly RGBAColor32 BlackSquareFill    = new RGBAColor32(0xD1, 0x8B, 0x47, 0xff);
+    private static readonly RGBAColor32 WhiteSquareFill    = new RGBAColor32(0xFF, 0xCE, 0x9E, 0xff);
+    private static readonly RGBAColor32 OverlayFill        = new RGBAColor32(0xFF, 0xCE, 0x9E, 0xCC);
+    private static readonly RGBAColor32 SelectedSquareFill = new RGBAColor32(0xCD, 0x5C, 0x5C, 0xff);
+    private static readonly RGBAColor32 CheckSquareFill    = new RGBAColor32(0xE9, 0xD5, 0x02, 0xff);
 
     private readonly int _margin;
     private readonly int _squareSize;
@@ -35,7 +35,7 @@ public class GameUI
     private readonly float _pieceFontSize;
     private readonly float _capturedFontSize;
 
-    private readonly RGBAColor8B _mainFontColor;
+    private readonly RGBAColor32 _mainFontColor;
 
     private const int PieceTypeStride = 7;
     private const int BorderWidth = 2;
@@ -289,7 +289,7 @@ public class GameUI
                 var position = Position.FromIndex(fileIdx, rankIdx);
                 var piece = Game[position];
 
-                RGBAColor8B squareFill;
+                RGBAColor32 squareFill;
 
                 if (Selected == position)
                 {

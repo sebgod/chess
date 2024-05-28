@@ -5,16 +5,16 @@ namespace Chess.Console;
 
 public class MagickImageRenderer() : Renderer<MagickImage>()
 {
-    public override void FillRectangle(MagickImage surface, in RectInt rect, RGBAColor8B fillColor)
+    public override void FillRectangle(MagickImage surface, in RectInt rect, RGBAColor32 fillColor)
         => surface.Draw(GetDrawableRect(rect), new DrawableFillColor(GetColor(fillColor)), new DrawableFillOpacity(new Percentage(100)));
 
-    public override void FillEllipse(MagickImage surface, in RectInt rect, RGBAColor8B fillColor)
+    public override void FillEllipse(MagickImage surface, in RectInt rect, RGBAColor32 fillColor)
         => surface.Draw(GetDrawableEllipse(rect), new DrawableFillColor(GetColor(fillColor)), new DrawableFillOpacity(new Percentage(100)));
 
-    public override void DrawRectangle(MagickImage surface, in RectInt rect, RGBAColor8B strokeColor, int strokeWidth)
+    public override void DrawRectangle(MagickImage surface, in RectInt rect, RGBAColor32 strokeColor, int strokeWidth)
         => surface.Draw(GetDrawableRect(rect), new DrawableStrokeColor(GetColor(strokeColor)), new DrawableStrokeWidth(strokeWidth), new DrawableFillOpacity(new Percentage(0)));
 
-    public static MagickColor GetColor(RGBAColor8B fillColor) => MagickColor.FromRgba(fillColor.Red, fillColor.Green, fillColor.Blue, fillColor.Alpha);
+    public static MagickColor GetColor(RGBAColor32 fillColor) => MagickColor.FromRgba(fillColor.Red, fillColor.Green, fillColor.Blue, fillColor.Alpha);
 
     private static DrawableRectangle GetDrawableRect(in RectInt rect)
         => new DrawableRectangle(rect.UpperLeft.X, rect.UpperLeft.Y, rect.LowerRight.X, rect.LowerRight.Y);
@@ -29,7 +29,7 @@ public class MagickImageRenderer() : Renderer<MagickImage>()
         return new DrawableEllipse(x + rX, y + rY, rX, rY, 0, 360);
     }
 
-    public override void DrawText(MagickImage surface, ReadOnlySpan<char> text, string fontFamily, float fontSize, RGBAColor8B fontColor, in RectInt layout,
+    public override void DrawText(MagickImage surface, ReadOnlySpan<char> text, string fontFamily, float fontSize, RGBAColor32 fontColor, in RectInt layout,
         TextAlign horizAlignment = TextAlign.Center, TextAlign vertAlignment = TextAlign.Near)
     {
         int x = layout.UpperLeft.X;
