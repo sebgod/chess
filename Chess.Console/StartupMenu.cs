@@ -43,7 +43,7 @@ internal static class StartupMenu
         string title, string prompt, string[] items, CancellationToken cancellationToken)
     {
         var selected = 0;
-        DrawMenu(title, prompt, items, selected);
+        DrawMenu(title, prompt, items, selected, fullRedraw: true);
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -80,7 +80,7 @@ internal static class StartupMenu
         return 0;
     }
 
-    private static void DrawMenu(string title, string prompt, string[] items, int selected)
+    private static void DrawMenu(string title, string prompt, string[] items, int selected, bool fullRedraw = false)
     {
         var windowWidth = System.Console.WindowWidth;
         var windowHeight = System.Console.WindowHeight;
@@ -89,10 +89,12 @@ internal static class StartupMenu
         var totalLines = 4 + items.Length;
         var startRow = Math.Max(0, (windowHeight - totalLines) / 2);
 
-        System.Console.Clear();
-
-        WriteCenter(startRow, title, windowWidth);
-        WriteCenter(startRow + 2, prompt, windowWidth);
+        if (fullRedraw)
+        {
+            System.Console.Clear();
+            WriteCenterPadded(startRow, title, windowWidth);
+            WriteCenterPadded(startRow + 2, prompt, windowWidth);
+        }
 
         for (var i = 0; i < items.Length; i++)
         {
@@ -102,20 +104,25 @@ internal static class StartupMenu
             var row = startRow + 4 + i;
             if (i == selected)
             {
-                WriteCenter(row, label, windowWidth, ConsoleColor.Black, ConsoleColor.White);
+                WriteCenterPadded(row, label, windowWidth, ConsoleColor.Black, ConsoleColor.White);
             }
             else
             {
-                WriteCenter(row, label, windowWidth);
+                WriteCenterPadded(row, label, windowWidth);
             }
         }
     }
 
-    private static void WriteCenter(int row, string text, int windowWidth,
+    /// <summary>
+    /// Writes centered text padded to the full window width, erasing any stale content without a full clear.
+    /// </summary>
+    private static void WriteCenterPadded(int row, string text, int windowWidth,
         ConsoleColor? foreground = null, ConsoleColor? background = null)
     {
         var col = Math.Max(0, (windowWidth - text.Length) / 2);
-        System.Console.SetCursorPosition(col, row);
+        System.Console.SetCursorPosition(0, row);
+
+        System.Console.Write(new string(' ', col));
 
         if (foreground is { } fg && background is { } bg)
         {
@@ -128,5 +135,7 @@ internal static class StartupMenu
         {
             System.Console.Write(text);
         }
+
+        System.Console.Write(new string(' ', Math.Max(0, windowWidth - col - text.Length)));
     }
 }
