@@ -51,7 +51,6 @@ public class GameUI
         string pieceFont = FontMerida,
         RGBAColor32? mainFontColor = null,
         RGBAColor32? backgroundColor = null,
-        (Position To, bool IsCapture)? lastMove = null,
         (uint X, uint Y)? alignment = null)
     {
         Game = game;
@@ -84,7 +83,6 @@ public class GameUI
 
         Selected = selected;
         PendingPromotion = pendingPromotion;
-        LastMove = lastMove;
     }
 
     public static int CalculateSquareSize(uint uiSizeX, uint uiSizeY)
@@ -110,10 +108,12 @@ public class GameUI
     public Position? PendingPromotion { get; private set; }
 
     /// <summary>
-    /// The destination square of the last completed move, highlighted on the board.
-    /// Cleared when the next move is made.
+    /// The destination square of the last completed move, derived from game history.
     /// </summary>
-    public (Position To, bool IsCapture)? LastMove { get; private set; }
+    public (Position To, bool IsCapture)? LastMove =>
+        Game.Plies is [.., var last]
+            ? (last.To, last.Result.IsCapture())
+            : null;
 
     public int SquareSize => _squareSize;
 
@@ -128,7 +128,6 @@ public class GameUI
         pieceFont: _pieceFont,
         mainFontColor: _mainFontColor,
         backgroundColor: _backgroundColor,
-        lastMove: LastMove,
         alignment: _alignment);
 
     public void Render<TSurface, TRenderer>(TRenderer renderer, TSurface surface, in RectInt clip)
@@ -487,7 +486,6 @@ public class GameUI
             {
                 PendingPromotion = default;
                 Selected = default;
-                LastMove = (action.To, result is ActionResult.CaptureAndPromotion);
 
                 return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
             }
@@ -503,7 +501,6 @@ public class GameUI
             if (result.IsMoveOrCapture())
             {
                 Selected = default;
-                LastMove = (action.To, result.IsCapture());
 
                 // Terminal states show an overlay across the entire board
                 if (Game.GameStatus is GameStatus.Checkmate or GameStatus.Stalemate)
