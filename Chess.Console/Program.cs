@@ -10,11 +10,11 @@ Console.CancelKeyPress += (_, e) =>
     cts.Cancel();
 };
 
-var (gameMode, computerSide) = await StartupMenu.ShowAsync(cts.Token);
-
 using var terminal = new ConsoleTerminal();
 
 await terminal.EnterAsync();
+
+var (gameMode, computerSide) = await StartupMenu.ShowAsync(cts.Token);
 
 const int historyColumns = 24;
 const int statusBarRows = 1;

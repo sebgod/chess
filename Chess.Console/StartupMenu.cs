@@ -116,7 +116,7 @@ internal static class StartupMenu
             var row = startRow + 4 + i;
             if (i == selected)
             {
-                WriteCenterPadded(row, label, windowWidth, ConsoleColor.Black, ConsoleColor.White);
+                WriteCenterPadded(row, label, windowWidth, ConsoleColor.Yellow, ConsoleColor.DarkBlue);
             }
             else
             {
