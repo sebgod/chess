@@ -2,7 +2,7 @@
 
 namespace Chess.UI.Windows;
 
-public sealed class GraphisRenderer(FontCache fontCache) : Renderer<Graphics>
+public sealed class GraphicsRenderer(FontCache fontCache) : Renderer<Graphics>
 {
     public override void DrawRectangle(Graphics surface, in RectInt rect, RGBAColor32 strokeColor, int strokeWidth)
     {

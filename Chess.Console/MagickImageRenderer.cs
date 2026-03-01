@@ -1,5 +1,6 @@
 ﻿using Chess.Lib.UI;
 using ImageMagick;
+using ImageMagick.Drawing;
 
 namespace Chess.Console;
 
@@ -21,8 +22,8 @@ public class MagickImageRenderer() : Renderer<MagickImage>()
 
     private static DrawableEllipse GetDrawableEllipse(in RectInt rect)
     {
-        int x = rect.UpperLeft.X;
-        int y = rect.UpperLeft.Y;
+        var x = rect.UpperLeft.X;
+        var y = rect.UpperLeft.Y;
         var rX = (rect.LowerRight.X - x) * 0.5;
         var rY = (rect.LowerRight.Y - y) * 0.5;
 
@@ -32,10 +33,10 @@ public class MagickImageRenderer() : Renderer<MagickImage>()
     public override void DrawText(MagickImage surface, ReadOnlySpan<char> text, string fontFamily, float fontSize, RGBAColor32 fontColor, in RectInt layout,
         TextAlign horizAlignment = TextAlign.Center, TextAlign vertAlignment = TextAlign.Near)
     {
-        int x = layout.UpperLeft.X;
-        int y = layout.UpperLeft.Y;
-        int w = layout.LowerRight.X - x;
-        int h = layout.LowerRight.Y - y;
+        var x = layout.UpperLeft.X;
+        var y = layout.UpperLeft.Y;
+        var w = layout.LowerRight.X - x;
+        var h = layout.LowerRight.Y - y;
 
         var origDensity = surface.Density.ChangeUnits(DensityUnit.PixelsPerInch);
         var density = origDensity.X == 0 || origDensity.Y == 0 ? new Density(72, DensityUnit.PixelsPerInch) : origDensity;
@@ -45,8 +46,8 @@ public class MagickImageRenderer() : Renderer<MagickImage>()
         var readSettings = new MagickReadSettings
         {
             Font = fontFamily,
-            Width = w,
-            Height = h,
+            Width = (uint)w,
+            Height = (uint)h,
             TextGravity = GetGravity(horizAlignment, vertAlignment),
             FontPointsize = fontSize / factor, 
             BackgroundColor = new MagickColor(0, 0, 0, 0),
@@ -54,7 +55,7 @@ public class MagickImageRenderer() : Renderer<MagickImage>()
             Density = density,
         };
         using var overlayImage = new MagickImage(string.Concat("caption:", text), readSettings);
-        surface.Composite(overlayImage, Gravity.Northwest, x, y, CompositeOperator.Atop);
+        surface.Composite(overlayImage, Gravity.Northwest, (int)x, (int)y, CompositeOperator.Atop);
     }
 
     private static Gravity GetGravity(TextAlign horizAlignment, TextAlign vertAlignment)

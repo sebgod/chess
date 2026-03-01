@@ -1,11 +1,8 @@
 ﻿using System.Collections.Immutable;
-using System.Text;
 
 namespace Chess.Lib.UI;
 
 public readonly record struct RGBAColor32(byte Red, byte Green, byte Blue, byte Alpha);
-
-public enum ScrollType { Pixel, Rows }
 
 public class GameUI
 {
@@ -26,9 +23,6 @@ public class GameUI
     private readonly int _topMargin;
     private readonly int _boardEnd;
 
-    private readonly int _uiSizeX;
-    private readonly int _uiSizeY;
-
     private readonly string _labelFont;
     private readonly string _pieceFont;
     private readonly float _labelFontSize;
@@ -36,6 +30,7 @@ public class GameUI
     private readonly float _capturedFontSize;
 
     private readonly RGBAColor32 _mainFontColor;
+    private readonly RGBAColor32 _backgroundColor;
 
     private const int PieceTypeStride = 7;
     private const int BorderWidth = 2;
@@ -45,12 +40,14 @@ public class GameUI
     
     public GameUI(
         Game game,
-        int uiSizeX,
-        int uiSizeY,
+        uint uiSizeX,
+        uint uiSizeY,
         Position? selected = null,
         Position? pendingPromotion = null,
         string labelFont = FontDejaVuSans,
-        string pieceFont = FontMerida)
+        string pieceFont = FontMerida,
+        RGBAColor32? mainFontColor = null,
+        RGBAColor32? backgroundColor = null)
     {
         Game = game;
         _squareSize = CalculateSquareSize(uiSizeX, uiSizeY);
@@ -59,21 +56,19 @@ public class GameUI
         _topMargin = (int)(_squareSize * 0.5);
         _boardEnd = _squareSize * 8 + _margin;
 
-        _mainFontColor = FontColorBlack;
+        _mainFontColor = mainFontColor ?? FontColorBlack;
+        _backgroundColor = backgroundColor ?? FontColorWhite;
         _labelFont = labelFont;
         _labelFontSize = _squareSize * 0.3f;
         _pieceFont = pieceFont;
         _pieceFontSize = _squareSize * 0.8f;
         _capturedFontSize = _squareSize * 0.4f;
 
-        _uiSizeX = uiSizeX;
-        _uiSizeY = uiSizeY;
-
         Selected = selected;
         PendingPromotion = pendingPromotion;
     }
 
-    public static int CalculateSquareSize(int uiSizeX, int uiSizeY)
+    public static int CalculateSquareSize(uint uiSizeX, uint uiSizeY)
     {
         var diff = uiSizeX - uiSizeY;
         var minSize = MathF.Min(uiSizeY, uiSizeX);
@@ -94,8 +89,6 @@ public class GameUI
     public Position? Selected { get; private set; }
 
     public Position? PendingPromotion { get; private set; }
-
-    public int PlyListOffset { get; private set; }
 
     public int SquareSize => _squareSize;
 
@@ -139,57 +132,27 @@ public class GameUI
             renderer.DrawText(surface, rankText, _labelFont, _labelFontSize, _mainFontColor, right, TextAlign.Center, vertAlignment: TextAlign.Center);
         }
 
-        // active player indicator
         var currentSide = Game.CurrentSide;
-        var activePlayerRect = ActivePlayerRect(currentSide);
-        renderer.FillEllipse(surface, ActivePlayerRect(currentSide), _mainFontColor);
-        renderer.FillEllipse(surface, activePlayerRect.Inflate(-BorderWidth), currentSide is Side.White ? FontColorWhite : FontColorBlack);
 
-        // plies and captured
+        // captured pieces
         var plies = Game.Plies;
         var plyCount = plies.Count;
 
-        var plyRect = PlyDisplayRect();
-        if (plyCount > 0 && plyRect.IsContainedWithin(clip))
+        if (plyCount > 0)
         {
 #if DEBUG
             Span<byte> capturedPieceCounts = new byte[2 * PieceTypeStride];
 #else
             Span<byte> capturedPieceCounts = stackalloc byte[2 * PieceTypeStride];
 #endif
-            var sbPlyNo = new StringBuilder();
-            var sbWhite = new StringBuilder();
-            var sbBlack = new StringBuilder();
-            var plyFontSize = GetPlyFontSize(plyRect);
-            var (_, maxRows) = GetPlyRowCount(plyRect, plyFontSize);
-            var plyShownRows = 0;
-
             for (var plyIdx = 0; plyIdx < plyCount; plyIdx++)
             {
-                var (idxStr, ply) = plies.GetRecordAndPGNIdx(plyIdx);
+                var (_, ply) = plies.GetRecordAndPGNIdx(plyIdx);
 
                 if (ply is { Result: ActionResult.Capture or ActionResult.CaptureAndPromotion } and not { Captured: PieceType.None })
                 {
                     var idx = plyIdx % 2 * PieceTypeStride + (int)ply.Captured;
                     capturedPieceCounts[idx]++;
-                }
-
-                var rowsDiff = (int)MathF.Ceiling(plyCount * 0.5f - maxRows);
-                int skipRows = rowsDiff <= 0 ? 0 : Math.Clamp(rowsDiff + PlyListOffset, -rowsDiff, +rowsDiff);
-                var plyDisplayRow = plyIdx / 2 - skipRows;
-
-                if (plyDisplayRow >= 0 && plyShownRows < maxRows)
-                {
-                    if (plyIdx % 2 == 0)
-                    {
-                        sbPlyNo.AppendLine(idxStr);
-                        sbWhite.AppendLine(ply.ToString());
-                    }
-                    else
-                    {
-                        plyShownRows++;
-                        sbBlack.AppendLine(ply.ToString());
-                    }
                 }
             }
 
@@ -204,14 +167,6 @@ public class GameUI
             {
                 DrawCapturedText(renderer, surface, capturedPieceCounts, Side.Black, _margin, blackCapturedTextY);
             }
-
-            var plyNoRect = new RectInt(((int)(plyRect.LowerRight.X - plyRect.Width * 0.85f), plyRect.LowerRight.Y), plyRect.UpperLeft);
-            var whiteRect = new RectInt(((int)(plyRect.LowerRight.X - plyRect.Width * 0.4f), plyRect.LowerRight.Y), ((int)(plyRect.UpperLeft.X + plyRect.Width * 0.2f), plyRect.UpperLeft.Y));
-            var blackRect = new RectInt(plyRect.LowerRight, ((int)(plyRect.UpperLeft.X + plyRect.Width * 0.6f), plyRect.UpperLeft.Y));
-
-            renderer.DrawText(surface, sbPlyNo.ToString(), _labelFont, plyFontSize, _mainFontColor, plyNoRect, TextAlign.Far);
-            renderer.DrawText(surface, sbWhite.ToString(), _labelFont, plyFontSize, _mainFontColor, whiteRect, TextAlign.Near);
-            renderer.DrawText(surface, sbBlack.ToString(), _labelFont, plyFontSize, _mainFontColor, blackRect, TextAlign.Near);
         }
 
         // promote piece type selection box
@@ -245,6 +200,12 @@ public class GameUI
     private void DrawCapturedText<TRenderer, TSurface>(TRenderer renderer, TSurface surface, ReadOnlySpan<byte> capturedPieceCounts, Side side, int x, int y)
         where TRenderer : Renderer<TSurface>
     {
+        // Calculate size and clear the area first
+        var cellSize = (int)MathF.Round(_capturedFontSize * 1.4f);
+        var maxWidth = _boardEnd - x;
+        var clearRect = new RectInt((x + maxWidth, y + cellSize), (x, y));
+        renderer.FillRectangle(surface, clearRect, _backgroundColor);
+
         var pieceX = x;
         var capturedSide = side.ToOpposite();
         for (var pieceIdx = 1; pieceIdx < PieceTypeStride; pieceIdx++)
@@ -252,15 +213,13 @@ public class GameUI
             var count = capturedPieceCounts[((int)side - 1) * PieceTypeStride + pieceIdx];
             if (count > 0)
             {
-                var w = (int)MathF.Round(_capturedFontSize * 1.4f);
-                var h = w;
-                var layoutCount = new RectInt((pieceX + w, y + h), (pieceX, y));
+                var layoutCount = new RectInt((pieceX + cellSize, y + cellSize), (pieceX, y));
                 renderer.DrawText(surface, Convert.ToString(count), _labelFont, _capturedFontSize, _mainFontColor, layoutCount, vertAlignment: TextAlign.Center);
-                pieceX += count <= 9 ? w : 2 * w;
+                pieceX += count <= 9 ? cellSize : 2 * cellSize;
 
-                var layoutPiece = new RectInt((pieceX + w, y + h), (pieceX, y));
+                var layoutPiece = new RectInt((pieceX + cellSize, y + cellSize), (pieceX, y));
                 DrawPiece(renderer, surface, new Piece((PieceType)pieceIdx, capturedSide), layoutPiece, _capturedFontSize);
-                pieceX += (int)(1.5 * w);
+                pieceX += (int)(1.5 * cellSize);
             }
         }
     }
@@ -364,79 +323,12 @@ public class GameUI
         return new RectInt((x + _squareSize, y + _squareSize), (x, y));
     }
 
-    public RectInt ActivePlayerRect(Side side)
-    {
-        var off = _margin / 2;
-        var x = _boardEnd + off;
-        var y = _topMargin + (side is Side.White ? _boardEnd + off : -off);
-
-        return new RectInt((x + _margin, y + _margin), (x, y));
-    }
-
     public RectInt PromotePieceTypeSelectionBox(Side side)
     {
         var offX = _margin;
         var offY = side is Side.White ? _margin : _boardEnd + _topMargin - _margin / 2;
 
         return new RectInt((offX + _squareSize * 4, offY + _squareSize), (offX, offY));
-    }
-
-    public RectInt PlyDisplayRect()
-    {
-        var off = _squareSize;
-        var xy = _boardEnd + off;
-        var diff = _uiSizeX - _uiSizeY;
-        var landscape = diff >= _squareSize * PortraitFlipFactor;
-        var xStart = landscape ? xy : _margin;
-        var yStart = landscape ? _topMargin : xy + _topMargin + (int)MathF.Ceiling(_margin * 0.4f);
-        var xEnd = Math.Min(_uiSizeX - _margin / 2, xStart + _squareSize * 5);
-        var yEnd = _uiSizeY - _margin / 2;
-
-        return new RectInt((xEnd, yEnd), (xStart, yStart));
-    }
-
-    private float GetPlyFontSize(in RectInt plyRect) => MathF.Min(_labelFontSize, MathF.Min(plyRect.Width * 0.07f, plyRect.Height * 0.8f));
-
-    private static (float RowSize, int MaxRows) GetPlyRowCount(in RectInt plyRect, float plyFontSize)
-    {
-        var rowSize = plyFontSize * 1.2f;
-        var maxRows = (int)(plyRect.Height / rowSize);
-        return (rowSize, maxRows);
-    }
-
-    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) PlyListScroll(int delta, ScrollType scrollType)
-    {
-        var rect = PlyDisplayRect();
-        var fontSize = GetPlyFontSize(rect);
-        var (rowSize, maxRows) = GetPlyRowCount(rect, fontSize);
-        var deltaY = scrollType switch
-        {
-            ScrollType.Pixel => delta / rowSize,
-            ScrollType.Rows => delta,
-            _ => throw new ArgumentException($"Invalid scroll type {scrollType}", nameof(scrollType))
-        };
-
-        var plies = Game.Plies;
-        int newOffset;
-        if (maxRows >= plies.Count / 2)
-        {
-            newOffset = 0;
-        }
-        else
-        {
-            var diff = (int)MathF.Ceiling(plies.Count * 0.5f - maxRows);
-            newOffset = Math.Clamp((int)MathF.Round(deltaY), -diff, +diff);
-        }
-
-        if (newOffset != PlyListOffset)
-        {
-            PlyListOffset = newOffset;
-            return (UIResponse.NeedsRefresh, [rect]);
-        }
-        else
-        {
-            return (UIResponse.None, []);
-        }
     }
 
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TryPerformAction(int x, int y)
@@ -498,10 +390,7 @@ public class GameUI
                     return (UIResponse.NeedsRefresh | UIResponse.IsUpdate,
                         [
                             SquareRect(action.From),
-                            SquareRect(action.To),
-                            ActivePlayerRect(Side.White),
-                            ActivePlayerRect(Side.Black),
-                            PlyDisplayRect()
+                            SquareRect(action.To)
                         ]
                     );
                 }
