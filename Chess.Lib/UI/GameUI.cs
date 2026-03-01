@@ -31,9 +31,9 @@ public class GameUI
 
     private readonly RGBAColor32 _mainFontColor;
     private readonly RGBAColor32 _backgroundColor;
+    private readonly RGBAColor32 _capturedAreaColor;
 
     private const int PieceTypeStride = 7;
-    private const int BorderWidth = 2;
     private const int PortraitFlipFactor = 3;
     private const float SquaresNeededNormal = 10.5f;
     private const float SquaresNeededTight  = 11.5f;
@@ -58,6 +58,7 @@ public class GameUI
 
         _mainFontColor = mainFontColor ?? FontColorBlack;
         _backgroundColor = backgroundColor ?? FontColorWhite;
+        _capturedAreaColor = ComputeCapturedAreaColor(_backgroundColor, _mainFontColor);
         _labelFont = labelFont;
         _labelFontSize = _squareSize * 0.3f;
         _pieceFont = pieceFont;
@@ -98,21 +99,13 @@ public class GameUI
         // board
         RenderBoard(renderer, surface, clip);
 
-        // board border
         var boardRect = new RectInt((_boardEnd, _topMargin + _boardEnd), (_margin, _topMargin + _margin));
-        var borderRect = boardRect.Inflate(-BorderWidth / 2);
 
-        // Redraw the border if the clip overlaps with any edge of the board.
-        // The border needs redrawing when squares along the edge are updated,
-        // since filling the square can overwrite parts of the border.
-        var needsBorderRedraw = !clip.IsContainedWithin(borderRect.Inflate(-BorderWidth));
-
-        if (!needsBorderRedraw)
+        // If the clip is entirely within the board area, skip chrome rendering
+        if (clip.IsContainedWithin(boardRect))
         {
             return;
         }
-
-        renderer.DrawRectangle(surface, borderRect, _mainFontColor, BorderWidth);
 
         // labels
         for (byte idx = 0; idx < 8; idx++)
@@ -182,8 +175,6 @@ public class GameUI
             var offX = box.UpperLeft.X;
             var offY = box.UpperLeft.Y;
 
-            renderer.DrawRectangle(surface, box.Inflate(BorderWidth / 2), _mainFontColor, BorderWidth);
-
             for (var i = 0; i < 4; i++)
             {
                 var squareRect = new RectInt((offX + _squareSize * (i + 1), offY + _squareSize), (offX + _squareSize * i, offY));
@@ -208,7 +199,7 @@ public class GameUI
         var cellSize = (int)MathF.Round(_capturedFontSize * 1.4f);
         var maxWidth = _boardEnd - x;
         var clearRect = new RectInt((x + maxWidth, y + cellSize), (x, y));
-        renderer.FillRectangle(surface, clearRect, _backgroundColor);
+        renderer.FillRectangle(surface, clearRect, _capturedAreaColor);
 
         var pieceX = x;
         var capturedSide = side.ToOpposite();
@@ -351,6 +342,41 @@ public class GameUI
         return new RectInt((offX + _squareSize * 4, offY + _squareSize), (offX, offY));
     }
 
+    /// <summary>
+    /// Returns the display rects for both captured-piece text areas (white and black).
+    /// </summary>
+    private (RectInt White, RectInt Black) CapturedTextRects()
+    {
+        var cellSize = (int)MathF.Round(_capturedFontSize * 1.4f);
+        var maxWidth = _boardEnd - _margin;
+
+        var whiteY = _topMargin + _boardEnd + _margin;
+        var blackY = _topMargin - _margin;
+
+        return (
+            new RectInt((_margin + maxWidth, whiteY + cellSize), (_margin, whiteY)),
+            new RectInt((_margin + maxWidth, blackY + cellSize), (_margin, blackY))
+        );
+    }
+
+    private static RGBAColor32 ComputeCapturedAreaColor(RGBAColor32 background, RGBAColor32 foreground)
+    {
+        const int shift = 20;
+
+        var bgLuminance = 0.299f * background.Red + 0.587f * background.Green + 0.114f * background.Blue;
+        var fgLuminance = 0.299f * foreground.Red + 0.587f * foreground.Green + 0.114f * foreground.Blue;
+
+        // Dark background: lighten; bright background: darken
+        var delta = bgLuminance < fgLuminance ? shift : -shift;
+
+        return new RGBAColor32(
+            (byte)Math.Clamp(background.Red + delta, 0, 255),
+            (byte)Math.Clamp(background.Green + delta, 0, 255),
+            (byte)Math.Clamp(background.Blue + delta, 0, 255),
+            background.Alpha
+        );
+    }
+
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TryPerformAction(int x, int y)
     {
         if (PendingPromotion is { } pendingPromotion)
@@ -401,19 +427,45 @@ public class GameUI
             {
                 Selected = default;
 
-                if (result.IsCapture() || result is ActionResult.Castling || Game.GameStatus != prevStatus)
+                // Terminal states show an overlay across the entire board
+                if (Game.GameStatus is GameStatus.Checkmate or GameStatus.Stalemate)
                 {
                     return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
                 }
-                else
+
+                var clipRects = ImmutableArray.CreateBuilder<RectInt>(6);
+                clipRects.Add(SquareRect(action.From));
+                clipRects.Add(SquareRect(action.To));
+
+                if (result is ActionResult.Castling)
                 {
-                    return (UIResponse.NeedsRefresh | UIResponse.IsUpdate,
-                        [
-                            SquareRect(action.From),
-                            SquareRect(action.To)
-                        ]
-                    );
+                    var isKingSide = action.To.File > action.From.File;
+                    var homeRank = action.From.Rank;
+                    clipRects.Add(SquareRect(new Position(isKingSide ? File.H : File.A, homeRank)));
+                    clipRects.Add(SquareRect(new Position(isKingSide ? File.F : File.D, homeRank)));
                 }
+                else if (result is ActionResult.EnPassant)
+                {
+                    // The taken pawn is on a different square than action.To
+                    clipRects.Add(SquareRect(action.To.AdvanceInPawnDirection(Game.CurrentSide)));
+                }
+
+                if (result.IsCapture())
+                {
+                    var (whiteCaptured, blackCaptured) = CapturedTextRects();
+                    clipRects.Add(whiteCaptured);
+                    clipRects.Add(blackCaptured);
+                }
+
+                if (Game.GameStatus is GameStatus.Check || prevStatus is GameStatus.Check)
+                {
+                    if (Game.Board.KingPosition(Game.CurrentSide) is { } kingPos)
+                    {
+                        clipRects.Add(SquareRect(kingPos));
+                    }
+                }
+
+                return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, clipRects.DrainToImmutable());
             }
             else if (result is ActionResult.NeedsPromotionType)
             {

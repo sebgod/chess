@@ -41,7 +41,7 @@ var chrome = new ConsoleGameRenderer(
     totalWidth: Console.WindowWidth);
 
 display.RenderFrame(ui, imageRenderer, image, default, cellHeight);
-chrome.RenderStatusBar(game);
+chrome.RenderStatusBar(game, display.Stats);
 chrome.RenderHistory(game);
 
 while (!cts.Token.IsCancellationRequested)
@@ -60,7 +60,7 @@ while (!cts.Token.IsCancellationRequested)
                 display.RenderFrame(ui, imageRenderer, image, clipRects, cellHeight);
                 if (response.HasFlag(UIResponse.IsUpdate))
                 {
-                    chrome.RenderStatusBar(game);
+                    chrome.RenderStatusBar(game, display.Stats);
                     chrome.RenderHistory(game);
                 }
             }

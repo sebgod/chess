@@ -10,7 +10,7 @@ internal sealed class ConsoleGameRenderer(int historyStartColumn, int historyCol
     /// <summary>
     /// Renders the status bar showing the current game state.
     /// </summary>
-    public void RenderStatusBar(Game game)
+    public void RenderStatusBar(Game game, RenderStats? stats = null)
     {
         System.Console.SetCursorPosition(0, statusBarRow);
 
@@ -23,8 +23,18 @@ internal sealed class ConsoleGameRenderer(int historyStartColumn, int historyCol
             _ => $" {currentPlayer} to move"
         };
 
-        // White text on dark gray background
-        System.Console.Write($"\e[97;100m{status.PadRight(totalWidth)}\e[0m");
+        var debugInfo = "";
+        if (stats is { } s)
+        {
+            var total = s.FullRenders + s.PartialRenders;
+            if (total > 0)
+            {
+                debugInfo = $"{s.LastFrameMs,6:F1}ms  F:{s.FullRenders} P:{s.PartialRenders} ({100.0 * s.PartialRenders / total:F0}% partial) ";
+            }
+        }
+
+        var padWidth = totalWidth - debugInfo.Length;
+        System.Console.Write($"\e[97;100m{status.PadRight(padWidth)}{debugInfo}\e[0m");
     }
 
     /// <summary>
