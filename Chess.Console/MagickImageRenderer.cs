@@ -7,6 +7,8 @@ namespace Chess.Console;
 public class MagickImageRenderer() : Renderer<MagickImage>(), IDisposable
 {
     private readonly Dictionary<CaptionCacheKey, MagickImage> _captionCache = [];
+    private Density? _cachedDensity;
+    private double _cachedFactor;
 
     public override void FillRectangle(MagickImage surface, in RectInt rect, RGBAColor32 fillColor)
         => surface.Draw(GetDrawableRect(rect), new DrawableFillColor(GetColor(fillColor)), new DrawableFillOpacity(new Percentage(100)));
@@ -64,10 +66,15 @@ public class MagickImageRenderer() : Renderer<MagickImage>(), IDisposable
         var w = layout.LowerRight.X - x;
         var h = layout.LowerRight.Y - y;
 
-        var origDensity = surface.Density.ChangeUnits(DensityUnit.PixelsPerInch);
-        var density = origDensity.X == 0 || origDensity.Y == 0 ? new Density(72, DensityUnit.PixelsPerInch) : origDensity;
+        if (_cachedDensity is null)
+        {
+            var origDensity = surface.Density.ChangeUnits(DensityUnit.PixelsPerInch);
+            _cachedDensity = origDensity.X == 0 || origDensity.Y == 0 ? new Density(72, DensityUnit.PixelsPerInch) : origDensity;
+            _cachedFactor = _cachedDensity.Y / 72.0;
+        }
 
-        var factor = density.Y / 72f;
+        var density = _cachedDensity;
+        var factor = _cachedFactor;
         var gravity = GetGravity(horizAlignment, vertAlignment);
         var textString = text.ToString();
 
