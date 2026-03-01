@@ -43,13 +43,25 @@ internal static class StartupMenu
         string title, string prompt, string[] items, CancellationToken cancellationToken)
     {
         var selected = 0;
+        var lastWidth = System.Console.WindowWidth;
+        var lastHeight = System.Console.WindowHeight;
         DrawMenu(title, prompt, items, selected, fullRedraw: true);
 
         while (!cancellationToken.IsCancellationRequested)
         {
+            var currentWidth = System.Console.WindowWidth;
+            var currentHeight = System.Console.WindowHeight;
+            if (currentWidth != lastWidth || currentHeight != lastHeight)
+            {
+                lastWidth = currentWidth;
+                lastHeight = currentHeight;
+                System.Console.Clear();
+                DrawMenu(title, prompt, items, selected, fullRedraw: true);
+            }
+
             if (!System.Console.KeyAvailable)
             {
-                await Task.Delay(50, cancellationToken);
+                await Task.Delay(25, cancellationToken);
                 continue;
             }
 
