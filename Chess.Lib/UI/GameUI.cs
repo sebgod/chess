@@ -231,6 +231,12 @@ public class GameUI
     private void RenderBoard<TRenderer, TSurface>(TRenderer renderer, TSurface surface, in RectInt clip)
         where TRenderer : Renderer<TSurface>
     {
+        // Collect squares to draw and pieces to render
+        Span<(RectInt Rect, RGBAColor32 Color)> squaresToDraw = stackalloc (RectInt, RGBAColor32)[64];
+        Span<(Position Position, Piece Piece, RectInt Rect)> piecesToDraw = stackalloc (Position, Piece, RectInt)[32];
+        var squareCount = 0;
+        var pieceCount = 0;
+
         for (byte fileIdx = 0; fileIdx < 8; fileIdx++)
         {
             var x = fileIdx * _squareSize;
@@ -271,13 +277,23 @@ public class GameUI
                     squareFill = WhiteSquareFill;
                 }
 
-                renderer.FillRectangle(surface, rect, squareFill);
+                squaresToDraw[squareCount++] = (rect, squareFill);
 
                 if (piece.PieceType is not PieceType.None)
                 {
-                    DrawPiece(renderer, surface, piece, rect, _pieceFontSize);
+                    piecesToDraw[pieceCount++] = (position, piece, rect);
                 }
             }
+        }
+
+        // Batch draw all squares in a single call
+        renderer.FillRectangles(surface, squaresToDraw[..squareCount]);
+
+        // Draw pieces after squares (pieces must be on top)
+        for (var i = 0; i < pieceCount; i++)
+        {
+            var (_, piece, rect) = piecesToDraw[i];
+            DrawPiece(renderer, surface, piece, rect, _pieceFontSize);
         }
     }
 

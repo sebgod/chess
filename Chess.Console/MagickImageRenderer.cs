@@ -32,6 +32,30 @@ public class MagickImageRenderer() : Renderer<MagickImage>(), IDisposable
         return new DrawableEllipse(x + rX, y + rY, rX, rY, 0, 360);
     }
 
+    /// <summary>
+    /// Fills multiple rectangles in a single batched Draw call, reducing P/Invoke overhead.
+    /// Uses Drawables collection for efficient batching.
+    /// </summary>
+    public override void FillRectangles(MagickImage surface, ReadOnlySpan<(RectInt Rect, RGBAColor32 Color)> rectangles)
+    {
+        if (rectangles.IsEmpty)
+        {
+            return;
+        }
+
+        var drawables = new Drawables();
+
+        foreach (var (rect, color) in rectangles)
+        {
+            drawables
+                .FillColor(GetColor(color))
+                .FillOpacity(new Percentage(100))
+                .Rectangle(rect.UpperLeft.X, rect.UpperLeft.Y, rect.LowerRight.X, rect.LowerRight.Y);
+        }
+
+        surface.Draw(drawables);
+    }
+
     public override void DrawText(MagickImage surface, ReadOnlySpan<char> text, string fontFamily, float fontSize, RGBAColor32 fontColor, in RectInt layout,
         TextAlign horizAlignment = TextAlign.Center, TextAlign vertAlignment = TextAlign.Near)
     {
