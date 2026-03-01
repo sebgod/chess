@@ -40,7 +40,7 @@ internal sealed class SixelDisplay : IDisposable
     /// Renders the UI scene to the terminal, optionally restricted to the given clip rectangles.
     /// </summary>
     public void RenderFrame(GameUI ui, MagickImageRenderer renderer, MagickImage image,
-        IReadOnlyList<RectInt>? clipRects, int cellHeight)
+        IReadOnlyList<RectInt>? clipRects, uint cellHeight)
     {
 #if DEBUG
         _stopwatch.Restart();
@@ -77,8 +77,8 @@ internal sealed class SixelDisplay : IDisposable
             var startRow = (int)(clip.UpperLeft.Y / cellHeight);
             var endRow = (int)((clip.LowerRight.Y + cellHeight - 1) / cellHeight);
 
-            var pixelStartY = startRow * cellHeight;
-            var pixelEndY = Math.Min((int)image.Height, endRow * cellHeight);
+            var pixelStartY = (int)(startRow * cellHeight);
+            var pixelEndY = Math.Min((int)image.Height, (int)(endRow * cellHeight));
             var cropHeight = pixelEndY - pixelStartY;
 
             if (cropHeight > 0)

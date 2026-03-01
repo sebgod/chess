@@ -21,16 +21,17 @@ const int statusBarRows = 1;
 
 var imageColumns = Console.WindowWidth - historyColumns;
 var imageRows = Console.WindowHeight - statusBarRows;
-var (cellWidth, cellHeight) = await terminal.QueryCellSizeAsync() ?? (10, 20);
-var width = (uint)imageColumns * (uint)cellWidth;
-var height = (uint)imageRows * (uint)cellHeight;
+var (cellWidth, cellHeight) = await terminal.QueryCellSizeAsync() ?? (10u, 20u);
+var width = (uint)imageColumns * cellWidth;
+var height = (uint)imageRows * cellHeight;
 var game = new Game();
 using var image = new MagickImage(MagickColors.Black, width, height);
 
 using var imageRenderer = new MagickImageRenderer();
 var ui = new GameUI(game, image.Width, image.Height,
     mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
-    backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff));
+    backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff),
+    alignment: (cellWidth, cellHeight));
 
 using var display = new SixelDisplay();
 var chrome = new ConsoleGameRenderer(historyColumns, Console.WindowWidth, Console.WindowHeight);
@@ -87,8 +88,8 @@ try
         {
             imageColumns = newConsoleWidth - historyColumns;
             imageRows = newConsoleHeight - statusBarRows;
-            width = (uint)imageColumns * (uint)cellWidth;
-            height = (uint)imageRows * (uint)cellHeight;
+            width = (uint)imageColumns * cellWidth;
+            height = (uint)imageRows * cellHeight;
 
             image.Read(MagickColors.Black, width, height);
 

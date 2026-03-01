@@ -13,15 +13,15 @@ internal readonly record struct MouseEvent(int Button, int X, int Y, bool IsRele
 /// </summary>
 internal sealed class ConsoleTerminal : IDisposable
 {
-    private int? _cellWidth;
-    private int? _cellHeight;
+    private uint? _cellWidth;
+    private uint? _cellHeight;
     private bool _useDecLocator;
 
     /// <summary>
     /// Queries the terminal cell size in pixels using XTWINOPS (CSI 16 t).
     /// Must be called before entering the alternate buffer to keep the response invisible.
     /// </summary>
-    public async Task<(int Width, int Height)?> QueryCellSizeAsync()
+    public async Task<(uint Width, uint Height)?> QueryCellSizeAsync()
     {
         if (_cellWidth.HasValue && _cellHeight.HasValue)
         {
@@ -40,8 +40,8 @@ internal sealed class ConsoleTerminal : IDisposable
         var parts = content.TrimStart('\e', '[').Split(';');
         if (parts.Length == 3 &&
             parts[0] == "6" &&
-            int.TryParse(parts[1], out var height) &&
-            int.TryParse(parts[2], out var width))
+            uint.TryParse(parts[1], out var height) &&
+            uint.TryParse(parts[2], out var width))
         {
             _cellWidth = width;
             _cellHeight = height;
@@ -113,7 +113,7 @@ internal sealed class ConsoleTerminal : IDisposable
         }
 
         // Normalize cell coordinates to pixels
-        return new MouseEvent(r.Button, r.X * _cellWidth.Value, r.Y * _cellHeight.Value, r.IsRelease);
+        return new MouseEvent(r.Button, r.X * (int)_cellWidth.Value, r.Y * (int)_cellHeight.Value, r.IsRelease);
     }
 
     public void Dispose()

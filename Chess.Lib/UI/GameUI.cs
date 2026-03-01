@@ -23,6 +23,7 @@ public class GameUI
     private readonly int _squareSize;
     private readonly int _topMargin;
     private readonly int _boardEnd;
+    private readonly (uint X, uint Y)? _alignment;
 
     private readonly string _labelFont;
     private readonly string _pieceFont;
@@ -50,13 +51,26 @@ public class GameUI
         string pieceFont = FontMerida,
         RGBAColor32? mainFontColor = null,
         RGBAColor32? backgroundColor = null,
-        (Position To, bool IsCapture)? lastMove = null)
+        (Position To, bool IsCapture)? lastMove = null,
+        (uint X, uint Y)? alignment = null)
     {
         Game = game;
+        _alignment = alignment;
         _squareSize = CalculateSquareSize(uiSizeX, uiSizeY);
-        _margin = _squareSize / 2;
 
-        _topMargin = (int)(_squareSize * 0.5);
+        if (alignment is (var alignX, var alignY))
+        {
+            var unit = Lcm(alignX, alignY);
+            _squareSize = AlignDown(_squareSize, unit);
+            _margin = AlignDown(_squareSize / 2, unit);
+            _topMargin = AlignDown((int)(_squareSize * 0.5), unit);
+        }
+        else
+        {
+            _margin = _squareSize / 2;
+            _topMargin = (int)(_squareSize * 0.5);
+        }
+
         _boardEnd = _squareSize * 8 + _margin;
 
         _mainFontColor = mainFontColor ?? FontColorBlack;
@@ -114,7 +128,8 @@ public class GameUI
         pieceFont: _pieceFont,
         mainFontColor: _mainFontColor,
         backgroundColor: _backgroundColor,
-        lastMove: LastMove);
+        lastMove: LastMove,
+        alignment: _alignment);
 
     public void Render<TSurface, TRenderer>(TRenderer renderer, TSurface surface, in RectInt clip)
         where TRenderer : Renderer<TSurface>
@@ -376,6 +391,11 @@ public class GameUI
         var offX = _margin;
         var offY = side is Side.White ? _margin : _boardEnd + _topMargin - _margin / 2;
 
+        if (_alignment is (_, var alignY))
+        {
+            offY = AlignDown(offY, alignY);
+        }
+
         return new RectInt((offX + _squareSize * 4, offY + _squareSize), (offX, offY));
     }
 
@@ -394,6 +414,23 @@ public class GameUI
             new RectInt((_margin + maxWidth, whiteY + cellSize), (_margin, whiteY)),
             new RectInt((_margin + maxWidth, blackY + cellSize), (_margin, blackY))
         );
+    }
+
+    /// <summary>
+    /// Rounds <paramref name="value"/> down to the nearest multiple of <paramref name="alignment"/>.
+    /// </summary>
+    private static int AlignDown(int value, uint alignment) =>
+        (int)((uint)value / alignment * alignment);
+
+    private static uint Lcm(uint a, uint b) => a / Gcd(a, b) * b;
+
+    private static uint Gcd(uint a, uint b)
+    {
+        while (b != 0)
+        {
+            (a, b) = (b, a % b);
+        }
+        return a;
     }
 
     private static RGBAColor32 ComputeCapturedAreaColor(RGBAColor32 background, RGBAColor32 foreground)
