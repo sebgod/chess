@@ -13,6 +13,7 @@ internal static class WindowsConsoleInput
     private const uint ENABLE_MOUSE_INPUT = 0x0010;
     private const uint ENABLE_EXTENDED_FLAGS = 0x0080;
     private const uint ENABLE_QUICK_EDIT_MODE = 0x0040;
+    private const uint ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200;
 
     private const ushort MOUSE_EVENT = 0x0002;
     private const uint FROM_LEFT_1ST_BUTTON_PRESSED = 0x0001;
@@ -68,6 +69,27 @@ internal static class WindowsConsoleInput
     private static nint _inputHandle;
     private static uint _originalMode;
     private static uint _previousButtonState;
+
+    /// <summary>
+    /// Enables virtual terminal input processing so DEC Locator reports arrive as VT sequences.
+    /// </summary>
+    /// <returns>True if virtual terminal input was enabled successfully.</returns>
+    public static bool EnableVirtualTerminalInput()
+    {
+        _inputHandle = GetStdHandle(STD_INPUT_HANDLE);
+        if (_inputHandle == nint.Zero || _inputHandle == new nint(-1))
+        {
+            return false;
+        }
+
+        if (!GetConsoleMode(_inputHandle, out _originalMode))
+        {
+            return false;
+        }
+
+        uint newMode = (_originalMode | ENABLE_VIRTUAL_TERMINAL_INPUT | ENABLE_EXTENDED_FLAGS) & ~ENABLE_QUICK_EDIT_MODE;
+        return SetConsoleMode(_inputHandle, newMode);
+    }
 
     /// <summary>
     /// Enables mouse input on the Windows console.

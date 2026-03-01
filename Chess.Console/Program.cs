@@ -35,7 +35,7 @@ var ui = new GameUI(game, image.Width, image.Height,
 using var display = new SixelDisplay();
 var chrome = new ConsoleGameRenderer(historyColumns, Console.WindowWidth, Console.WindowHeight);
 
-var humanPlayer = new HumanPlayer(terminal, cellWidth, cellHeight);
+var humanPlayer = new HumanPlayer(terminal);
 IGamePlayer whitePlayer, blackPlayer;
 
 if (gameMode is GameMode.PlayerVsComputer)

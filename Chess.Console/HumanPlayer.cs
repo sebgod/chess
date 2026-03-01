@@ -6,7 +6,7 @@ namespace Chess.Console;
 /// <summary>
 /// A human player that reads mouse input from the terminal and translates clicks into game actions.
 /// </summary>
-internal sealed class HumanPlayer(ConsoleTerminal terminal, int cellWidth, int cellHeight) : IGamePlayer
+internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
 {
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects)? TryMakeMove(GameUI ui)
     {
@@ -21,9 +21,6 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal, int cellWidth, int c
             return (UIResponse.None, []);
         }
 
-        var pixelX = mouseEvent.Value.X * cellWidth;
-        var pixelY = mouseEvent.Value.Y * cellHeight;
-
-        return ui.TryPerformAction(pixelX, pixelY);
+        return ui.TryPerformAction(mouseEvent.Value.X, mouseEvent.Value.Y);
     }
 }
