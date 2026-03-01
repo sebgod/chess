@@ -17,7 +17,7 @@ public class MagickImageRenderer() : Renderer<MagickImage>(), IDisposable
         => surface.Draw(GetDrawableEllipse(rect), new DrawableFillColor(GetColor(fillColor)), new DrawableFillOpacity(new Percentage(100)));
 
     public override void DrawRectangle(MagickImage surface, in RectInt rect, RGBAColor32 strokeColor, int strokeWidth)
-        => surface.Draw(GetDrawableRect(rect), new DrawableStrokeColor(GetColor(strokeColor)), new DrawableStrokeWidth(strokeWidth), new DrawableFillOpacity(new Percentage(0)));
+        => surface.Draw(GetDrawableRect(rect), new DrawableFillColor(MagickColors.Transparent), new DrawableStrokeColor(GetColor(strokeColor)), new DrawableStrokeWidth(strokeWidth));
 
     public static MagickColor GetColor(RGBAColor32 fillColor) => MagickColor.FromRgba(fillColor.Red, fillColor.Green, fillColor.Blue, fillColor.Alpha);
 
@@ -108,7 +108,7 @@ public class MagickImageRenderer() : Renderer<MagickImage>(), IDisposable
             _captionCache[cacheKey] = overlayImage;
         }
 
-        surface.Composite(overlayImage, Gravity.Northwest, (int)x, (int)y, CompositeOperator.Atop);
+        surface.Composite(overlayImage, Gravity.Northwest, (int)x, (int)y, CompositeOperator.Over);
     }
 
     private static Gravity GetGravity(TextAlign horizAlignment, TextAlign vertAlignment)

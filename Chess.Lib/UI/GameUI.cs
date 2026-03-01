@@ -9,14 +9,15 @@ public class GameUI
     private const string FontDejaVuSans = "Fonts/DejaVuSans.ttf";
     private const string FontMerida     = "Fonts/Merida.ttf";
 
-    private static readonly RGBAColor32 FontColorBlack     = new RGBAColor32(0, 0, 0, 0xff);
-    private static readonly RGBAColor32 FontColorWhite     = new RGBAColor32(0xfd, 0xfd, 0xfd, 0xff);
-    private static readonly RGBAColor32 FontColorGrey      = new RGBAColor32(0x70, 0x70, 0x70, 0xff);
-    private static readonly RGBAColor32 BlackSquareFill    = new RGBAColor32(0xD1, 0x8B, 0x47, 0xff);
-    private static readonly RGBAColor32 WhiteSquareFill    = new RGBAColor32(0xFF, 0xCE, 0x9E, 0xff);
-    private static readonly RGBAColor32 OverlayFill        = new RGBAColor32(0xFF, 0xCE, 0x9E, 0xCC);
-    private static readonly RGBAColor32 SelectedSquareFill = new RGBAColor32(0xCD, 0x5C, 0x5C, 0xff);
-    private static readonly RGBAColor32 CheckSquareFill    = new RGBAColor32(0xE9, 0xD5, 0x02, 0xff);
+    private static readonly RGBAColor32 FontColorBlack      = new RGBAColor32(0, 0, 0, 0xff);
+    private static readonly RGBAColor32 FontColorWhite      = new RGBAColor32(0xfd, 0xfd, 0xfd, 0xff);
+    private static readonly RGBAColor32 FontColorGrey       = new RGBAColor32(0x70, 0x70, 0x70, 0xff);
+    private static readonly RGBAColor32 BlackSquareFill     = new RGBAColor32(0xD1, 0x8B, 0x47, 0xff);
+    private static readonly RGBAColor32 WhiteSquareFill     = new RGBAColor32(0xFF, 0xCE, 0x9E, 0xff);
+    private static readonly RGBAColor32 OverlayFill         = new RGBAColor32(0xFF, 0xCE, 0x9E, 0xCC);
+    private static readonly RGBAColor32 SelectedSquareFill  = new RGBAColor32(0xCD, 0x5C, 0x5C, 0xff);
+    private static readonly RGBAColor32 CheckSquareFill     = new RGBAColor32(0xE9, 0xD5, 0x02, 0xff);
+    private static readonly RGBAColor32 LastMoveBorderColor = new RGBAColor32(0x48, 0xA0, 0x48, 0xff);
 
     private readonly int _margin;
     private readonly int _squareSize;
@@ -35,6 +36,7 @@ public class GameUI
 
     private const int PieceTypeStride = 7;
     private const int PortraitFlipFactor = 3;
+    private const int LastMoveBorderWidth = 3;
     private const float SquaresNeededNormal = 10.5f;
     private const float SquaresNeededTight  = 11.5f;
     
@@ -47,7 +49,8 @@ public class GameUI
         string labelFont = FontDejaVuSans,
         string pieceFont = FontMerida,
         RGBAColor32? mainFontColor = null,
-        RGBAColor32? backgroundColor = null)
+        RGBAColor32? backgroundColor = null,
+        (Position To, bool IsCapture)? lastMove = null)
     {
         Game = game;
         _squareSize = CalculateSquareSize(uiSizeX, uiSizeY);
@@ -67,6 +70,7 @@ public class GameUI
 
         Selected = selected;
         PendingPromotion = pendingPromotion;
+        LastMove = lastMove;
     }
 
     public static int CalculateSquareSize(uint uiSizeX, uint uiSizeY)
@@ -91,6 +95,12 @@ public class GameUI
 
     public Position? PendingPromotion { get; private set; }
 
+    /// <summary>
+    /// The destination square of the last completed move, highlighted on the board.
+    /// Cleared when the next move is made.
+    /// </summary>
+    public (Position To, bool IsCapture)? LastMove { get; private set; }
+
     public int SquareSize => _squareSize;
 
     /// <summary>
@@ -103,7 +113,8 @@ public class GameUI
         labelFont: _labelFont,
         pieceFont: _pieceFont,
         mainFontColor: _mainFontColor,
-        backgroundColor: _backgroundColor);
+        backgroundColor: _backgroundColor,
+        lastMove: LastMove);
 
     public void Render<TSurface, TRenderer>(TRenderer renderer, TSurface surface, in RectInt clip)
         where TRenderer : Renderer<TSurface>
@@ -295,9 +306,23 @@ public class GameUI
         // Draw pieces after squares (pieces must be on top)
         for (var i = 0; i < pieceCount; i++)
         {
-            var (_, piece, rect) = piecesToDraw[i];
+            var (position, piece, rect) = piecesToDraw[i];
             DrawPiece(renderer, surface, piece, rect, _pieceFontSize);
         }
+
+        // Draw last-move highlight border on the destination square
+        if (LastMove is (var lastMoveTo, var lastMoveIsCapture))
+        {
+            var borderColor = lastMoveIsCapture ? SelectedSquareFill : LastMoveBorderColor;
+            DrawLastMoveBorder(renderer, surface, lastMoveTo, borderColor);
+        }
+    }
+
+    private void DrawLastMoveBorder<TRenderer, TSurface>(TRenderer renderer, TSurface surface, Position position, RGBAColor32 color)
+        where TRenderer : Renderer<TSurface>
+    {
+        var inset = SquareRect(position).Inflate(-LastMoveBorderWidth);
+        renderer.DrawRectangle(surface, inset, color, LastMoveBorderWidth);
     }
 
     private void DrawPiece<TRenderer, TSurface>(TRenderer renderer, TSurface surface, Piece piece, RectInt rect, float fontSize)
@@ -415,6 +440,8 @@ public class GameUI
 
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TryPerformAction(Action action)
     {
+        var prevLastMove = LastMove;
+
         if (action is { IsMove: true } promotion and not { Promoted: PieceType.None })
         {
             var result = Game.TryMove(promotion);
@@ -423,6 +450,7 @@ public class GameUI
             {
                 PendingPromotion = default;
                 Selected = default;
+                LastMove = (action.To, result is ActionResult.CaptureAndPromotion);
 
                 return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
             }
@@ -438,6 +466,7 @@ public class GameUI
             if (result.IsMoveOrCapture())
             {
                 Selected = default;
+                LastMove = (action.To, result.IsCapture());
 
                 // Terminal states show an overlay across the entire board
                 if (Game.GameStatus is GameStatus.Checkmate or GameStatus.Stalemate)
@@ -445,9 +474,14 @@ public class GameUI
                     return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
                 }
 
-                var clipRects = ImmutableArray.CreateBuilder<RectInt>(6);
+                var clipRects = ImmutableArray.CreateBuilder<RectInt>(8);
                 clipRects.Add(SquareRect(action.From));
                 clipRects.Add(SquareRect(action.To));
+
+                if (prevLastMove is (var prevMove, _))
+                {
+                    clipRects.Add(SquareRect(prevMove));
+                }
 
                 if (result is ActionResult.Castling)
                 {

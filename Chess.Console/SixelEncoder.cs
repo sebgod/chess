@@ -79,37 +79,81 @@ internal static class SixelEncoder
     }
 
     /// <summary>
-    /// Single-pass palette construction and pixel-to-index mapping.
-    /// Colors are assigned registers in encounter order; when the palette is full,
-    /// additional colors are mapped to their nearest existing register.
+    /// Two-pass palette construction: first counts color frequencies, then assigns
+    /// palette slots to the most frequent colors so large solid areas (board tiles,
+    /// backgrounds) always get exact representation. Remaining colors are mapped
+    /// to their nearest palette entry.
     /// </summary>
     private static int BuildPaletteAndIndexMap(
         byte[] rawPixels, int pixelCount, int channels,
         byte[] indexMap, int[] palette)
     {
-        var colorToIndex = new Dictionary<int, byte>(capacity: 64);
-        var paletteSize = 0;
+        // Pass 1: count frequency of each unique color
+        var colorFrequency = new Dictionary<int, int>(capacity: 256);
 
         for (var i = 0; i < pixelCount; i++)
         {
             var offset = i * channels;
             var packed = (rawPixels[offset] << 16) | (rawPixels[offset + 1] << 8) | rawPixels[offset + 2];
 
-            ref var idx = ref CollectionsMarshal.GetValueRefOrAddDefault(colorToIndex, packed, out var exists);
-            if (!exists)
+            ref var count = ref CollectionsMarshal.GetValueRefOrAddDefault(colorFrequency, packed, out _);
+            count++;
+        }
+
+        var uniqueColors = colorFrequency.Count;
+        var colorToIndex = new Dictionary<int, byte>(capacity: uniqueColors);
+        var paletteSize = 0;
+
+        if (uniqueColors <= MaxColors)
+        {
+            // All colors fit — no sorting needed
+            foreach (var (packed, _) in colorFrequency)
             {
-                if (paletteSize < MaxColors)
+                colorToIndex[packed] = (byte)paletteSize;
+                palette[paletteSize] = packed;
+                paletteSize++;
+            }
+        }
+        else
+        {
+            // More unique colors than palette slots: prioritize most frequent
+            var entries = ArrayPool<KeyValuePair<int, int>>.Shared.Rent(uniqueColors);
+            try
+            {
+                var idx = 0;
+                foreach (var kv in colorFrequency)
                 {
-                    idx = (byte)paletteSize;
+                    entries[idx++] = kv;
+                }
+
+                entries.AsSpan(0, uniqueColors).Sort(static (a, b) => b.Value.CompareTo(a.Value));
+
+                for (var i = 0; i < MaxColors; i++)
+                {
+                    var packed = entries[i].Key;
+                    colorToIndex[packed] = (byte)paletteSize;
                     palette[paletteSize] = packed;
                     paletteSize++;
                 }
-                else
+
+                // Pre-compute nearest palette entry for remaining colors
+                for (var i = MaxColors; i < uniqueColors; i++)
                 {
-                    idx = FindNearest(palette, paletteSize, packed);
+                    colorToIndex[entries[i].Key] = FindNearest(palette, paletteSize, entries[i].Key);
                 }
             }
-            indexMap[i] = idx;
+            finally
+            {
+                ArrayPool<KeyValuePair<int, int>>.Shared.Return(entries);
+            }
+        }
+
+        // Pass 2: map pixels to palette indices (all lookups are pre-computed)
+        for (var i = 0; i < pixelCount; i++)
+        {
+            var offset = i * channels;
+            var packed = (rawPixels[offset] << 16) | (rawPixels[offset + 1] << 8) | rawPixels[offset + 2];
+            indexMap[i] = colorToIndex[packed];
         }
 
         return paletteSize;
