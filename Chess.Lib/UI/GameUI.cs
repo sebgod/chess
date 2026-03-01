@@ -2,8 +2,6 @@
 
 namespace Chess.Lib.UI;
 
-public readonly record struct RGBAColor32(byte Red, byte Green, byte Blue, byte Alpha);
-
 public class GameUI
 {
     private const string FontDejaVuSans = "Fonts/DejaVuSans.ttf";
@@ -445,8 +443,8 @@ public class GameUI
     {
         const int shift = 20;
 
-        var bgLuminance = 0.299f * background.Red + 0.587f * background.Green + 0.114f * background.Blue;
-        var fgLuminance = 0.299f * foreground.Red + 0.587f * foreground.Green + 0.114f * foreground.Blue;
+        var bgLuminance = background.Luminance;
+        var fgLuminance = foreground.Luminance;
 
         // Dark background: lighten; bright background: darken
         var delta = bgLuminance < fgLuminance ? shift : -shift;
