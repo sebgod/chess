@@ -62,12 +62,14 @@ public class GameUI
             var unit = Lcm(alignX, alignY);
             _squareSize = AlignDown(_squareSize, unit);
             _margin = AlignDown(_squareSize / 2, unit);
-            _topMargin = AlignDown((int)(_squareSize * 0.5), unit);
+            var capturedHeight = (int)MathF.Round(_squareSize * 0.4f * 1.4f);
+            _topMargin = AlignUp(Math.Max(_squareSize / 2, capturedHeight), unit);
         }
         else
         {
             _margin = _squareSize / 2;
-            _topMargin = (int)(_squareSize * 0.5);
+            var capturedHeight = (int)MathF.Round(_squareSize * 0.4f * 1.4f);
+            _topMargin = Math.Max((int)(_squareSize * 0.5), capturedHeight);
         }
 
         _boardEnd = _squareSize * 8 + _margin;
@@ -196,7 +198,8 @@ public class GameUI
                 DrawCapturedText(renderer, surface, capturedPieceCounts, Side.White, _margin, whiteCapturedTextY);
             }
 
-            var blackCapturedTextY = _topMargin - _margin;
+            var capturedCellHeight = (int)MathF.Round(_capturedFontSize * 1.4f);
+            var blackCapturedTextY = _topMargin - capturedCellHeight;
             if (clip.Contains(_margin, blackCapturedTextY))
             {
                 DrawCapturedText(renderer, surface, capturedPieceCounts, Side.Black, _margin, blackCapturedTextY);
@@ -407,7 +410,7 @@ public class GameUI
         var maxWidth = _boardEnd - _margin;
 
         var whiteY = _topMargin + _boardEnd + _margin;
-        var blackY = _topMargin - _margin;
+        var blackY = _topMargin - cellSize;
 
         return (
             new RectInt((_margin + maxWidth, whiteY + cellSize), (_margin, whiteY)),
@@ -420,6 +423,12 @@ public class GameUI
     /// </summary>
     private static int AlignDown(int value, uint alignment) =>
         (int)((uint)value / alignment * alignment);
+
+    /// <summary>
+    /// Rounds <paramref name="value"/> up to the nearest multiple of <paramref name="alignment"/>.
+    /// </summary>
+    private static int AlignUp(int value, uint alignment) =>
+        (int)(((uint)value + alignment - 1) / alignment * alignment);
 
     private static uint Lcm(uint a, uint b) => a / Gcd(a, b) * b;
 
