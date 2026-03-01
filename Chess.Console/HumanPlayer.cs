@@ -8,7 +8,12 @@ namespace Chess.Console;
 
 /// <summary>
 /// A human player that reads mouse and keyboard input from the terminal and translates them into game actions.
-/// Keyboard input accepts a column letter (a-h) followed by a row digit (1-8) to select or move.
+/// Keyboard input supports three modes:
+/// <list type="bullet">
+///   <item>Column letter (a-h) + row digit (1-8) to select a square or specify a move target.</item>
+///   <item>When a piece is already selected, column + row to move it to a different square.</item>
+///   <item>When a piece is already selected, just a row digit to move along the same file.</item>
+/// </list>
 /// </summary>
 internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
 {
@@ -44,21 +49,30 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
             return (UIResponse.None, []);
         }
 
-        if (_pendingFile is { } pendingFile && TryParseRank(key) is { } rank)
+        if (TryParseRank(key) is { } rank)
         {
-            _pendingFile = null;
-            return ui.TryPerformAction(new Position(pendingFile, rank));
+            if (_pendingFile is { } pendingFile)
+            {
+                _pendingFile = null;
+                return ui.TryPerformAction(new Position(pendingFile, rank));
+            }
+
+            // Rank-only shortcut: move selected piece along its file
+            if (ui.Selected is { } selected)
+            {
+                return ui.TryPerformAction(new Position(selected.File, rank));
+            }
         }
 
         _pendingFile = null;
         return (UIResponse.None, []);
     }
 
-    private static File? TryParseFile(char key) => char.ToLowerInvariant(key) switch
+    private static File? TryParseFile(char key)
     {
-        >= 'a' and <= 'h' => (File)(key - 'a'),
-        _ => null
-    };
+        var lower = char.ToLowerInvariant(key);
+        return lower is >= 'a' and <= 'h' ? (File)(lower - 'a') : null;
+    }
 
     private static Rank? TryParseRank(char key) => key switch
     {
