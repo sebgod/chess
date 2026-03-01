@@ -14,14 +14,7 @@ internal sealed class ConsoleGameRenderer(int historyStartColumn, int historyCol
     {
         System.Console.SetCursorPosition(0, statusBarRow);
 
-        var currentPlayer = game.CurrentSide == Side.White ? "White" : "Black";
-        var status = game.GameStatus switch
-        {
-            GameStatus.Check => $" {currentPlayer} to move (CHECK)",
-            GameStatus.Checkmate => $" {(game.CurrentSide == Side.White ? "Black" : "White")} wins by checkmate!",
-            GameStatus.Stalemate => " Draw by stalemate",
-            _ => $" {currentPlayer} to move"
-        };
+        var status = $" {game.GameStatus.ToMessage(game.CurrentSide)}";
 
         var debugInfo = "";
         if (stats is { } s)

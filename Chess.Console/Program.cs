@@ -10,6 +10,8 @@ Console.CancelKeyPress += (_, e) =>
     cts.Cancel();
 };
 
+var (gameMode, computerSide) = await StartupMenu.ShowAsync(cts.Token);
+
 using var terminal = new ConsoleTerminal();
 
 // Query cell size before entering alternate buffer to keep response invisible
@@ -40,41 +42,53 @@ var chrome = new ConsoleGameRenderer(
     statusBarRow: Console.WindowHeight - 1,
     totalWidth: Console.WindowWidth);
 
+var humanPlayer = new HumanPlayer(terminal, cellWidth, cellHeight);
+IGamePlayer whitePlayer, blackPlayer;
+
+if (gameMode is GameMode.PlayerVsComputer)
+{
+    var aiPlayer = new AiPlayer(new AiEngine(computerSide));
+    if (computerSide is Side.White)
+    {
+        (whitePlayer, blackPlayer) = (aiPlayer, humanPlayer);
+    }
+    else
+    {
+        (whitePlayer, blackPlayer) = (humanPlayer, aiPlayer);
+    }
+}
+else
+{
+    (whitePlayer, blackPlayer) = (humanPlayer, humanPlayer);
+}
+
 display.RenderFrame(ui, imageRenderer, image, default, cellHeight);
 chrome.RenderStatusBar(game, display.Stats);
 chrome.RenderHistory(game);
 
-while (!cts.Token.IsCancellationRequested)
+try
 {
-    if (terminal.HasInput())
+    while (!cts.Token.IsCancellationRequested)
     {
-        var mouseEvent = terminal.TryReadMouseEvent();
-        if (mouseEvent is { Button: 0, IsRelease: false })
-        {
-            var pixelX = mouseEvent.Value.X * cellWidth;
-            var pixelY = mouseEvent.Value.Y * cellHeight;
+        var currentPlayer = game.CurrentSide == Side.White ? whitePlayer : blackPlayer;
+        var result = currentPlayer.TryMakeMove(ui);
 
-            var (response, clipRects) = ui.TryPerformAction(pixelX, pixelY);
-            if (response.HasFlag(UIResponse.NeedsRefresh))
+        if (result is { } moveResult && moveResult.Response.HasFlag(UIResponse.NeedsRefresh))
+        {
+            display.RenderFrame(ui, imageRenderer, image, moveResult.ClipRects, cellHeight);
+            if (moveResult.Response.HasFlag(UIResponse.IsUpdate))
             {
-                display.RenderFrame(ui, imageRenderer, image, clipRects, cellHeight);
-                if (response.HasFlag(UIResponse.IsUpdate))
-                {
-                    chrome.RenderStatusBar(game, display.Stats);
-                    chrome.RenderHistory(game);
-                }
+                chrome.RenderStatusBar(game, display.Stats);
+                chrome.RenderHistory(game);
             }
         }
-    }
-    else
-    {
-        try
+        else if (result is null)
         {
             await Task.Delay(16, cts.Token);
         }
-        catch (OperationCanceledException)
-        {
-            break;
-        }
     }
+}
+catch (OperationCanceledException)
+{
+    // Expected on Ctrl+C
 }
