@@ -43,7 +43,7 @@ try
     var game = new Game();
     using var image = new MagickImage(MagickColors.Black, width, height);
 
-    var imageRenderer = new MagickImageRenderer();
+    using var imageRenderer = new MagickImageRenderer();
     var ui = new GameUI(game, image.Width, image.Height, 
         mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
         backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff));

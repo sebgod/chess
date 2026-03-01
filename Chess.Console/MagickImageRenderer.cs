@@ -4,8 +4,10 @@ using ImageMagick.Drawing;
 
 namespace Chess.Console;
 
-public class MagickImageRenderer() : Renderer<MagickImage>()
+public class MagickImageRenderer() : Renderer<MagickImage>(), IDisposable
 {
+    private readonly Dictionary<CaptionCacheKey, MagickImage> _captionCache = [];
+
     public override void FillRectangle(MagickImage surface, in RectInt rect, RGBAColor32 fillColor)
         => surface.Draw(GetDrawableRect(rect), new DrawableFillColor(GetColor(fillColor)), new DrawableFillOpacity(new Percentage(100)));
 
@@ -42,61 +44,78 @@ public class MagickImageRenderer() : Renderer<MagickImage>()
         var density = origDensity.X == 0 || origDensity.Y == 0 ? new Density(72, DensityUnit.PixelsPerInch) : origDensity;
 
         var factor = density.Y / 72f;
+        var gravity = GetGravity(horizAlignment, vertAlignment);
+        var textString = text.ToString();
 
-        var readSettings = new MagickReadSettings
+        var cacheKey = new CaptionCacheKey(
+            textString,
+            fontFamily,
+            fontSize / factor,
+            fontColor,
+            (uint)w,
+            (uint)h,
+            gravity,
+            density.X,
+            density.Y
+        );
+
+        if (!_captionCache.TryGetValue(cacheKey, out var overlayImage))
         {
-            Font = fontFamily,
-            Width = (uint)w,
-            Height = (uint)h,
-            TextGravity = GetGravity(horizAlignment, vertAlignment),
-            FontPointsize = fontSize / factor, 
-            BackgroundColor = new MagickColor(0, 0, 0, 0),
-            FillColor =  GetColor(fontColor),
-            Density = density,
-        };
-        using var overlayImage = new MagickImage(string.Concat("caption:", text), readSettings);
+            var readSettings = new MagickReadSettings
+            {
+                Font = fontFamily,
+                Width = (uint)w,
+                Height = (uint)h,
+                TextGravity = gravity,
+                FontPointsize = fontSize / factor,
+                BackgroundColor = new MagickColor(0, 0, 0, 0),
+                FillColor = GetColor(fontColor),
+                Density = density,
+            };
+
+            overlayImage = new MagickImage(string.Concat("caption:", textString), readSettings);
+            _captionCache[cacheKey] = overlayImage;
+        }
+
         surface.Composite(overlayImage, Gravity.Northwest, (int)x, (int)y, CompositeOperator.Atop);
     }
 
     private static Gravity GetGravity(TextAlign horizAlignment, TextAlign vertAlignment)
-    { 
-        if (horizAlignment is TextAlign.Center && vertAlignment is TextAlign.Center)
+    {
+        return (horizAlignment, vertAlignment) switch
         {
-            return Gravity.Center;
-        }
-        else if (horizAlignment is TextAlign.Center && vertAlignment is TextAlign.Near)
-        {
-            return Gravity.South;
-        }
-        else if (horizAlignment is TextAlign.Center && vertAlignment is TextAlign.Far)
-        {
-            return Gravity.North;
-        }
-        else if (horizAlignment is TextAlign.Far && vertAlignment is TextAlign.Center)
-        {
-            return Gravity.East;
-        }
-        else if (horizAlignment is TextAlign.Far && vertAlignment is TextAlign.Far)
-        {
-            return Gravity.Northeast;
-        }
-        else if (horizAlignment is TextAlign.Far && vertAlignment is TextAlign.Near)
-        {
-            return Gravity.Southeast;
-        }
-        else if (horizAlignment is TextAlign.Near && vertAlignment is TextAlign.Center)
-        {
-            return Gravity.West;
-        }
-        else if (horizAlignment is TextAlign.Near && vertAlignment is TextAlign.Far)
-        {
-            return Gravity.Northwest;
-        }
-        else if (horizAlignment is TextAlign.Near && vertAlignment is TextAlign.Near)
-        {
-            return Gravity.Southwest;
-        }
-
-        return Gravity.Undefined;
+            (TextAlign.Center, TextAlign.Center) => Gravity.Center,
+            (TextAlign.Center, TextAlign.Near) => Gravity.South,
+            (TextAlign.Center, TextAlign.Far) => Gravity.North,
+            (TextAlign.Far, TextAlign.Center) => Gravity.East,
+            (TextAlign.Far, TextAlign.Far) => Gravity.Northeast,
+            (TextAlign.Far, TextAlign.Near) => Gravity.Southeast,
+            (TextAlign.Near, TextAlign.Center) => Gravity.West,
+            (TextAlign.Near, TextAlign.Far) => Gravity.Northwest,
+            (TextAlign.Near, TextAlign.Near) => Gravity.Southwest,
+            _ => Gravity.Undefined
+        };
     }
+
+    public void Dispose()
+    {
+        foreach (var cachedImage in _captionCache.Values)
+        {
+            cachedImage.Dispose();
+        }
+        _captionCache.Clear();
+        GC.SuppressFinalize(this);
+    }
+
+    private readonly record struct CaptionCacheKey(
+        string Text,
+        string FontFamily,
+        double FontPointSize,
+        RGBAColor32 FontColor,
+        uint Width,
+        uint Height,
+        Gravity Gravity,
+        double DensityX,
+        double DensityY
+    );
 }

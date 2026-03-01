@@ -99,11 +99,15 @@ public class GameUI
         RenderBoard(renderer, surface, clip);
 
         // board border
-
         var boardRect = new RectInt((_boardEnd, _topMargin + _boardEnd), (_margin, _topMargin + _margin));
         var borderRect = boardRect.Inflate(-BorderWidth / 2);
 
-        if (clip.IsContainedWithin(borderRect))
+        // Redraw the border if the clip overlaps with any edge of the board.
+        // The border needs redrawing when squares along the edge are updated,
+        // since filling the square can overwrite parts of the border.
+        var needsBorderRedraw = !clip.IsContainedWithin(borderRect.Inflate(-BorderWidth));
+
+        if (!needsBorderRedraw)
         {
             return;
         }
