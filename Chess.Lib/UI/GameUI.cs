@@ -93,6 +93,18 @@ public class GameUI
 
     public int SquareSize => _squareSize;
 
+    /// <summary>
+    /// Creates a new <see cref="GameUI"/> with the given dimensions, preserving game state, selection, and style.
+    /// </summary>
+    public GameUI Resize(uint uiSizeX, uint uiSizeY) => new(
+        Game, uiSizeX, uiSizeY,
+        selected: Selected,
+        pendingPromotion: PendingPromotion,
+        labelFont: _labelFont,
+        pieceFont: _pieceFont,
+        mainFontColor: _mainFontColor,
+        backgroundColor: _backgroundColor);
+
     public void Render<TSurface, TRenderer>(TRenderer renderer, TSurface surface, in RectInt clip)
         where TRenderer : Renderer<TSurface>
     {

@@ -35,12 +35,7 @@ var ui = new GameUI(game, image.Width, image.Height,
     backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff));
 
 using var display = new SixelDisplay();
-var chrome = new ConsoleGameRenderer(
-    historyStartColumn: imageColumns,
-    historyColumnWidth: historyColumns,
-    historyRowCount: imageRows,
-    statusBarRow: Console.WindowHeight - 1,
-    totalWidth: Console.WindowWidth);
+var chrome = new ConsoleGameRenderer(historyColumns, Console.WindowWidth, Console.WindowHeight);
 
 var humanPlayer = new HumanPlayer(terminal, cellWidth, cellHeight);
 IGamePlayer whitePlayer, blackPlayer;
@@ -85,6 +80,27 @@ try
         else if (result is null)
         {
             await Task.Delay(16, cts.Token);
+        }
+
+        var newConsoleWidth = Console.WindowWidth;
+        var newConsoleHeight = Console.WindowHeight;
+        // Detect resizing and recreate UI
+        if (chrome.NeedsResize(newConsoleWidth, newConsoleHeight))
+        {
+            imageColumns = newConsoleWidth - historyColumns;
+            imageRows = newConsoleHeight - statusBarRows;
+            width = (uint)imageColumns * (uint)cellWidth;
+            height = (uint)imageRows * (uint)cellHeight;
+
+            image.Read(MagickColors.Black, width, height);
+
+            ui = ui.Resize(image.Width, image.Height);
+
+            chrome.Resize(newConsoleWidth, newConsoleHeight);
+
+            display.RenderFrame(ui, imageRenderer, image, default, cellHeight);
+            chrome.RenderStatusBar(game, display.Stats);
+            chrome.RenderHistory(game);
         }
     }
 }
