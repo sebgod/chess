@@ -69,7 +69,7 @@ internal sealed class SixelDisplay : IDisposable
         {
             System.Console.SetCursorPosition(0, 0);
             System.Console.Out.Flush();
-            image.Write(_stdout, MagickFormat.Sixel);
+            SixelEncoder.Encode(image, _stdout);
         }
         else
         {
@@ -83,13 +83,9 @@ internal sealed class SixelDisplay : IDisposable
 
             if (cropHeight > 0)
             {
-                using var cropped = image.Clone();
-                cropped.Crop(new MagickGeometry(0, pixelStartY, image.Width, (uint)cropHeight));
-                cropped.ResetPage();
-
                 System.Console.SetCursorPosition(0, startRow);
                 System.Console.Out.Flush();
-                cropped.Write(_stdout, MagickFormat.Sixel);
+                SixelEncoder.Encode(image, pixelStartY, (uint)cropHeight, _stdout);
             }
         }
 
