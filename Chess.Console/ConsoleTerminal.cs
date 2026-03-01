@@ -13,6 +13,8 @@ internal readonly record struct MouseEvent(int Button, int X, int Y, bool IsRele
 /// </summary>
 internal sealed class ConsoleTerminal : IDisposable
 {
+    private int? _cellWidth;
+    private int? _cellHeight;
 
     /// <summary>
     /// Queries the terminal cell size in pixels using XTWINOPS (CSI 16 t).
@@ -20,6 +22,11 @@ internal sealed class ConsoleTerminal : IDisposable
     /// </summary>
     public async Task<(int Width, int Height)?> QueryCellSizeAsync()
     {
+        if (_cellWidth.HasValue && _cellHeight.HasValue)
+        {
+            return (_cellWidth.Value, _cellHeight.Value);
+        }
+
         var response = await GetControlSequenceResponseAsync("\e[16t");
 
         var tIndex = response.IndexOf('t');
@@ -35,6 +42,8 @@ internal sealed class ConsoleTerminal : IDisposable
             int.TryParse(parts[1], out var height) &&
             int.TryParse(parts[2], out var width))
         {
+            _cellWidth = width;
+            _cellHeight = height;
             return (width, height);
         }
 
@@ -44,8 +53,11 @@ internal sealed class ConsoleTerminal : IDisposable
     /// <summary>
     /// Enters the alternate screen buffer, hides the cursor, and enables mouse tracking.
     /// </summary>
-    public void Enter()
+    public async ValueTask EnterAsync()
     {
+        // cache cell size
+        _ = await QueryCellSizeAsync();
+
         if (OperatingSystem.IsWindows())
         {
             WindowsConsoleInput.EnableMouseInput();

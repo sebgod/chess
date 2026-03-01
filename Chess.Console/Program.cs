@@ -14,16 +14,14 @@ var (gameMode, computerSide) = await StartupMenu.ShowAsync(cts.Token);
 
 using var terminal = new ConsoleTerminal();
 
-// Query cell size before entering alternate buffer to keep response invisible
-var (cellWidth, cellHeight) = await terminal.QueryCellSizeAsync() ?? (10, 20);
-
-terminal.Enter();
+await terminal.EnterAsync();
 
 const int historyColumns = 24;
 const int statusBarRows = 1;
 
 var imageColumns = Console.WindowWidth - historyColumns;
 var imageRows = Console.WindowHeight - statusBarRows;
+var (cellWidth, cellHeight) = await terminal.QueryCellSizeAsync() ?? (10, 20);
 var width = (uint)imageColumns * (uint)cellWidth;
 var height = (uint)imageRows * (uint)cellHeight;
 var game = new Game();
