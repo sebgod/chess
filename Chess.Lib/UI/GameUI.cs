@@ -468,17 +468,25 @@ public class GameUI
         }
         else if (FindSelected(x, y) is { } selected)
         {
-            if (Selected is { } prev && prev != selected)
-            {
-                return TryPerformAction(Action.DoMove(prev, selected));
-            }
-            else
-            {
-                return TrySelect(selected);
-            }
+            return TryPerformAction(selected);
         }
 
         return (UIResponse.None, []);
+    }
+
+    /// <summary>
+    /// Performs a select or move action for the given board position.
+    /// If a piece is already selected and <paramref name="position"/> differs, attempts a move;
+    /// otherwise selects the square.
+    /// </summary>
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TryPerformAction(Position position)
+    {
+        if (Selected is { } prev && prev != position)
+        {
+            return TryPerformAction(Action.DoMove(prev, position));
+        }
+
+        return TrySelect(position);
     }
 
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TryPerformAction(Action action)

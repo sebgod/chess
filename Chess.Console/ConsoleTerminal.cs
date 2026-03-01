@@ -91,29 +91,28 @@ internal sealed class ConsoleTerminal : IDisposable
             : System.Console.KeyAvailable;
 
     /// <summary>
-    /// Attempts to read a mouse event from the terminal input.
-    /// Coordinates are always returned in pixels.
+    /// Attempts to read input from the terminal.
+    /// Returns a mouse event if mouse input was received, or a raw key character if keyboard input was received.
+    /// Mouse input takes precedence; both may be null if the consumed input was neither.
     /// </summary>
-    public MouseEvent? TryReadMouseEvent()
+    public (MouseEvent? Mouse, char? KeyChar) TryReadInput()
     {
         if (_useDecLocator)
         {
-            return ParseDecLocatorEvent();
+            return ParseDecLocatorInput();
         }
 
-        if (!_cellHeight.HasValue || !_cellWidth.HasValue)
-        {
-            return null;
-        }
+        var (rawMouse, keyChar) = OperatingSystem.IsWindows()
+            ? WindowsConsoleInput.TryReadInputEvent()
+            : ParseSgrInput();
 
-        var raw = OperatingSystem.IsWindows() ? WindowsConsoleInput.TryReadMouseEvent() : ParseSgrMouseEvent();
-        if (raw is not { } r)
+        if (rawMouse is not { } r || !_cellWidth.HasValue || !_cellHeight.HasValue)
         {
-            return null;
+            return (null, keyChar);
         }
 
         // Normalize cell coordinates to pixels
-        return new MouseEvent(r.Button, r.X * (int)_cellWidth.Value, r.Y * (int)_cellHeight.Value, r.IsRelease);
+        return (new MouseEvent(r.Button, r.X * (int)_cellWidth.Value, r.Y * (int)_cellHeight.Value, r.IsRelease), null);
     }
 
     public void Dispose()
@@ -182,14 +181,15 @@ internal sealed class ConsoleTerminal : IDisposable
     }
 
     /// <summary>
-    /// Parses a DECLRP response (CSI Pe;Pb;Pr;Pc;Pp &amp; w) into a mouse event with pixel coordinates.
+    /// Parses a DECLRP response (CSI Pe;Pb;Pr;Pc;Pp &amp; w) into a mouse event with pixel coordinates,
+    /// or returns the raw key character if the input was not an escape sequence.
     /// </summary>
-    private static MouseEvent? ParseDecLocatorEvent()
+    private static (MouseEvent? Mouse, char? KeyChar) ParseDecLocatorInput()
     {
         var first = System.Console.ReadKey(intercept: true);
         if (first.Key != ConsoleKey.Escape)
         {
-            return null;
+            return (null, first.KeyChar);
         }
 
         var sb = new StringBuilder();
@@ -197,7 +197,7 @@ internal sealed class ConsoleTerminal : IDisposable
         {
             if (!System.Console.KeyAvailable)
             {
-                return null;
+                return (null, null);
             }
 
             var ch = System.Console.ReadKey(intercept: true);
@@ -205,13 +205,13 @@ internal sealed class ConsoleTerminal : IDisposable
             {
                 if (!System.Console.KeyAvailable)
                 {
-                    return null;
+                    return (null, null);
                 }
 
                 var next = System.Console.ReadKey(intercept: true);
                 if (next.KeyChar != 'w')
                 {
-                    return null;
+                    return (null, null);
                 }
 
                 var parts = sb.ToString().TrimStart('[').Split(';');
@@ -230,36 +230,40 @@ internal sealed class ConsoleTerminal : IDisposable
                     };
                     if (button < 0)
                     {
-                        return null;
+                        return (null, null);
                     }
 
                     var isRelease = pe is 3 or 5 or 7;
                     // DECLRP pixel coordinates are 1-based
-                    return new MouseEvent(button, pc - 1, pr - 1, isRelease);
+                    return (new MouseEvent(button, pc - 1, pr - 1, isRelease), null);
                 }
 
-                return null;
+                return (null, null);
             }
 
             sb.Append(ch.KeyChar);
         }
     }
 
-    private static (int Button, int X, int Y, bool IsRelease)? ParseSgrMouseEvent()
+    /// <summary>
+    /// Parses an SGR mouse event (CSI &lt; Pb;Px;Py M/m), or returns the raw key character
+    /// if the input was not an escape sequence.
+    /// </summary>
+    private static ((int Button, int X, int Y, bool IsRelease)? Mouse, char? KeyChar) ParseSgrInput()
     {
         var sb = new StringBuilder();
 
         var first = System.Console.ReadKey(intercept: true);
         if (first.Key != ConsoleKey.Escape)
         {
-            return null;
+            return (null, first.KeyChar);
         }
 
         while (true)
         {
             if (!System.Console.KeyAvailable)
             {
-                return null;
+                return (null, null);
             }
 
             var ch = System.Console.ReadKey(intercept: true);
@@ -273,9 +277,9 @@ internal sealed class ConsoleTerminal : IDisposable
                     int.TryParse(parts[2], out var y))
                 {
                     // SGR coordinates are 1-based
-                    return (button, x - 1, y - 1, isRelease);
+                    return ((button, x - 1, y - 1, isRelease), null);
                 }
-                return null;
+                return (null, null);
             }
 
             sb.Append(ch);

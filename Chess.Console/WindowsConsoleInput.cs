@@ -15,6 +15,7 @@ internal static class WindowsConsoleInput
     private const uint ENABLE_QUICK_EDIT_MODE = 0x0040;
     private const uint ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200;
 
+    private const ushort KEY_EVENT = 0x0001;
     private const ushort MOUSE_EVENT = 0x0002;
     private const uint FROM_LEFT_1ST_BUTTON_PRESSED = 0x0001;
 
@@ -48,6 +49,8 @@ internal static class WindowsConsoleInput
         public ushort EventType;
         [FieldOffset(4)]
         public MOUSE_EVENT_RECORD MouseEvent;
+        [FieldOffset(4)]
+        public KEY_EVENT_RECORD KeyEvent;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -64,6 +67,18 @@ internal static class WindowsConsoleInput
         public uint dwButtonState;
         public uint dwControlKeyState;
         public uint dwEventFlags;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct KEY_EVENT_RECORD
+    {
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool bKeyDown;
+        public ushort wRepeatCount;
+        public ushort wVirtualKeyCode;
+        public ushort wVirtualScanCode;
+        public char UnicodeChar;
+        public uint dwControlKeyState;
     }
 
     private static nint _inputHandle;
@@ -138,26 +153,37 @@ internal static class WindowsConsoleInput
     }
 
     /// <summary>
-    /// Tries to read a mouse event from the console input.
+    /// Tries to read an input event from the console.
+    /// Returns a mouse event or a key character, depending on the input type.
     /// </summary>
-    /// <returns>Mouse event data if a mouse event was read, null otherwise.</returns>
-    public static (int Button, int X, int Y, bool IsRelease)? TryReadMouseEvent()
+    public static ((int Button, int X, int Y, bool IsRelease)? Mouse, char? KeyChar) TryReadInputEvent()
     {
         if (_inputHandle == nint.Zero || _inputHandle == new nint(-1))
         {
-            return null;
+            return (null, null);
         }
 
         var buffer = new INPUT_RECORD[1];
         if (!ReadConsoleInput(_inputHandle, buffer, 1, out uint eventsRead) || eventsRead == 0)
         {
-            return null;
+            return (null, null);
         }
 
         var record = buffer[0];
+
+        if (record.EventType == KEY_EVENT)
+        {
+            var keyEvent = record.KeyEvent;
+            if (keyEvent.bKeyDown && keyEvent.UnicodeChar != '\0')
+            {
+                return (null, keyEvent.UnicodeChar);
+            }
+            return (null, null);
+        }
+
         if (record.EventType != MOUSE_EVENT)
         {
-            return null;
+            return (null, null);
         }
 
         var mouseEvent = record.MouseEvent;
@@ -166,7 +192,7 @@ internal static class WindowsConsoleInput
         // We're interested in button press/release (0)
         if (mouseEvent.dwEventFlags != 0)
         {
-            return null;
+            return (null, null);
         }
 
         // Detect which button changed state by comparing with previous state
@@ -177,16 +203,16 @@ internal static class WindowsConsoleInput
         // If no button state changed, ignore
         if (changedButtons == 0)
         {
-            return null;
+            return (null, null);
         }
 
         // Check if left button changed - map to button 0
         if ((changedButtons & FROM_LEFT_1ST_BUTTON_PRESSED) != 0)
         {
             bool isRelease = (currentState & FROM_LEFT_1ST_BUTTON_PRESSED) == 0;
-            return (0, mouseEvent.dwMousePosition.X, mouseEvent.dwMousePosition.Y, isRelease);
+            return ((0, mouseEvent.dwMousePosition.X, mouseEvent.dwMousePosition.Y, isRelease), null);
         }
 
-        return null;
+        return (null, null);
     }
 }
