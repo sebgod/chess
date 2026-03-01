@@ -52,7 +52,7 @@ try
     var statusBarRow = Console.WindowHeight - 1;
     var historyRowCount = imageRows;
 
-    RenderFrame(ui, imageRenderer, image, default);
+    RenderFrame(ui, imageRenderer, image, default, cellHeight);
     RenderStatusBar(game, statusBarRow, Console.WindowWidth);
     RenderHistory(game, historyStartColumn, historyColumns, historyRowCount);
 
@@ -62,7 +62,7 @@ try
         if (hasInput)
         {
             var mouseEvent = isWindows ? WindowsConsoleInput.TryReadMouseEvent() : ParseVTMouseEvent();
-            if (mouseEvent is { Button: 0, IsRelease: true })
+            if (mouseEvent is { Button: 0, IsRelease: false })
             {
                 var pixelX = mouseEvent.Value.X * cellWidth;
                 var pixelY = mouseEvent.Value.Y * cellHeight;
@@ -70,7 +70,7 @@ try
                 var (response, clipRects) = ui.TryPerformAction(pixelX, pixelY);
                 if (response.HasFlag(UIResponse.NeedsRefresh))
                 {
-                    RenderFrame(ui, imageRenderer, image, clipRects);
+                    RenderFrame(ui, imageRenderer, image, clipRects, cellHeight);
                     if (response.HasFlag(UIResponse.IsUpdate))
                     {
                         RenderStatusBar(game, statusBarRow, Console.WindowWidth);
@@ -135,12 +135,14 @@ static async Task<(int Width, int Height)?> QueryCellSizeAsync()
     return null;
 }
 
-static void RenderFrame(GameUI ui, MagickImageRenderer renderer, MagickImage image, IReadOnlyList<RectInt>? clipRects)
+static void RenderFrame(GameUI ui, MagickImageRenderer renderer, MagickImage image, IReadOnlyList<RectInt>? clipRects, int cellHeight)
 {
     // Calculate clip region for rendering optimization (reduces work in ui.Render)
     RectInt clip;
+    bool isFullRender;
     if (clipRects is { Count: > 0 })
     {
+        isFullRender = false;
         clip = clipRects[0];
         for (var i = 1; i < clipRects.Count; i++)
         {
@@ -149,15 +151,41 @@ static void RenderFrame(GameUI ui, MagickImageRenderer renderer, MagickImage ima
     }
     else
     {
+        isFullRender = true;
         clip = new RectInt((image.Width, image.Height), (0, 0));
     }
 
     ui.Render(renderer, image, clip);
 
-    // Always output full image - partial Sixel updates have alignment issues
-    Console.SetCursorPosition(0, 0);
-    var sixels = Encoding.ASCII.GetString(image.ToByteArray(MagickFormat.Sixel));
-    Console.Write(sixels);
+    if (isFullRender)
+    {
+        // Full image output
+        Console.SetCursorPosition(0, 0);
+        var sixels = Encoding.ASCII.GetString(image.ToByteArray(MagickFormat.Sixel));
+        Console.Write(sixels);
+    }
+    else
+    {
+        // Partial output - crop to affected rows and render only that portion
+        // Align to cell boundaries for proper cursor positioning
+        var startRow = (int)(clip.UpperLeft.Y / cellHeight);
+        var endRow = (int)((clip.LowerRight.Y + cellHeight - 1) / cellHeight);
+
+        var pixelStartY = startRow * cellHeight;
+        var pixelEndY = Math.Min((int)image.Height, endRow * cellHeight);
+        var cropHeight = pixelEndY - pixelStartY;
+
+        if (cropHeight > 0)
+        {
+            using var cropped = image.Clone();
+            cropped.Crop(new MagickGeometry(0, pixelStartY, image.Width, (uint)cropHeight));
+            cropped.ResetPage();
+
+            Console.SetCursorPosition(0, startRow);
+            var sixels = Encoding.ASCII.GetString(cropped.ToByteArray(MagickFormat.Sixel));
+            Console.Write(sixels);
+        }
+    }
 }
 
 static async ValueTask<string> GetControlSequenceResponseAsync(string sequence)
