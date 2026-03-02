@@ -136,7 +136,7 @@ public class GameUI
         // board
         RenderBoard(renderer, surface, clip);
 
-        var boardRect = new RectInt(new PointInt(_boardEnd, _topMargin + _boardEnd), new PointInt(_margin, _topMargin + _margin));
+        var boardRect = new RectInt((_boardEnd, _topMargin + _boardEnd), (_margin, _topMargin + _margin));
 
         // If the clip is entirely within the board area, skip chrome rendering
         if (clip.IsContainedWithin(boardRect))
@@ -154,11 +154,11 @@ public class GameUI
             var fileText = pos.File.ToLabel();
             var rankText = pos.Rank.ToLabel();
 
-            var top = new RectInt(new PointInt(x_y + _squareSize, _topMargin + _margin), new PointInt(x_y, _topMargin));
-            var bottom = new RectInt(new PointInt(top.LowerRight.X, top.LowerRight.Y + _boardEnd), new PointInt(top.UpperLeft.X, top.UpperLeft.Y + _boardEnd));
+            var top = new RectInt((x_y + _squareSize, _topMargin + _margin), (x_y, _topMargin));
+            var bottom = new RectInt((top.LowerRight.X, top.LowerRight.Y + _boardEnd), (top.UpperLeft.X, top.UpperLeft.Y + _boardEnd));
 
-            var left = new RectInt(new PointInt(_margin, x_y + _topMargin + _squareSize), new PointInt(0, x_y + _topMargin));
-            var right = new RectInt(new PointInt(left.LowerRight.X + _boardEnd, left.LowerRight.Y), new PointInt(left.UpperLeft.X + _boardEnd, left.UpperLeft.Y));
+            var left = new RectInt((_margin, x_y + _topMargin + _squareSize), (0, x_y + _topMargin));
+            var right = new RectInt((left.LowerRight.X + _boardEnd, left.LowerRight.Y), (left.UpperLeft.X + _boardEnd, left.UpperLeft.Y));
 
             renderer.DrawText(surface, fileText, _labelFont, _labelFontSize, _mainFontColor, top, vertAlignment: TextAlign.Center);
             renderer.DrawText(surface, fileText, _labelFont, _labelFontSize, _mainFontColor, bottom, vertAlignment: TextAlign.Center);
@@ -215,7 +215,7 @@ public class GameUI
 
             for (var i = 0; i < 4; i++)
             {
-                var squareRect = new RectInt(new PointInt(offX + _squareSize * (i + 1), offY + _squareSize), new PointInt(offX + _squareSize * i, offY));
+                var squareRect = new RectInt((offX + _squareSize * (i + 1), offY + _squareSize), (offX + _squareSize * i, offY));
                 renderer.FillRectangle(surface, squareRect, i % 2 == 0 ? WhiteSquareFill : BlackSquareFill);
 
                 DrawPiece(renderer, surface, new Piece((PieceType)(i + (int)PieceType.Knight), currentSide), squareRect, _pieceFontSize);
@@ -236,7 +236,7 @@ public class GameUI
         // Calculate size and clear the area first
         var cellSize = (int)MathF.Round(_capturedFontSize * 1.4f);
         var maxWidth = _boardEnd - x;
-        var clearRect = new RectInt(new PointInt(x + maxWidth, y + cellSize), new PointInt(x, y));
+        var clearRect = new RectInt((x + maxWidth, y + cellSize), (x, y));
         renderer.FillRectangle(surface, clearRect, _capturedAreaColor);
 
         var pieceX = x;
@@ -246,11 +246,11 @@ public class GameUI
             var count = capturedPieceCounts[((int)side - 1) * PieceTypeStride + pieceIdx];
             if (count > 0)
             {
-                var layoutCount = new RectInt(new PointInt(pieceX + cellSize, y + cellSize), new PointInt(pieceX, y));
+                var layoutCount = new RectInt((pieceX + cellSize, y + cellSize), (pieceX, y));
                 renderer.DrawText(surface, Convert.ToString(count), _labelFont, _capturedFontSize, _mainFontColor, layoutCount, vertAlignment: TextAlign.Center);
                 pieceX += count <= 9 ? cellSize : 2 * cellSize;
 
-                var layoutPiece = new RectInt(new PointInt(pieceX + cellSize, y + cellSize), new PointInt(pieceX, y));
+                var layoutPiece = new RectInt((pieceX + cellSize, y + cellSize), (pieceX, y));
                 DrawPiece(renderer, surface, new Piece((PieceType)pieceIdx, capturedSide), layoutPiece, _capturedFontSize);
                 pieceX += (int)(1.5 * cellSize);
             }
@@ -274,7 +274,7 @@ public class GameUI
                 var sqY = (7 - rankIdx) * _squareSize;
 
                 var lowerY = sqY + _margin + _topMargin;
-                var rect = new RectInt(new PointInt(x + _margin + _squareSize, lowerY + _squareSize), new PointInt(x + _margin, lowerY));
+                var rect = new RectInt((x + _margin + _squareSize, lowerY + _squareSize), (x + _margin, lowerY));
 
                 if (!rect.OverlapsWith(clip))
                 {
@@ -380,7 +380,7 @@ public class GameUI
         var x = (int)position.File * _squareSize + _margin;
         var y = (7 - (int)position.Rank) * _squareSize + _margin + _topMargin;
 
-        return new RectInt(new PointInt(x + _squareSize, y + _squareSize), new PointInt(x, y));
+        return new RectInt((x + _squareSize, y + _squareSize), (x, y));
     }
 
     public RectInt PromotePieceTypeSelectionBox(Side side)
@@ -393,7 +393,7 @@ public class GameUI
             offY = AlignDown(offY, alignY);
         }
 
-        return new RectInt(new PointInt(offX + _squareSize * 4, offY + _squareSize), new PointInt(offX, offY));
+        return new RectInt((offX + _squareSize * 4, offY + _squareSize), (offX, offY));
     }
 
     /// <summary>
@@ -408,8 +408,8 @@ public class GameUI
         var blackY = _topMargin - cellSize;
 
         return (
-            new RectInt(new PointInt(_margin + maxWidth, whiteY + cellSize), new PointInt(_margin, whiteY)),
-            new RectInt(new PointInt(_margin + maxWidth, blackY + cellSize), new PointInt(_margin, blackY))
+            new RectInt((_margin + maxWidth, whiteY + cellSize), (_margin, whiteY)),
+            new RectInt((_margin + maxWidth, blackY + cellSize), (_margin, blackY))
         );
     }
 

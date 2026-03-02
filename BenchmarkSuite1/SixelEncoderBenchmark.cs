@@ -26,7 +26,7 @@ public class SixelEncoderBenchmark
         var game = new Game();
         _gameUI = new GameUI(game, 800, 800);
         var squareSize = _gameUI.SquareSize;
-        _fullClip = new RectInt((squareSize * 10, squareSize * 10), (0, 0));
+        _fullClip = new RectInt((squareSize * 10, squareSize * 10), PointInt.Origin);
 
         // Render once so the surface has realistic chess board content
         _gameUI.Render(_renderer, _surface, _fullClip);

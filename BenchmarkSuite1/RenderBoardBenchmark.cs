@@ -20,7 +20,7 @@ public class RenderBoardBenchmark
         var game = new Game();
         _gameUI = new GameUI(game, 800, 800);
         var squareSize = _gameUI.SquareSize;
-        _fullClip = new RectInt(new PointInt(squareSize * 10, squareSize * 10), new PointInt(0, 0));
+        _fullClip = new RectInt((squareSize * 10, squareSize * 10), PointInt.Origin);
     }
 
     [GlobalCleanup]
