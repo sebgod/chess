@@ -67,12 +67,15 @@ try
         var currentPlayer = game.CurrentSide == Side.White ? whitePlayer : blackPlayer;
         var result = currentPlayer.TryMakeMove(ui);
 
-        if (result is { } moveResult && moveResult.Response.HasFlag(UIResponse.NeedsRefresh))
+        if (result is { } moveResult)
         {
-            display.RenderFrame(ui, imageRenderer, image, moveResult.ClipRects, cellHeight);
+            if (moveResult.Response.HasFlag(UIResponse.NeedsRefresh))
+            {
+                display.RenderFrame(ui, imageRenderer, image, moveResult.ClipRects, cellHeight);
+            }
             if (moveResult.Response.HasFlag(UIResponse.IsUpdate))
             {
-                chrome.RenderStatusBar(game, display.Stats);
+                chrome.RenderStatusBar(game, display.Stats, humanPlayer.PendingFile);
                 chrome.RenderHistory(game);
             }
         }

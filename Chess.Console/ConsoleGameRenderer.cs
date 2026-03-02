@@ -1,5 +1,7 @@
 using Chess.Lib;
 
+using File = Chess.Lib.File;
+
 namespace Chess.Console;
 
 /// <summary>
@@ -35,11 +37,12 @@ internal sealed class ConsoleGameRenderer
     /// <summary>
     /// Renders the status bar showing the current game state.
     /// </summary>
-    public void RenderStatusBar(Game game, RenderStats? stats = null)
+    public void RenderStatusBar(Game game, RenderStats? stats = null, File? pendingFile = null)
     {
         System.Console.SetCursorPosition(0, _statusBarRow);
 
-        var status = $" {game.GameStatus.ToMessage(game.CurrentSide)}";
+        var fileInfo = pendingFile is { } f ? $" [{f.ToLabel()}]" : "";
+        var status = $" {game.GameStatus.ToMessage(game.CurrentSide)}{fileInfo}";
 
         var debugInfo = "";
         if (stats is { } s)

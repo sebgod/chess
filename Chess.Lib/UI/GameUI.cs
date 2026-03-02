@@ -580,6 +580,16 @@ public class GameUI
         return (UIResponse.None, []);
     }
 
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) ClearSelection()
+    {
+        if (Selected is { } prev)
+        {
+            Selected = default;
+            return (UIResponse.NeedsRefresh, [SquareRect(prev)]);
+        }
+        return (UIResponse.None, []);
+    }
+
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TrySelect(Position position)
     {
         if (!Game.IsFinished && Game.HasValidMoves(position))

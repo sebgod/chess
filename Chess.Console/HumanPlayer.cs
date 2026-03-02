@@ -19,6 +19,8 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
 {
     private File? _pendingFile;
 
+    public File? PendingFile => _pendingFile;
+
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects)? TryMakeMove(GameUI ui)
     {
         if (!terminal.HasInput())
@@ -29,8 +31,11 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
         var (mouseEvent, keyChar) = terminal.TryReadInput();
         if (mouseEvent is { Button: 0, IsRelease: true } mouse)
         {
+            var hadPendingFile = _pendingFile is not null;
             _pendingFile = null;
-            return ui.TryPerformAction(mouse.X, mouse.Y);
+            var (response, clips) = ui.TryPerformAction(mouse.X, mouse.Y);
+            if (hadPendingFile) response |= UIResponse.IsUpdate;
+            return (response, clips);
         }
 
         if (keyChar is { } key)
@@ -43,10 +48,17 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
 
     private (UIResponse Response, ImmutableArray<RectInt> ClipRects) HandleKeyInput(GameUI ui, char key)
     {
+        if (key is '\x1B') // Escape
+        {
+            _pendingFile = null;
+            var (clearResponse, clearClips) = ui.ClearSelection();
+            return (clearResponse | UIResponse.IsUpdate, clearClips);
+        }
+
         if (TryParseFile(key) is { } file)
         {
             _pendingFile = file;
-            return (UIResponse.None, []);
+            return (UIResponse.IsUpdate, []);
         }
 
         if (TryParseRank(key) is { } rank)
@@ -54,7 +66,8 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
             if (_pendingFile is { } pendingFile)
             {
                 _pendingFile = null;
-                return ui.TryPerformAction(new Position(pendingFile, rank));
+                var (response, clips) = ui.TryPerformAction(new Position(pendingFile, rank));
+                return (response | UIResponse.IsUpdate, clips);
             }
 
             // Rank-only shortcut: move selected piece along its file
