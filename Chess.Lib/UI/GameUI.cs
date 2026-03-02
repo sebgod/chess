@@ -75,9 +75,9 @@ public class GameUI
         _mainFontColor = mainFontColor ?? FontColorBlack;
         _backgroundColor = backgroundColor ?? FontColorWhite;
         _capturedAreaColor = ComputeCapturedAreaColor(_backgroundColor, _mainFontColor);
-        _labelFont = labelFont;
+        _labelFont = Path.Combine(AppContext.BaseDirectory, labelFont);
         _labelFontSize = _squareSize * 0.3f;
-        _pieceFont = pieceFont;
+        _pieceFont = Path.Combine(AppContext.BaseDirectory, pieceFont);
         _pieceFontSize = _squareSize * 0.8f;
         _capturedFontSize = _squareSize * 0.4f;
 
