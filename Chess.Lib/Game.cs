@@ -96,5 +96,23 @@ public class Game
         return result;
     }
 
+    public Action? TryFindValidActionToPosition(in Position target)
+    {
+        var validMoves = new List<Action>();
+
+        foreach (var (position, _) in _board.AllPiecesOfSide(_currentSide))
+        {
+            foreach (var move in _board.ValidMoves(_plies, position, _currentSide))
+            {
+                if (move.To == target)
+                {
+                    validMoves.Add(move);
+                }
+            }
+        }
+
+        return validMoves.Count is 1 ? validMoves[0] : null;
+    }
+
     public override string ToString() => $"{_board.ToFEN()} [{_plies.ToPGN()}] {_gameStatus.ToMessage(_currentSide)}";
 }

@@ -1,6 +1,8 @@
 ﻿namespace Chess.Lib.UI;
 
-public readonly record struct RectInt((long X, long Y) LowerRight, (long X, long Y) UpperLeft)
+public readonly record struct PointInt(long X, long Y);
+
+public readonly record struct RectInt(PointInt LowerRight, PointInt UpperLeft)
 {
     public long Width => Math.Abs(LowerRight.X - UpperLeft.X);
 
@@ -11,15 +13,15 @@ public readonly record struct RectInt((long X, long Y) LowerRight, (long X, long
 
     public readonly RectInt Union(RectInt other)
         => new RectInt(
-            (Math.Max(other.LowerRight.X, LowerRight.X), Math.Max(other.LowerRight.Y, LowerRight.Y)),
-            (Math.Min(other.UpperLeft.X, UpperLeft.X), Math.Min(other.UpperLeft.Y, UpperLeft.Y))
+            new PointInt(Math.Max(other.LowerRight.X, LowerRight.X), Math.Max(other.LowerRight.Y, LowerRight.Y)),
+            new PointInt(Math.Min(other.UpperLeft.X, UpperLeft.X), Math.Min(other.UpperLeft.Y, UpperLeft.Y))
         );
 
     public readonly bool IsContainedWithin(in RectInt other)
         => LowerRight.X <= other.LowerRight.X && LowerRight.Y <= other.LowerRight.Y && UpperLeft.X >= other.UpperLeft.X && UpperLeft.Y >= other.UpperLeft.Y; 
 
     public readonly RectInt Inflate(int inflate)
-        => new RectInt((LowerRight.X + inflate, LowerRight.Y + inflate), (UpperLeft.X - inflate, UpperLeft.Y - inflate));
+        => new RectInt(new PointInt(LowerRight.X + inflate, LowerRight.Y + inflate), new PointInt(UpperLeft.X - inflate, UpperLeft.Y - inflate));
 
     public bool Contains(int x, int y) => x <= LowerRight.X && y <= LowerRight.Y && x >= UpperLeft.X && y >= UpperLeft.Y;
 }

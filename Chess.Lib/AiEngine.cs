@@ -28,8 +28,8 @@ public sealed class AiEngine(Side side)
         var board = game.Board;
         var plies = game.Plies;
 
-        var captures = ImmutableArray.CreateBuilder<Action>();
-        var quietMoves = ImmutableArray.CreateBuilder<Action>();
+        var captures = new List<Action>();
+        var quietMoves = new List<Action>();
 
         foreach (var (position, _) in board.AllPiecesOfSide(Side))
         {

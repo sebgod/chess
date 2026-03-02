@@ -60,7 +60,7 @@ internal sealed class SixelDisplay : IDisposable
         else
         {
             isFullRender = true;
-            clip = new RectInt((image.Width, image.Height), (0, 0));
+            clip = new RectInt(new PointInt(image.Width, image.Height), new PointInt(0, 0));
         }
 
         ui.Render(renderer, image, clip);
