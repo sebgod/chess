@@ -62,7 +62,6 @@ internal sealed class ConsoleTerminal : IDisposable
         _ = await QueryCellSizeAsync();
 
         var decLocatorAvailable = await ProbeDecLocatorAsync();
-
         if (decLocatorAvailable && (!OperatingSystem.IsWindows() || WindowsConsoleInput.EnableVirtualTerminalInput()))
         {
             _useDecLocator = true;
@@ -160,7 +159,7 @@ internal sealed class ConsoleTerminal : IDisposable
     /// <summary>
     /// Probes whether the terminal supports DEC Locator by sending DECRQLP and checking for a DECLRP response.
     /// </summary>
-    private async Task<bool> ProbeDecLocatorAsync()
+    private static async Task<bool> ProbeDecLocatorAsync()
     {
         var response = await GetControlSequenceResponseAsync("\e[1'|");
         if (!response.Contains("&w"))

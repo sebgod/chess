@@ -27,7 +27,7 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
         }
 
         var (mouseEvent, keyChar) = terminal.TryReadInput();
-        if (mouseEvent is { Button: 0, IsRelease: false } mouse)
+        if (mouseEvent is { Button: 0, IsRelease: true } mouse)
         {
             _pendingFile = null;
             return ui.TryPerformAction(mouse.X, mouse.Y);
