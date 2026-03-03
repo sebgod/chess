@@ -26,12 +26,12 @@ Pre-built binaries are available on the [Releases](https://github.com/sebgod/che
 
 | Platform | Archive |
 |---|---|
-| Windows x64 | `chess-win-x64.tar.gz` |
-| Windows ARM64 | `chess-win-arm64.tar.gz` |
-| Linux x64 | `chess-linux-x64.tar.gz` |
-| Linux ARM64 | `chess-linux-arm64.tar.gz` |
-| macOS ARM64 | `chess-osx-arm64.tar.gz` |
-| macOS x64 | `chess-osx-x64.tar.gz` |
+| Windows x64 | `chess-console-win-x64.tar.gz` |
+| Windows ARM64 | `chess-console-win-arm64.tar.gz` |
+| Linux x64 | `chess-console-linux-x64.tar.gz` |
+| Linux ARM64 | `chess-console-linux-arm64.tar.gz` |
+| macOS ARM64 | `chess-console-osx-arm64.tar.gz` |
+| macOS x64 | `chess-console-osx-x64.tar.gz` |
 
 ### Build from source
 
