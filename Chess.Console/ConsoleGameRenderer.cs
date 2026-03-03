@@ -32,6 +32,19 @@ internal sealed class ConsoleGameRenderer
         _totalWidth = consoleWidth;
     }
 
+    private static bool TrySetCursorPosition(int left, int top)
+    {
+        try
+        {
+            System.Console.SetCursorPosition(left, top);
+            return true;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
+    }
+
     public bool NeedsResize(int newConsoleWidth, int newConsoleHeight) => _totalWidth != newConsoleWidth || _statusBarRow + 1 != newConsoleHeight;
 
     /// <summary>
@@ -39,7 +52,11 @@ internal sealed class ConsoleGameRenderer
     /// </summary>
     public void RenderStatusBar(Game game, RenderStats? stats = null, File? pendingFile = null)
     {
-        System.Console.SetCursorPosition(0, _statusBarRow);
+        if (_statusBarRow < 0 || _totalWidth <= 0)
+            return;
+
+        if (!TrySetCursorPosition(0, _statusBarRow))
+            return;
 
         var fileInfo = pendingFile is { } f ? $" [{f.ToLabel()}]" : "";
         var status = $" {game.GameStatus.ToMessage(game.CurrentSide)}{fileInfo}";
@@ -63,17 +80,22 @@ internal sealed class ConsoleGameRenderer
     /// </summary>
     public void RenderHistory(Game game)
     {
+        if (_historyStartColumn < 0)
+            return;
+
         var plies = game.Plies;
         var moveCount = (plies.Count + 1) / 2;
         var startMove = Math.Max(0, moveCount - _historyRowCount);
 
         // Render header
-        System.Console.SetCursorPosition(_historyStartColumn, 0);
+        if (!TrySetCursorPosition(_historyStartColumn, 0))
+            return;
         System.Console.Write($"\e[97;100m{" Move History".PadRight(_historyColumnWidth)}\e[0m");
 
         for (var row = 1; row < _historyRowCount; row++)
         {
-            System.Console.SetCursorPosition(_historyStartColumn, row);
+            if (!TrySetCursorPosition(_historyStartColumn, row))
+                return;
 
             var moveIdx = startMove + row - 1;
             var plyIdx = moveIdx * 2;
