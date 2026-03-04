@@ -107,6 +107,12 @@ public class GameUI
 
     public Position? PendingPromotion { get; private set; }
 
+    public bool IsSetupMode { get; set; }
+
+    public Side PlacementSide { get; set; } = Side.White;
+
+    public Position? PendingPlacement { get; private set; }
+
     /// <summary>
     /// The destination square of the last completed move, derived from game history.
     /// </summary>
@@ -120,15 +126,22 @@ public class GameUI
     /// <summary>
     /// Creates a new <see cref="GameUI"/> with the given dimensions, preserving game state, selection, and style.
     /// </summary>
-    public GameUI Resize(uint uiSizeX, uint uiSizeY) => new(
-        Game, uiSizeX, uiSizeY,
-        selected: Selected,
-        pendingPromotion: PendingPromotion,
-        labelFont: _labelFont,
-        pieceFont: _pieceFont,
-        mainFontColor: _mainFontColor,
-        backgroundColor: _backgroundColor,
-        alignment: _alignment);
+    public GameUI Resize(uint uiSizeX, uint uiSizeY)
+    {
+        var resized = new GameUI(
+            Game, uiSizeX, uiSizeY,
+            selected: Selected,
+            pendingPromotion: PendingPromotion,
+            labelFont: _labelFont,
+            pieceFont: _pieceFont,
+            mainFontColor: _mainFontColor,
+            backgroundColor: _backgroundColor,
+            alignment: _alignment);
+        resized.IsSetupMode = IsSetupMode;
+        resized.PlacementSide = PlacementSide;
+        resized.PendingPlacement = PendingPlacement;
+        return resized;
+    }
 
     public void Render<TSurface, TRenderer>(TRenderer renderer, TSurface surface, in RectInt clip)
         where TRenderer : Renderer<TSurface>
@@ -204,8 +217,25 @@ public class GameUI
             }
         }
 
+        // piece placement selection box (setup mode)
+        if (PendingPlacement is { } placementPos)
+        {
+            renderer.FillRectangle(surface, boardRect, OverlayFill);
+
+            var box = PieceTypeSelectionBox(placementPos);
+            var offX = box.UpperLeft.X;
+            var offY = box.UpperLeft.Y;
+
+            for (var i = 0; i < 6; i++)
+            {
+                var squareRect = new RectInt((offX + _squareSize * (i + 1), offY + _squareSize), (offX + _squareSize * i, offY));
+                renderer.FillRectangle(surface, squareRect, i % 2 == 0 ? WhiteSquareFill : BlackSquareFill);
+
+                DrawPiece(renderer, surface, new Piece((PieceType)(i + (int)PieceType.Pawn), PlacementSide), squareRect, _pieceFontSize);
+            }
+        }
         // promote piece type selection box
-        if (PendingPromotion is { })
+        else if (PendingPromotion is { })
         {
             renderer.FillRectangle(surface, boardRect, OverlayFill);
 
@@ -386,7 +416,8 @@ public class GameUI
     public RectInt PromotePieceTypeSelectionBox(Side side)
     {
         var offX = _margin;
-        var offY = side is Side.White ? _margin : _boardEnd + _topMargin - _margin / 2;
+        var boardTop = _topMargin + _margin;
+        var offY = side is Side.White ? boardTop : boardTop + 7 * _squareSize;
 
         if (_alignment is (_, var alignY))
         {
@@ -394,6 +425,46 @@ public class GameUI
         }
 
         return new RectInt((offX + _squareSize * 4, offY + _squareSize), (offX, offY));
+    }
+
+    public RectInt PieceTypeSelectionBox(Position position)
+    {
+        // Center the 6-square-wide popup on the selected file, clamped to the board
+        var fileIdx = (int)position.File;
+        var startFile = Math.Clamp(fileIdx - 2, 0, 2); // 6 squares wide, max start index is 2
+        var offX = startFile * _squareSize + _margin;
+
+        // Place above the selected square
+        var squareY = (7 - (int)position.Rank) * _squareSize + _margin + _topMargin;
+        var offY = squareY - _squareSize;
+
+        // If the popup would go above the board, place it below instead
+        if (offY < _topMargin + _margin)
+        {
+            offY = squareY + _squareSize;
+        }
+
+        if (_alignment is (_, var alignY))
+        {
+            offY = AlignDown(offY, alignY);
+        }
+
+        return new RectInt((offX + _squareSize * 6, offY + _squareSize), (offX, offY));
+    }
+
+    public PieceType FindPlacementPieceType(int x, int y)
+    {
+        if (PendingPlacement is not { } pos)
+            return PieceType.None;
+
+        var box = PieceTypeSelectionBox(pos);
+        if (box.Contains(x, y))
+        {
+            var transX = x - box.UpperLeft.X;
+            return (PieceType)(transX / _squareSize + (int)PieceType.Pawn);
+        }
+
+        return PieceType.None;
     }
 
     /// <summary>
@@ -456,6 +527,23 @@ public class GameUI
 
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TryPerformAction(int x, int y)
     {
+        if (IsSetupMode)
+        {
+            if (PendingPlacement is { } pendingPos)
+            {
+                if (FindPlacementPieceType(x, y) is { } pieceType and not PieceType.None)
+                {
+                    return TryPlacePiece(pendingPos, pieceType, PlacementSide);
+                }
+            }
+            else if (FindSelected(x, y) is { } selected)
+            {
+                return SetupSelect(selected);
+            }
+
+            return (UIResponse.None, []);
+        }
+
         if (PendingPromotion is { } pendingPromotion)
         {
             if (Selected is { } prev && FindPromotionType(x, y) is { } promoteType and not PieceType.None)
@@ -600,5 +688,45 @@ public class GameUI
         }
 
         return (UIResponse.None, []);
+    }
+
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) SetupSelect(Position position)
+    {
+        PendingPlacement = position;
+        Selected = position;
+        return (UIResponse.NeedsRefresh | UIResponse.NeedsPiecePlacement, []);
+    }
+
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TryPlacePiece(Position position, PieceType pieceType, Side side)
+    {
+        Game.SetPiece(position, new Piece(pieceType, side));
+        PendingPlacement = default;
+        Selected = default;
+        return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
+    }
+
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) ClearSquare(Position position)
+    {
+        Game.ClearPiece(position);
+        PendingPlacement = default;
+        Selected = default;
+        return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
+    }
+
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) CancelPlacement()
+    {
+        PendingPlacement = default;
+        Selected = default;
+        return (UIResponse.NeedsRefresh, []);
+    }
+
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TogglePlacementSide()
+    {
+        PlacementSide = PlacementSide.ToOpposite();
+        if (PendingPlacement is { })
+        {
+            return (UIResponse.NeedsRefresh, []);
+        }
+        return (UIResponse.IsUpdate, []);
     }
 }

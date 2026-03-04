@@ -50,7 +50,7 @@ internal sealed class ConsoleGameRenderer
     /// <summary>
     /// Renders the status bar showing the current game state.
     /// </summary>
-    public void RenderStatusBar(Game game, RenderStats? stats = null, File? pendingFile = null)
+    public void RenderStatusBar(Game game, RenderStats? stats = null, File? pendingFile = null, Side? placementSide = null)
     {
         if (_statusBarRow < 0 || _totalWidth <= 0)
             return;
@@ -59,7 +59,10 @@ internal sealed class ConsoleGameRenderer
             return;
 
         var fileInfo = pendingFile is { } f ? $" [{f.ToLabel()}]" : "";
-        var status = $" {game.GameStatus.ToMessage(game.CurrentSide)}{fileInfo}";
+        var setupInfo = placementSide is { } side ? $" Setup: placing {side} pieces [Tab to toggle; s to start]" : "";
+        var status = placementSide is { }
+            ? $" {setupInfo}{fileInfo}"
+            : $" {game.GameStatus.ToMessage(game.CurrentSide)}{fileInfo}";
 
         var debugInfo = "";
         if (stats is { } s)

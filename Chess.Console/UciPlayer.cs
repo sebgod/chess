@@ -17,6 +17,8 @@ internal sealed class UciPlayer : IGamePlayer, IDisposable
     private Task<UciResponse.BestMove>? _pendingMove;
     private bool _disposed;
 
+    public string? InitialFen { get; set; }
+
     public UciPlayer(string enginePath, Side side)
     {
         _side = side;
@@ -41,7 +43,7 @@ internal sealed class UciPlayer : IGamePlayer, IDisposable
         if (_pendingMove is null)
         {
             var moves = BuildMovesList(game);
-            var position = new UciCommand.SetPosition(null, moves);
+            var position = new UciCommand.SetPosition(InitialFen, moves);
             var go = new UciCommand.Go(MoveTime: 1000);
             _pendingMove = _client.GoAsync(position, go);
         }

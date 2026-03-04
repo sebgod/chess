@@ -13,9 +13,10 @@ internal class StartupMenu(ConsoleTerminal terminal)
 
     /// <summary>
     /// Displays the game mode menu and waits for the user to make a selection.
-    /// Returns the chosen game mode and the side the computer plays (<see cref="Side.None"/> for PvP).
+    /// Returns the chosen game mode, the side the computer plays (<see cref="Side.None"/> for PvP),
+    /// and whether to use the standard board (only relevant for <see cref="GameMode.CustomGame"/>).
     /// </summary>
-    public async Task<(GameMode Mode, Side ComputerSide)> ShowAsync(CancellationToken cancellationToken)
+    public async Task<(GameMode Mode, Side ComputerSide, bool UseStandardBoard)> ShowAsync(CancellationToken cancellationToken)
     {
         if (terminal.IsAlternateScreen)
         {
@@ -26,23 +27,41 @@ internal class StartupMenu(ConsoleTerminal terminal)
         var mode = await ShowMenuAsync(
             "\u265A Chess \u2654",
             "Select game mode:",
-            ["Player vs Player", "Player vs Computer"],
+            ["Player vs Player", "Player vs Computer", "Custom Game"],
             cancellationToken);
 
         if (mode == 0)
         {
-            return (GameMode.PlayerVsPlayer, Side.None);
+            return (GameMode.PlayerVsPlayer, Side.None, false);
         }
 
-        var side = await ShowMenuAsync(
+        if (mode == 1)
+        {
+            var side = await ShowMenuAsync(
+                "\u265A Chess \u2654",
+                "Play as:",
+                ["White", "Black"],
+                cancellationToken);
+
+            var computerSide = side == 0 ? Side.Black : Side.White;
+            return (GameMode.PlayerVsComputer, computerSide, false);
+        }
+
+        // Custom Game
+        var boardChoice = await ShowMenuAsync(
+            "\u265A Chess \u2654",
+            "Starting board:",
+            ["Empty Board", "Standard Board"],
+            cancellationToken);
+
+        var customSide = await ShowMenuAsync(
             "\u265A Chess \u2654",
             "Play as:",
             ["White", "Black"],
             cancellationToken);
 
-        var computerSide = side == 0 ? Side.Black : Side.White;
-
-        return (GameMode.PlayerVsComputer, computerSide);
+        var customComputerSide = customSide == 0 ? Side.Black : Side.White;
+        return (GameMode.CustomGame, customComputerSide, boardChoice == 1);
     }
 
     private async Task<int> ShowMenuAsync(
@@ -83,6 +102,10 @@ internal class StartupMenu(ConsoleTerminal terminal)
     private async Task<int> ShowMenuAlternateAsync(
         string title, string prompt, string[] items, CancellationToken cancellationToken)
     {
+        // Force a full redraw when entering a new menu (clears stale lines from previous menu)
+        _lastWindowWidth = null;
+        _lastWindowHeight = null;
+
         var selected = 0;
         DrawMenuAlternateScreen(title, prompt, items, selected);
 

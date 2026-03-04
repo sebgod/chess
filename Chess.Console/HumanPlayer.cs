@@ -48,6 +48,11 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
 
     private (UIResponse Response, ImmutableArray<RectInt> ClipRects) HandleKeyInput(GameUI ui, char key)
     {
+        if (ui.IsSetupMode)
+        {
+            return HandleSetupKeyInput(ui, key);
+        }
+
         if (key is '\x1B') // Escape
         {
             _pendingFile = null;
@@ -80,6 +85,89 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
         _pendingFile = null;
         return (UIResponse.None, []);
     }
+
+    private (UIResponse Response, ImmutableArray<RectInt> ClipRects) HandleSetupKeyInput(GameUI ui, char key)
+    {
+        // Tab toggles placement side
+        if (key is '\t')
+        {
+            _pendingFile = null;
+            return ui.TogglePlacementSide();
+        }
+
+        // 's' ends setup mode and starts the game
+        if (key is 's' or 'S')
+        {
+            _pendingFile = null;
+            ui.IsSetupMode = false;
+            return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
+        }
+
+        // When piece popup is open
+        if (ui.PendingPlacement is { } pendingPos)
+        {
+            // Escape cancels the popup
+            if (key is '\x1B')
+            {
+                _pendingFile = null;
+                return ui.CancelPlacement();
+            }
+
+            // Delete/Backspace clears the square
+            if (key is '\x7F' or '\b')
+            {
+                _pendingFile = null;
+                return ui.ClearSquare(pendingPos);
+            }
+
+            // Piece key shortcuts
+            if (PieceType.TryParseFromKey(key) is { } pieceType)
+            {
+                _pendingFile = null;
+                return ui.TryPlacePiece(pendingPos, pieceType, ui.PlacementSide);
+            }
+
+            return (UIResponse.None, []);
+        }
+
+        // Escape clears selection
+        if (key is '\x1B')
+        {
+            _pendingFile = null;
+            var (clearResponse, clearClips) = ui.ClearSelection();
+            return (clearResponse | UIResponse.IsUpdate, clearClips);
+        }
+
+        // Delete/Backspace clears piece at selected square
+        if (key is '\x7F' or '\b')
+        {
+            if (ui.Selected is { } selected)
+            {
+                _pendingFile = null;
+                return ui.ClearSquare(selected);
+            }
+        }
+
+        // File + rank to select a square for placement
+        if (TryParseFile(key) is { } file)
+        {
+            _pendingFile = file;
+            return (UIResponse.IsUpdate, []);
+        }
+
+        if (TryParseRank(key) is { } rank)
+        {
+            if (_pendingFile is { } pendingFile)
+            {
+                _pendingFile = null;
+                return ui.SetupSelect(new Position(pendingFile, rank));
+            }
+        }
+
+        _pendingFile = null;
+        return (UIResponse.None, []);
+    }
+
 
     private static File? TryParseFile(char key)
     {

@@ -6,5 +6,6 @@ namespace Chess.Lib;
 public enum GameMode : byte
 {
     PlayerVsPlayer,
-    PlayerVsComputer
+    PlayerVsComputer,
+    CustomGame
 }

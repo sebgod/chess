@@ -11,7 +11,7 @@ public class MagickImageRenderer() : Renderer<MagickImage>(), IDisposable
     private double _cachedFactor;
 
     public override void FillRectangle(MagickImage surface, in RectInt rect, RGBAColor32 fillColor)
-        => surface.Draw(GetDrawableRect(rect), new DrawableFillColor(GetColor(fillColor)), new DrawableFillOpacity(new Percentage(100)));
+        => surface.Draw(GetDrawableRect(rect), new DrawableFillColor(GetColor(fillColor)), new DrawableFillOpacity(new Percentage(fillColor.Alpha / 255.0 * 100.0)));
 
     public override void FillEllipse(MagickImage surface, in RectInt rect, RGBAColor32 fillColor)
         => surface.Draw(GetDrawableEllipse(rect), new DrawableFillColor(GetColor(fillColor)), new DrawableFillOpacity(new Percentage(100)));
@@ -51,7 +51,7 @@ public class MagickImageRenderer() : Renderer<MagickImage>(), IDisposable
         {
             drawables
                 .FillColor(GetColor(color))
-                .FillOpacity(new Percentage(100))
+                .FillOpacity(new Percentage(color.Alpha / 255.0 * 100.0))
                 .Rectangle(rect.UpperLeft.X, rect.UpperLeft.Y, rect.LowerRight.X, rect.LowerRight.Y);
         }
 

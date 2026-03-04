@@ -51,7 +51,7 @@ internal sealed class SixelGameDisplay : IGameDisplay
     public void RenderInitial(Game game, File? pendingFile)
     {
         _display.RenderFrame(UI, _imageRenderer, _image, default, _cellHeight);
-        _chrome.RenderStatusBar(game, _display.Stats, pendingFile);
+        _chrome.RenderStatusBar(game, _display.Stats, pendingFile, placementSide: SetupPlacementSide);
         _chrome.RenderHistory(game);
     }
 
@@ -61,12 +61,14 @@ internal sealed class SixelGameDisplay : IGameDisplay
         {
             _display.RenderFrame(UI, _imageRenderer, _image, clipRects, _cellHeight);
         }
-        if (response.HasFlag(UIResponse.IsUpdate))
+        if (response.HasFlag(UIResponse.IsUpdate) || response.HasFlag(UIResponse.NeedsPiecePlacement))
         {
-            _chrome.RenderStatusBar(game, _display.Stats, pendingFile);
+            _chrome.RenderStatusBar(game, _display.Stats, pendingFile, placementSide: SetupPlacementSide);
             _chrome.RenderHistory(game);
         }
     }
+
+    private Side? SetupPlacementSide => UI.IsSetupMode ? UI.PlacementSide : null;
 
     public void HandleResize(Game game)
     {
@@ -90,6 +92,14 @@ internal sealed class SixelGameDisplay : IGameDisplay
         _display.RenderFrame(UI, _imageRenderer, _image, default, _cellHeight);
         _chrome.RenderStatusBar(game, _display.Stats);
         _chrome.RenderHistory(game);
+    }
+
+    public void ResetGame(Game game)
+    {
+        UI = new GameUI(game, _image.Width, _image.Height,
+            mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
+            backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff),
+            alignment: (_cellWidth, _cellHeight));
     }
 
     public void Dispose()

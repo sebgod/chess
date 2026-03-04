@@ -114,5 +114,25 @@ public class Game
         return validMoves.Count is 1 ? validMoves[0] : null;
     }
 
+    /// <summary>
+    /// Places a piece at the given position during setup mode. Only allowed before the game has started.
+    /// </summary>
+    public void SetPiece(in Position position, Piece piece)
+    {
+        if (_plies.Count > 0)
+            throw new InvalidOperationException("Cannot modify board after game has started.");
+        _board[position] = piece;
+    }
+
+    /// <summary>
+    /// Removes the piece at the given position during setup mode. Only allowed before the game has started.
+    /// </summary>
+    public void ClearPiece(in Position position)
+    {
+        if (_plies.Count > 0)
+            throw new InvalidOperationException("Cannot modify board after game has started.");
+        _board[position] = Piece.None;
+    }
+
     public override string ToString() => $"{_board.ToFEN()} [{_plies.ToPGN()}] {_gameStatus.ToMessage(_currentSide)}";
 }

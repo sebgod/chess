@@ -15,4 +15,5 @@ internal interface IGameDisplay : IDisposable
     void RenderInitial(Game game, File? pendingFile = null);
     void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects, File? pendingFile = null);
     void HandleResize(Game game);
+    void ResetGame(Game game);
 }

@@ -13,7 +13,7 @@ internal sealed class AsciiDisplay : IGameDisplay
 {
     private string _lastFen = "";
 
-    public GameUI UI { get; }
+    public GameUI UI { get; private set; }
 
     public AsciiDisplay(Game game)
     {
@@ -28,9 +28,19 @@ internal sealed class AsciiDisplay : IGameDisplay
         {
             RenderBoard(game);
         }
+        if (UI.IsSetupMode && (response.HasFlag(UIResponse.IsUpdate) || response.HasFlag(UIResponse.NeedsPiecePlacement)))
+        {
+            System.Console.WriteLine($" Setup: placing {UI.PlacementSide} pieces [Tab to toggle; s to start]  ");
+        }
     }
 
     public void HandleResize(Game game) { }
+
+    public void ResetGame(Game game)
+    {
+        UI = new GameUI(game, 800, 800);
+        _lastFen = "";
+    }
 
     private void RenderBoard(Game game)
     {

@@ -43,4 +43,18 @@ public static class PieceTypeExtensions
         PieceType.King => "K",
         _ => throw new ArgumentException($"Unhandled piece type {type}", nameof(type))
     };
+
+    extension(PieceType)
+    {
+        public static PieceType? TryParseFromKey(char key) => char.ToLowerInvariant(key) switch
+        {
+            'p' => PieceType.Pawn,
+            'n' => PieceType.Knight,
+            'b' => PieceType.Bishop,
+            'r' => PieceType.Rook,
+            'q' => PieceType.Queen,
+            'k' => PieceType.King,
+            _ => null
+        };
+    }
 }

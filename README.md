@@ -7,7 +7,7 @@ A terminal chess game with graphical board rendering via [Sixel](https://en.wiki
 ## Features
 
 - Full chess rules: movement, captures, check, checkmate, stalemate, pawn promotion
-- Player vs Player and Player vs Computer modes
+- Player vs Player, Player vs Computer, and Custom Game (board editor) modes
 - [UCI](https://en.wikipedia.org/wiki/Universal_Chess_Interface) protocol support — the engine runs as a separate process, communicating via standard UCI commands
 - Graphical board rendered in the terminal using ImageMagick and the Sixel protocol
 - Move history panel with algebraic notation
@@ -48,6 +48,55 @@ dotnet run --project Chess.Console -c Release
 ```bash
 dotnet test -c Release
 ```
+
+## Keyboard controls
+
+### Gameplay
+
+| Key | Action |
+|-----|--------|
+| `a`–`h` | Select file (column) |
+| `1`–`8` | Select rank (row) — combines with pending file to select a square |
+| `Esc` | Clear current selection |
+
+Select a piece by typing its file + rank (e.g. `e2`), then type the target square (e.g. `e4`) to move. When a piece is already selected, typing just a rank moves it along the same file.
+
+### Promotion popup
+
+When a pawn reaches the last rank, a popup appears with four piece choices. Click the desired piece, or use:
+
+| Key | Piece |
+|-----|-------|
+| `n` | Knight |
+| `b` | Bishop |
+| `r` | Rook |
+| `q` | Queen |
+
+### Custom Game setup
+
+In Custom Game mode, you place pieces on the board before playing. The popup appears above the selected square.
+
+| Key | Action |
+|-----|--------|
+| `a`–`h` + `1`–`8` | Select a square to place a piece on |
+| `p` | Place Pawn |
+| `n` | Place Knight |
+| `b` | Place Bishop |
+| `r` | Place Rook |
+| `q` | Place Queen |
+| `k` | Place King |
+| `Tab` | Toggle between placing White and Black pieces |
+| `Delete` / `Backspace` | Clear the selected square |
+| `Esc` | Cancel the piece popup |
+| `s` | Finish setup and start the game |
+
+### Menus
+
+| Key | Action |
+|-----|--------|
+| `Up` / `Down` | Navigate menu items |
+| `Enter` | Confirm selection |
+| `1`–`3` | Quick-select by number |
 
 ## Project structure
 
