@@ -3,19 +3,25 @@ using Chess.Lib;
 namespace Chess.Console;
 
 /// <summary>
-/// Renders a centered startup menu in the terminal with arrow-key navigation
+/// Renders a startup menu in the terminal with arrow-key navigation
 /// and returns the selected game mode.
 /// </summary>
-internal static class StartupMenu
+internal class StartupMenu(ConsoleTerminal terminal)
 {
+    private int? _lastWindowWidth;
+    private int? _lastWindowHeight;
+
     /// <summary>
     /// Displays the game mode menu and waits for the user to make a selection.
     /// Returns the chosen game mode and the side the computer plays (<see cref="Side.None"/> for PvP).
     /// </summary>
-    public static async Task<(GameMode Mode, Side ComputerSide)> ShowAsync(CancellationToken cancellationToken)
+    public async Task<(GameMode Mode, Side ComputerSide)> ShowAsync(CancellationToken cancellationToken)
     {
-        System.Console.Clear();
-        System.Console.CursorVisible = false;
+        if (terminal.IsAlternateScreen)
+        {
+            System.Console.Clear();
+            System.Console.CursorVisible = false;
+        }
 
         var mode = await ShowMenuAsync(
             "\u265A Chess \u2654",
@@ -39,26 +45,49 @@ internal static class StartupMenu
         return (GameMode.PlayerVsComputer, computerSide);
     }
 
-    private static async Task<int> ShowMenuAsync(
+    private async Task<int> ShowMenuAsync(
         string title, string prompt, string[] items, CancellationToken cancellationToken)
     {
-        var selected = 0;
-        var lastWidth = System.Console.WindowWidth;
-        var lastHeight = System.Console.WindowHeight;
-        DrawMenu(title, prompt, items, selected, fullRedraw: true);
+        if (terminal.IsAlternateScreen)
+        {
+            return await ShowMenuAlternateAsync(title, prompt, items, cancellationToken);
+        }
+
+        System.Console.WriteLine();
+        System.Console.WriteLine(prompt);
+        for (var i = 0; i < items.Length; i++)
+        {
+            System.Console.WriteLine($"  {i + 1}) {items[i]}");
+        }
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            var currentWidth = System.Console.WindowWidth;
-            var currentHeight = System.Console.WindowHeight;
-            if (currentWidth != lastWidth || currentHeight != lastHeight)
+            if (!System.Console.KeyAvailable)
             {
-                lastWidth = currentWidth;
-                lastHeight = currentHeight;
-                System.Console.Clear();
-                DrawMenu(title, prompt, items, selected, fullRedraw: true);
+                await Task.Delay(25, cancellationToken);
+                continue;
             }
 
+            var key = System.Console.ReadKey(intercept: true);
+            var digit = key.KeyChar - '1';
+            if (digit >= 0 && digit < items.Length)
+            {
+                System.Console.WriteLine(items[digit]);
+                return digit;
+            }
+        }
+
+        return 0;
+    }
+
+    private async Task<int> ShowMenuAlternateAsync(
+        string title, string prompt, string[] items, CancellationToken cancellationToken)
+    {
+        var selected = 0;
+        DrawMenuAlternateScreen(title, prompt, items, selected);
+
+        while (!cancellationToken.IsCancellationRequested)
+        {
             if (!System.Console.KeyAvailable)
             {
                 await Task.Delay(25, cancellationToken);
@@ -70,16 +99,15 @@ internal static class StartupMenu
             {
                 case ConsoleKey.UpArrow:
                     selected = (selected - 1 + items.Length) % items.Length;
-                    DrawMenu(title, prompt, items, selected);
+                    DrawMenuAlternateScreen(title, prompt, items, selected);
                     break;
                 case ConsoleKey.DownArrow:
                     selected = (selected + 1) % items.Length;
-                    DrawMenu(title, prompt, items, selected);
+                    DrawMenuAlternateScreen(title, prompt, items, selected);
                     break;
                 case ConsoleKey.Enter:
                     return selected;
                 default:
-                    // Also accept 1-based digit keys for quick selection
                     var digit = key.KeyChar - '1';
                     if (digit >= 0 && digit < items.Length)
                     {
@@ -92,28 +120,33 @@ internal static class StartupMenu
         return 0;
     }
 
-    private static void DrawMenu(string title, string prompt, string[] items, int selected, bool fullRedraw = false)
+    private void DrawMenuAlternateScreen(string title, string prompt, string[] items, int selected)
     {
         var windowWidth = System.Console.WindowWidth;
         var windowHeight = System.Console.WindowHeight;
+        
+        // full redraw
+        if (windowWidth != _lastWindowWidth || windowHeight != _lastWindowHeight)
+        {
+            System.Console.Clear();
+        }
+
+        _lastWindowWidth = windowWidth;
+        _lastWindowHeight = windowHeight;
 
         // Total lines: title + blank + prompt + blank + items
         var totalLines = 4 + items.Length;
         var startRow = Math.Max(0, (windowHeight - totalLines) / 2);
 
-        if (fullRedraw)
-        {
-            System.Console.Clear();
-            WriteCenterPadded(startRow, title, windowWidth);
-            WriteCenterPadded(startRow + 2, prompt, windowWidth);
-        }
+        WriteCenterPadded(startRow, title, windowWidth);
+        WriteCenterPadded(startRow + 2, prompt, windowWidth);
 
         for (var i = 0; i < items.Length; i++)
         {
             var indicator = i == selected ? " \u25B6 " : "   ";
             var label = $"{indicator}{items[i]}";
-
             var row = startRow + 4 + i;
+
             if (i == selected)
             {
                 WriteCenterPadded(row, label, windowWidth, ConsoleColor.Yellow, ConsoleColor.DarkBlue);

@@ -17,6 +17,7 @@ internal sealed class ConsoleTerminal : IDisposable
     private uint? _cellWidth;
     private uint? _cellHeight;
     private bool _useDecLocator;
+    private bool _alternateScreen;
 
     public async Task<bool> HasSixelSupportAsync()
     {
@@ -97,13 +98,17 @@ internal sealed class ConsoleTerminal : IDisposable
 
         System.Console.Write("\e[?1049h"); // Enter alternate buffer
         System.Console.Write("\e[?25l");   // Hide cursor
+
+        _alternateScreen = true;
     }
+
+    public bool IsAlternateScreen => _alternateScreen;
 
     /// <summary>
     /// Returns true if there are pending input events to read.
     /// </summary>
     public bool HasInput() =>
-        OperatingSystem.IsWindows() && !_useDecLocator
+        _alternateScreen && OperatingSystem.IsWindows() && !_useDecLocator
             ? WindowsConsoleInput.HasInputEvents()
             : System.Console.KeyAvailable;
 
@@ -114,22 +119,38 @@ internal sealed class ConsoleTerminal : IDisposable
     /// </summary>
     public (MouseEvent? Mouse, char? KeyChar) TryReadInput()
     {
-        if (_useDecLocator)
+        if (_alternateScreen)
         {
-            return ParseDecLocatorInput();
+            if (_useDecLocator)
+            {
+                return ParseDecLocatorInput();
+            }
+
+            var (rawMouse, keyChar) = OperatingSystem.IsWindows()
+                ? WindowsConsoleInput.TryReadInputEvent()
+                : ParseSgrInput();
+
+            if (rawMouse is not { } r || !_cellWidth.HasValue || !_cellHeight.HasValue)
+            {
+                return (null, keyChar);
+            }
+
+            // Normalize cell coordinates to pixels
+            return (new MouseEvent(r.Button, r.X * (int)_cellWidth.Value, r.Y * (int)_cellHeight.Value, r.IsRelease), null);
         }
-
-        var (rawMouse, keyChar) = OperatingSystem.IsWindows()
-            ? WindowsConsoleInput.TryReadInputEvent()
-            : ParseSgrInput();
-
-        if (rawMouse is not { } r || !_cellWidth.HasValue || !_cellHeight.HasValue)
+        else
         {
-            return (null, keyChar);
-        }
+            var first = System.Console.ReadKey(intercept: false);
 
-        // Normalize cell coordinates to pixels
-        return (new MouseEvent(r.Button, r.X * (int)_cellWidth.Value, r.Y * (int)_cellHeight.Value, r.IsRelease), null);
+            if (first.Key != ConsoleKey.Escape)
+            {
+                return (null, first.KeyChar);
+            }
+            else
+            {
+                return (null, null);
+            }
+        }
     }
 
     public void Dispose()

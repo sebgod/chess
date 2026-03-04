@@ -1,7 +1,5 @@
-﻿using Chess.Console;
+using Chess.Console;
 using Chess.Lib;
-using Chess.Lib.UI;
-using ImageMagick;
 
 using var cts = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) =>
@@ -11,30 +9,25 @@ Console.CancelKeyPress += (_, e) =>
 };
 
 using var terminal = new ConsoleTerminal();
+var hasSixel = await terminal.HasSixelSupportAsync();
 
-await terminal.EnterAsync();
+if (hasSixel)
+{
+    await terminal.EnterAsync();
+}
 
-var (gameMode, computerSide) = await StartupMenu.ShowAsync(cts.Token);
+var startupMenu = new StartupMenu(terminal);
+var (gameMode, computerSide) = await startupMenu.ShowAsync(cts.Token);
 
-const int historyColumns = 24;
-const int statusBarRows = 1;
-
-var imageColumns = Console.WindowWidth - historyColumns;
-var imageRows = Console.WindowHeight - statusBarRows;
-var (cellWidth, cellHeight) = await terminal.QueryCellSizeAsync() ?? (10u, 20u);
-var width = (uint)imageColumns * cellWidth;
-var height = (uint)imageRows * cellHeight;
 var game = new Game();
-using var image = new MagickImage(MagickColors.Black, width, height);
 
-using var imageRenderer = new MagickImageRenderer();
-var ui = new GameUI(game, image.Width, image.Height,
-    mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
-    backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff),
-    alignment: (cellWidth, cellHeight));
+var (cellWidth, cellHeight) = hasSixel
+    ? await terminal.QueryCellSizeAsync() ?? (10u, 20u)
+    : (10u, 20u);
 
-using var display = new SixelDisplay();
-var chrome = new ConsoleGameRenderer(historyColumns, Console.WindowWidth, Console.WindowHeight);
+using IGameDisplay gameDisplay = hasSixel
+    ? new SixelGameDisplay(game, cellWidth, cellHeight)
+    : new AsciiDisplay(game);
 
 var humanPlayer = new HumanPlayer(terminal);
 IGamePlayer whitePlayer, blackPlayer;
@@ -62,54 +55,25 @@ else
     (whitePlayer, blackPlayer) = (humanPlayer, humanPlayer);
 }
 
-display.RenderFrame(ui, imageRenderer, image, default, cellHeight);
-chrome.RenderStatusBar(game, display.Stats);
-chrome.RenderHistory(game);
+gameDisplay.RenderInitial(game, humanPlayer.PendingFile);
 
 try
 {
     while (!cts.Token.IsCancellationRequested)
     {
         var currentPlayer = game.CurrentSide == Side.White ? whitePlayer : blackPlayer;
-        var result = currentPlayer.TryMakeMove(ui);
+        var result = currentPlayer.TryMakeMove(gameDisplay.UI);
 
         if (result is { } moveResult)
         {
-            if (moveResult.Response.HasFlag(UIResponse.NeedsRefresh))
-            {
-                display.RenderFrame(ui, imageRenderer, image, moveResult.ClipRects, cellHeight);
-            }
-            if (moveResult.Response.HasFlag(UIResponse.IsUpdate))
-            {
-                chrome.RenderStatusBar(game, display.Stats, humanPlayer.PendingFile);
-                chrome.RenderHistory(game);
-            }
+            gameDisplay.RenderMove(game, moveResult.Response, moveResult.ClipRects, humanPlayer.PendingFile);
         }
-        else if (result is null)
+        else
         {
             await Task.Delay(16, cts.Token);
         }
 
-        var newConsoleWidth = Console.WindowWidth;
-        var newConsoleHeight = Console.WindowHeight;
-        // Detect resizing and recreate UI
-        if (chrome.NeedsResize(newConsoleWidth, newConsoleHeight))
-        {
-            imageColumns = newConsoleWidth - historyColumns;
-            imageRows = newConsoleHeight - statusBarRows;
-            width = (uint)imageColumns * cellWidth;
-            height = (uint)imageRows * cellHeight;
-
-            image.Read(MagickColors.Black, width, height);
-
-            ui = ui.Resize(image.Width, image.Height);
-
-            chrome.Resize(newConsoleWidth, newConsoleHeight);
-
-            display.RenderFrame(ui, imageRenderer, image, default, cellHeight);
-            chrome.RenderStatusBar(game, display.Stats);
-            chrome.RenderHistory(game);
-        }
+        gameDisplay.HandleResize(game);
     }
 }
 catch (OperationCanceledException)

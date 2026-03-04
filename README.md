@@ -16,7 +16,7 @@ A terminal chess game with graphical board rendering via [Sixel](https://en.wiki
 
 ## Requirements
 
-- A terminal with [Sixel](https://en.wikipedia.org/wiki/Sixel) support (e.g. Windows Terminal, mlterm, foot, WezTerm)
+- A terminal with [Sixel](https://en.wikipedia.org/wiki/Sixel) support (e.g. Windows Terminal, mlterm, foot, WezTerm) is preferred, there is a ASCII-only fallback
 - .NET 10 SDK (to build from source)
 
 ## Getting started
