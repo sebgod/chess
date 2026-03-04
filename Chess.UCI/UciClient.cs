@@ -6,11 +6,12 @@ namespace Chess.UCI;
 /// <summary>
 /// GUI-side helper that manages communication with a UCI engine process.
 /// </summary>
-public sealed class UciClient : IDisposable
+public sealed class UciClient : IAsyncDisposable
 {
     private readonly Process _process;
     private readonly ConcurrentQueue<UciResponse> _responses = new();
     private readonly TaskCompletionSource _exited = new();
+    private Task? _readTask;
     private bool _disposed;
 
     public UciClient(string enginePath)
@@ -36,7 +37,7 @@ public sealed class UciClient : IDisposable
     {
         _process.Start();
 
-        _ = Task.Run(() => ReadOutputLoop(), ct);
+        _readTask = Task.Run(() => ReadOutputLoop(), ct);
 
         Send(new UciCommand.UciInit());
         await WaitForResponseAsync<UciResponse.UciOk>(ct);
@@ -62,21 +63,6 @@ public sealed class UciClient : IDisposable
     }
 
     public void SendStop() => Send(new UciCommand.Stop());
-
-    public void Quit()
-    {
-        if (_disposed) return;
-
-        try
-        {
-            Send(new UciCommand.Quit());
-            _process.WaitForExit(3000);
-        }
-        catch
-        {
-            // Process may have already exited
-        }
-    }
 
     public bool TryGetResponse<T>(out T? response) where T : UciResponse
     {
@@ -132,7 +118,7 @@ public sealed class UciClient : IDisposable
         }
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         if (_disposed) return;
         _disposed = true;
@@ -142,8 +128,8 @@ public sealed class UciClient : IDisposable
             if (!_process.HasExited)
             {
                 Send(new UciCommand.Quit());
-                _process.WaitForExit(3000);
-                if (!_process.HasExited)
+                var exited = _exited.Task;
+                if (await Task.WhenAny(exited, Task.Delay(3000)) != exited && !_process.HasExited)
                 {
                     _process.Kill();
                 }
@@ -152,6 +138,11 @@ public sealed class UciClient : IDisposable
         catch
         {
             // Best effort cleanup
+        }
+
+        if (_readTask is not null)
+        {
+            try { await _readTask; } catch { /* read loop may throw on cancellation */ }
         }
 
         _process.Dispose();

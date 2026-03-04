@@ -4,38 +4,32 @@ using Chess.Lib.UI;
 using Chess.UCI;
 
 using Action = Chess.Lib.Action;
+using File = Chess.Lib.File;
 
 namespace Chess.Console;
 
 /// <summary>
 /// An AI player that communicates with a UCI engine process to make moves.
 /// </summary>
-internal sealed class UciPlayer : IGamePlayer, IDisposable
+internal sealed class UciPlayer(string enginePath, Side side) : IEngineBasedPlayer
 {
-    private readonly UciClient _client;
-    private readonly Side _side;
+    private readonly UciClient _client = new UciClient(enginePath);
     private Task<UciResponse.BestMove>? _pendingMove;
+    private string? _initialFen;
     private bool _disposed;
 
-    public string? InitialFen { get; set; }
-
-    public UciPlayer(string enginePath, Side side)
+    public async Task InitAsync(string? initialFen, CancellationToken ct = default)
     {
-        _side = side;
-        _client = new UciClient(enginePath);
-    }
-
-    public async Task InitAsync(CancellationToken ct = default)
-    {
+        _initialFen = initialFen;
         await _client.StartAsync(ct);
         await _client.NewGameAsync(ct);
     }
 
-    public (UIResponse Response, ImmutableArray<RectInt> ClipRects)? TryMakeMove(GameUI ui)
+    public PlayerMoveResult? TryMakeMove(GameUI ui)
     {
         var game = ui.Game;
 
-        if (game.CurrentSide != _side || game.IsFinished)
+        if (game.CurrentSide != side || game.IsFinished)
         {
             return null;
         }
@@ -43,7 +37,7 @@ internal sealed class UciPlayer : IGamePlayer, IDisposable
         if (_pendingMove is null)
         {
             var moves = BuildMovesList(game);
-            var position = new UciCommand.SetPosition(InitialFen, moves);
+            var position = new UciCommand.SetPosition(_initialFen, moves);
             var go = new UciCommand.Go(MoveTime: 1000);
             _pendingMove = _client.GoAsync(position, go);
         }
@@ -59,7 +53,8 @@ internal sealed class UciPlayer : IGamePlayer, IDisposable
             }
 
             var action = UciMove.Parse(bestMove.Move);
-            return ui.TryPerformAction(action);
+            var (response, clips) = ui.TryPerformAction(action);
+            return new PlayerMoveResult(response, clips);
         }
 
         return null;
@@ -82,10 +77,10 @@ internal sealed class UciPlayer : IGamePlayer, IDisposable
         return moves;
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         if (_disposed) return;
         _disposed = true;
-        _client.Dispose();
+        await _client.DisposeAsync();
     }
 }

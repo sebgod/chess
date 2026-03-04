@@ -48,10 +48,10 @@ internal sealed class SixelGameDisplay : IGameDisplay
             alignment: (cellWidth, cellHeight));
     }
 
-    public void RenderInitial(Game game, File? pendingFile)
+    public void RenderInitial(Game game)
     {
         _display.RenderFrame(UI, _imageRenderer, _image, default, _cellHeight);
-        _chrome.RenderStatusBar(game, _display.Stats, pendingFile, placementSide: SetupPlacementSide);
+        _chrome.RenderStatusBar(game, _display.Stats, placementSide: SetupPlacementSide);
         _chrome.RenderHistory(game);
     }
 

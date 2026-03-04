@@ -16,7 +16,7 @@ internal class StartupMenu(ConsoleTerminal terminal)
     /// Returns the chosen game mode, the side the computer plays (<see cref="Side.None"/> for PvP),
     /// and whether to use the standard board (only relevant for <see cref="GameMode.CustomGame"/>).
     /// </summary>
-    public async Task<(GameMode Mode, Side ComputerSide, bool UseStandardBoard)> ShowAsync(CancellationToken cancellationToken)
+    public async Task<(GameMode Mode, Side ComputerSide)> ShowAsync(CancellationToken cancellationToken)
     {
         if (terminal.IsAlternateScreen)
         {
@@ -32,7 +32,7 @@ internal class StartupMenu(ConsoleTerminal terminal)
 
         if (mode == 0)
         {
-            return (GameMode.PlayerVsPlayer, Side.None, false);
+            return (GameMode.PlayerVsPlayer, Side.None);
         }
 
         if (mode == 1)
@@ -44,7 +44,7 @@ internal class StartupMenu(ConsoleTerminal terminal)
                 cancellationToken);
 
             var computerSide = side == 0 ? Side.Black : Side.White;
-            return (GameMode.PlayerVsComputer, computerSide, false);
+            return (GameMode.PlayerVsComputer, computerSide);
         }
 
         // Custom Game
@@ -61,7 +61,7 @@ internal class StartupMenu(ConsoleTerminal terminal)
             cancellationToken);
 
         var customComputerSide = customSide == 0 ? Side.Black : Side.White;
-        return (GameMode.CustomGame, customComputerSide, boardChoice == 1);
+        return (boardChoice is 1 ? GameMode.CustomGameStandardBoard : GameMode.CustomGameEmpty, customComputerSide);
     }
 
     private async Task<int> ShowMenuAsync(

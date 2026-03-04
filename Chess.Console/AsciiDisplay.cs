@@ -20,7 +20,7 @@ internal sealed class AsciiDisplay : IGameDisplay
         UI = new GameUI(game, 800, 800);
     }
 
-    public void RenderInitial(Game game, File? pendingFile) => RenderBoard(game);
+    public void RenderInitial(Game game) => RenderBoard(game);
 
     public void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects, File? pendingFile)
     {

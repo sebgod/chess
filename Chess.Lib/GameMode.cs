@@ -7,5 +7,6 @@ public enum GameMode : byte
 {
     PlayerVsPlayer,
     PlayerVsComputer,
-    CustomGame
+    CustomGameEmpty,
+    CustomGameStandardBoard
 }
