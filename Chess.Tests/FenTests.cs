@@ -1,13 +1,12 @@
 using Chess.Lib;
-using NUnit.Framework;
 using Shouldly;
+using Xunit;
 
 namespace Chess.Tests;
 
-[TestFixture]
 public class FenTests
 {
-    [Test]
+    [Fact]
     public void FromFenPlacement_StandardBoard_RoundTrips()
     {
         var standard = Board.StandardBoard;
@@ -16,7 +15,7 @@ public class FenTests
         parsed.ToFEN().ShouldBe(fen);
     }
 
-    [Test]
+    [Fact]
     public void FromFenPlacement_StandardBoard_MatchesExpectedFen()
     {
         var fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR";
@@ -24,7 +23,7 @@ public class FenTests
         board.ToFEN().ShouldBe(fen);
     }
 
-    [Test]
+    [Fact]
     public void FromFenPlacement_EmptyBoard()
     {
         var fen = "8/8/8/8/8/8/8/8";
@@ -32,7 +31,7 @@ public class FenTests
         board.ToFEN().ShouldBe(fen);
     }
 
-    [Test]
+    [Fact]
     public void FromFenPlacement_AfterE4()
     {
         var fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR";

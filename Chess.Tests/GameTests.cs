@@ -1,7 +1,7 @@
-﻿using Chess.Lib;
-using NUnit.Framework;
+using Chess.Lib;
 using Shouldly;
 using System.Collections.Immutable;
+using Xunit;
 using static Chess.Lib.Action;
 using static Chess.Lib.ActionResult;
 using static Chess.Lib.GameStatus;
@@ -13,8 +13,8 @@ namespace Chess.Tests;
 
 public class GameTests
 {
-    [Test]
-    [TestCaseSource(nameof(DataSource))]
+    [Theory]
+    [MemberData(nameof(DataSource))]
     public void EvaluateMoves(Game game, Lib.Action action, ActionResult expectedResult, Board? expectedBoard, GameStatus expectedStatus, PieceType expectedCapture, PieceType expectedPromotion)
     {
         var copy = game.Board;
@@ -27,18 +27,18 @@ public class GameTests
         pliesAfter.LastOrDefault().Promoted.ShouldBe(expectedPromotion);
     }
 
-    public static IEnumerable<TestCaseData> DataSource() => [
+    public static IEnumerable<object[]> DataSource() => [
         Custom(
             new Board {
                 [B8] = (Black, King), [H8] = (Black, Rook),
                 [B7] = (Black, Pawn), [C7] = (Black, Pawn),
-                [H6] = (Black, Rook), 
+                [H6] = (Black, Rook),
                 [E4] = (White, Pawn), [F4] = (Black, Bishop),
                 [F3] = (White, Pawn), [G3] = (Black, Pawn),
                 [A2] = (White, Rook), [B2] = (White, Pawn), [G2] = (White, Pawn),
                 [A1] = (White, Rook), [G1] = (White, King)
             },
-            Black, 
+            Black,
             [],
             DoMove(H6, H1),
             Move,
@@ -80,7 +80,7 @@ public class GameTests
                 [F4] = (White, Queen),
                 [E1] = (White, King)
             },
-            Black, 
+            Black,
             [],
             DoMove(E8, C8),
             Castling,
@@ -99,7 +99,7 @@ public class GameTests
                 [F4] = (White, Queen),
                 [E1] = (White, King)
             },
-            Black, 
+            Black,
             [],
             DoMove(E8, G8),
             Impossible,
@@ -107,8 +107,8 @@ public class GameTests
             Ongoing
         ),
         Custom(
-            Board.StandardBoard + DoMove(H2, H5) + DoMove(G7, G5), 
-            White, 
+            Board.StandardBoard + DoMove(H2, H5) + DoMove(G7, G5),
+            White,
             [
                 new RecordedPly(H2, H5, Move, Pawn),
                 new RecordedPly(G7, G5, Move, Pawn)
@@ -120,11 +120,11 @@ public class GameTests
             Pawn
         ),
         Custom(
-            new Board { [A7] = (White, Pawn), [H7] = (Black, King), [D3] = (White, King) }, 
-            White, 
-            [], 
-            Promote(A7, A8, Queen), Promotion, 
-            new Board { [A8] = (White, Queen), [H7] = (Black, King), [D3] = (White, King) }, 
+            new Board { [A7] = (White, Pawn), [H7] = (Black, King), [D3] = (White, King) },
+            White,
+            [],
+            Promote(A7, A8, Queen), Promotion,
+            new Board { [A8] = (White, Queen), [H7] = (Black, King), [D3] = (White, King) },
             Ongoing,
             PieceType.None,
             Queen
@@ -138,7 +138,7 @@ public class GameTests
         ], new RecordedPly(D1, H5, Move, Queen, Status: Checkmate))
     ];
 
-    public static TestCaseData FromPlies(ImmutableList<RecordedPly> plies, RecordedPly move)
+    public static object[] FromPlies(ImmutableList<RecordedPly> plies, RecordedPly move)
     {
         var game = Game.FromReplay(plies);
         var action = DoMove(move.From, move.To);
@@ -154,7 +154,7 @@ public class GameTests
         );
     }
 
-    public static TestCaseData Custom(
+    public static object[] Custom(
         Board board,
         Side side,
         ImmutableList<RecordedPly> plies,
@@ -166,7 +166,7 @@ public class GameTests
         PieceType promoted = PieceType.None)
         => Custom(new Game(board, side, plies), move, expectedResult, expectedBoard, expectedStatus, captured, promoted);
 
-    public static TestCaseData Custom(
+    public static object[] Custom(
         Game game,
         Lib.Action move,
         ActionResult expectedResult,
@@ -174,5 +174,5 @@ public class GameTests
         GameStatus expectedStatus,
         PieceType captured,
         PieceType promoted)
-    => new TestCaseData(game, move, expectedResult, expectedBoard, expectedStatus, captured, promoted);
+    => [game, move, expectedResult, expectedBoard!, expectedStatus, captured, promoted];
 }

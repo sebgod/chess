@@ -1,47 +1,46 @@
 using Chess.UCI;
-using NUnit.Framework;
 using Shouldly;
+using Xunit;
 
 namespace Chess.Tests;
 
-[TestFixture]
 public class UciParserTests
 {
-    [Test]
+    [Fact]
     public void ParseCommand_Uci() =>
         UciParser.ParseCommand("uci").ShouldBeOfType<UciCommand.UciInit>();
 
-    [Test]
+    [Fact]
     public void ParseCommand_IsReady() =>
         UciParser.ParseCommand("isready").ShouldBeOfType<UciCommand.IsReady>();
 
-    [Test]
+    [Fact]
     public void ParseCommand_UciNewGame() =>
         UciParser.ParseCommand("ucinewgame").ShouldBeOfType<UciCommand.UciNewGame>();
 
-    [Test]
+    [Fact]
     public void ParseCommand_Stop() =>
         UciParser.ParseCommand("stop").ShouldBeOfType<UciCommand.Stop>();
 
-    [Test]
+    [Fact]
     public void ParseCommand_Quit() =>
         UciParser.ParseCommand("quit").ShouldBeOfType<UciCommand.Quit>();
 
-    [Test]
+    [Fact]
     public void ParseCommand_DebugOn()
     {
         var cmd = UciParser.ParseCommand("debug on").ShouldBeOfType<UciCommand.Debug>();
         cmd.On.ShouldBeTrue();
     }
 
-    [Test]
+    [Fact]
     public void ParseCommand_DebugOff()
     {
         var cmd = UciParser.ParseCommand("debug off").ShouldBeOfType<UciCommand.Debug>();
         cmd.On.ShouldBeFalse();
     }
 
-    [Test]
+    [Fact]
     public void ParseCommand_PositionStartpos()
     {
         var cmd = UciParser.ParseCommand("position startpos").ShouldBeOfType<UciCommand.SetPosition>();
@@ -49,7 +48,7 @@ public class UciParserTests
         cmd.Moves.ShouldBeEmpty();
     }
 
-    [Test]
+    [Fact]
     public void ParseCommand_PositionStartposWithMoves()
     {
         var cmd = UciParser.ParseCommand("position startpos moves e2e4 e7e5").ShouldBeOfType<UciCommand.SetPosition>();
@@ -57,7 +56,7 @@ public class UciParserTests
         cmd.Moves.ShouldBe(new[] { "e2e4", "e7e5" });
     }
 
-    [Test]
+    [Fact]
     public void ParseCommand_PositionFen()
     {
         var cmd = UciParser.ParseCommand("position fen rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1")
@@ -66,7 +65,7 @@ public class UciParserTests
         cmd.Moves.ShouldBeEmpty();
     }
 
-    [Test]
+    [Fact]
     public void ParseCommand_GoMovetime()
     {
         var cmd = UciParser.ParseCommand("go movetime 1000").ShouldBeOfType<UciCommand.Go>();
@@ -74,21 +73,21 @@ public class UciParserTests
         cmd.Infinite.ShouldBeFalse();
     }
 
-    [Test]
+    [Fact]
     public void ParseCommand_GoInfinite()
     {
         var cmd = UciParser.ParseCommand("go infinite").ShouldBeOfType<UciCommand.Go>();
         cmd.Infinite.ShouldBeTrue();
     }
 
-    [Test]
+    [Fact]
     public void ParseCommand_GoDepth()
     {
         var cmd = UciParser.ParseCommand("go depth 5").ShouldBeOfType<UciCommand.Go>();
         cmd.Depth.ShouldBe(5);
     }
 
-    [Test]
+    [Fact]
     public void ParseCommand_GoWithTimes()
     {
         var cmd = UciParser.ParseCommand("go wtime 60000 btime 60000").ShouldBeOfType<UciCommand.Go>();
@@ -96,30 +95,30 @@ public class UciParserTests
         cmd.BTime.ShouldBe(60000);
     }
 
-    [Test]
+    [Fact]
     public void ParseCommand_ExtraWhitespace()
     {
         var cmd = UciParser.ParseCommand("  position   startpos   moves   e2e4  ").ShouldBeOfType<UciCommand.SetPosition>();
         cmd.Moves.ShouldBe(new[] { "e2e4" });
     }
 
-    [Test]
+    [Fact]
     public void ParseCommand_Unknown_ReturnsNull() =>
         UciParser.ParseCommand("unknown command").ShouldBeNull();
 
-    [Test]
+    [Fact]
     public void ParseCommand_Empty_ReturnsNull() =>
         UciParser.ParseCommand("").ShouldBeNull();
 
-    [Test]
+    [Fact]
     public void ParseResponse_UciOk() =>
         UciParser.ParseResponse("uciok").ShouldBeOfType<UciResponse.UciOk>();
 
-    [Test]
+    [Fact]
     public void ParseResponse_ReadyOk() =>
         UciParser.ParseResponse("readyok").ShouldBeOfType<UciResponse.ReadyOk>();
 
-    [Test]
+    [Fact]
     public void ParseResponse_Id()
     {
         var resp = UciParser.ParseResponse("id name Chess.Engine").ShouldBeOfType<UciResponse.Id>();
@@ -127,7 +126,7 @@ public class UciParserTests
         resp.Value.ShouldBe("Chess.Engine");
     }
 
-    [Test]
+    [Fact]
     public void ParseResponse_BestMove()
     {
         var resp = UciParser.ParseResponse("bestmove e2e4").ShouldBeOfType<UciResponse.BestMove>();
@@ -135,7 +134,7 @@ public class UciParserTests
         resp.Ponder.ShouldBeNull();
     }
 
-    [Test]
+    [Fact]
     public void ParseResponse_BestMoveWithPonder()
     {
         var resp = UciParser.ParseResponse("bestmove e2e4 ponder e7e5").ShouldBeOfType<UciResponse.BestMove>();
@@ -143,7 +142,7 @@ public class UciParserTests
         resp.Ponder.ShouldBe("e7e5");
     }
 
-    [Test]
+    [Fact]
     public void ParseResponse_Info()
     {
         var resp = UciParser.ParseResponse("info string hello world").ShouldBeOfType<UciResponse.Info>();

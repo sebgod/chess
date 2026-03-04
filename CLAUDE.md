@@ -23,7 +23,7 @@ Terminal chess game with Sixel graphics rendering. Six projects in the solution:
 - **Chess.UCI** — Shared UCI (Universal Chess Interface) protocol library. Parsing, formatting, client/server helpers. Referenced by both Console and Engine.
 - **Chess.Engine** — Standalone UCI engine executable (`chess-engine`). Wraps `AiEngine` from Chess.Lib behind the UCI protocol. AOT-compatible.
 - **Chess.Console** — Terminal UI app. Renders the board via ImageMagick + Sixel. Communicates with Chess.Engine via UCI over stdin/stdout. Builds copy the engine executable to its output directory.
-- **Chess.Tests** — NUnit 4.5 tests with Shouldly assertions. Uses `TestCaseSource` with static `DataSource()` methods for parameterized tests.
+- **Chess.Tests** — xUnit v3 tests with Shouldly assertions. Uses `[MemberData]` with static `DataSource()` methods for parameterized tests.
 - **BenchmarkSuite1** — BenchmarkDotNet performance benchmarks for rendering.
 
 ### Key type design
@@ -50,4 +50,4 @@ Chess.Console launches Chess.Engine as a child process. `UciClient` (GUI side) s
 
 ### Test patterns
 
-Tests use NUnit `[TestCaseSource]` with helper factories `FromPlies()` and `Custom()` in `GameTests`. Board positions are constructed by modifying `Board.StandardBoard` with `+` (add move) and `-` (remove piece) operators. Assertions use Shouldly (`result.ShouldBe(expected)`).
+Tests use xUnit v3 `[Theory]` with `[MemberData]` and helper factories `FromPlies()` and `Custom()` in `GameTests`. Board positions are constructed by modifying `Board.StandardBoard` with `+` (add move) and `-` (remove piece) operators. Assertions use Shouldly (`result.ShouldBe(expected)`).

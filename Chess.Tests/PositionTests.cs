@@ -1,6 +1,6 @@
-﻿using Chess.Lib;
-using NUnit.Framework;
+using Chess.Lib;
 using Shouldly;
+using Xunit;
 using static Chess.Lib.PieceType;
 using static Chess.Lib.Position;
 using static Chess.Lib.Side;
@@ -9,14 +9,14 @@ namespace Chess.Tests;
 
 public class PositionTests
 {
-    [Test]
-    [TestCaseSource(nameof(DataSource))]
+    [Theory]
+    [MemberData(nameof(DataSource))]
     public void TestWhenGivenPositionWhenAllPossibleActionsThenTheyAreReturned(PieceType pieceType, Position position, Side side, Position[] expectedPositions)
     {
         AllPossibleActions(position, new Piece(pieceType, side)).ToArray().ShouldBe(expectedPositions, ignoreOrder: true);
     }
 
-    public static IEnumerable<TestCaseData> DataSource() => [
+    public static IEnumerable<object[]> DataSource() => [
         PositionTest(Pawn,   A2, White, [A3, A4, B3]),
         PositionTest(Pawn,   E7, Black, [E6, E5, D6, F6]),
         PositionTest(Pawn,   C4, White, [C5, B5, D5]),
@@ -36,5 +36,5 @@ public class PositionTests
         PositionTest(King,   E8, Black, [D8, F8, D7, E7, F7, C8, G8])
     ];
 
-    private static TestCaseData PositionTest(PieceType piece, Position position, Side side, Position[] expectedPositions) => new TestCaseData(piece, position, side, expectedPositions);
+    private static object[] PositionTest(PieceType piece, Position position, Side side, Position[] expectedPositions) => [piece, position, side, expectedPositions];
 }

@@ -1,6 +1,6 @@
 using Chess.Lib;
-using NUnit.Framework;
 using Shouldly;
+using Xunit;
 using static Chess.Lib.Position;
 using static Chess.Lib.Side;
 
@@ -8,7 +8,7 @@ namespace Chess.Tests;
 
 public class BoardTests
 {
-    [Test]
+    [Fact]
     public void TestWhenCallingSetupThen16PiecesAreOnTheBoard()
     {
         var board = Board.StandardBoard;
@@ -22,7 +22,7 @@ public class BoardTests
         pieces.Count(p => p.Side == Black).ShouldBe(16);
     }
 
-    [Test]
+    [Fact]
     public void TestWhenNotCallingSetupThenBoardIsEmpty()
     {
         var board = new Board();
@@ -34,7 +34,7 @@ public class BoardTests
         pieces.Count(p => p == Piece.None).ShouldBe(64);
     }
 
-    [Test]
+    [Fact]
     public void TestWhenModifyingStandardBoardThenOnlyLocalCopyIsModified()
     {
         var board = Board.StandardBoard;
