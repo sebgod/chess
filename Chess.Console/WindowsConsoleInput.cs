@@ -233,9 +233,13 @@ internal static class WindowsConsoleInput
         if (record.EventType == InputEventType.Key)
         {
             var keyEvent = record.KeyEvent;
-            if (keyEvent.bKeyDown != 0 && keyEvent.UnicodeChar != '\0')
+            if (keyEvent.bKeyDown != 0)
             {
-                return (null, keyEvent.UnicodeChar);
+                if (keyEvent.UnicodeChar != '\0')
+                    return (null, keyEvent.UnicodeChar);
+                // Map F1 (VK_F1 = 0x70) to '?'
+                if (keyEvent.wVirtualKeyCode == 0x70)
+                    return (null, '?');
             }
             return (null, null);
         }

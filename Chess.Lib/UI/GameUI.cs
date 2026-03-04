@@ -33,6 +33,25 @@ public class GameUI
     private readonly RGBAColor32 _backgroundColor;
     private readonly RGBAColor32 _capturedAreaColor;
 
+    public static readonly string KeymapText =
+        "Keyboard Controls\n" +
+        "\n" +
+        "Gameplay\n" +
+        "  a-h    Select file\n" +
+        "  1-8    Select rank\n" +
+        "  Esc    Cancel selection\n" +
+        "\n" +
+        "Promotion\n" +
+        "  n/b/r/q  Select piece\n" +
+        "\n" +
+        "Custom Setup\n" +
+        "  p/n/b/r/q/k  Place piece\n" +
+        "  Tab    Toggle side\n" +
+        "  Del    Clear square\n" +
+        "  s      Start game\n" +
+        "\n" +
+        "F1 / ?   Toggle this help";
+
     private const int PieceTypeStride = 7;
     private const int PortraitFlipFactor = 3;
     private const int LastMoveBorderWidth = 3;
@@ -113,6 +132,8 @@ public class GameUI
 
     public Position? PendingPlacement { get; private set; }
 
+    public bool ShowingKeymap { get; set; }
+
     /// <summary>
     /// The destination square of the last completed move, derived from game history.
     /// </summary>
@@ -140,6 +161,7 @@ public class GameUI
         resized.IsSetupMode = IsSetupMode;
         resized.PlacementSide = PlacementSide;
         resized.PendingPlacement = PendingPlacement;
+        resized.ShowingKeymap = ShowingKeymap;
         return resized;
     }
 
@@ -217,8 +239,16 @@ public class GameUI
             }
         }
 
+        // keymap overlay (F1 / '?')
+        if (ShowingKeymap)
+        {
+            renderer.FillRectangle(surface, boardRect, OverlayFill);
+
+            renderer.DrawText(surface, KeymapText, _labelFont, _labelFontSize, FontColorBlack, boardRect,
+                horizAlignment: TextAlign.Near, vertAlignment: TextAlign.Far);
+        }
         // piece placement selection box (setup mode)
-        if (PendingPlacement is { } placementPos)
+        else if (PendingPlacement is { } placementPos)
         {
             renderer.FillRectangle(surface, boardRect, OverlayFill);
 
@@ -717,6 +747,12 @@ public class GameUI
     {
         PendingPlacement = default;
         Selected = default;
+        return (UIResponse.NeedsRefresh, []);
+    }
+
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) ToggleKeymap()
+    {
+        ShowingKeymap = !ShowingKeymap;
         return (UIResponse.NeedsRefresh, []);
     }
 

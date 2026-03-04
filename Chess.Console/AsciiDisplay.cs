@@ -24,6 +24,14 @@ internal sealed class AsciiDisplay : IGameDisplay
 
     public void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects, File? pendingFile)
     {
+        if (UI.ShowingKeymap && response.HasFlag(UIResponse.NeedsRefresh))
+        {
+            System.Console.WriteLine();
+            System.Console.WriteLine(GameUI.KeymapText);
+            System.Console.WriteLine();
+            return;
+        }
+
         if (response.HasFlag(UIResponse.NeedsRefresh) || response.HasFlag(UIResponse.IsUpdate))
         {
             RenderBoard(game);

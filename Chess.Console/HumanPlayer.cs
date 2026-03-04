@@ -48,6 +48,23 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
 
     private (UIResponse Response, ImmutableArray<RectInt> ClipRects) HandleKeyInput(GameUI ui, char key)
     {
+        // Keymap overlay: '?' toggles, Escape dismisses
+        if (ui.ShowingKeymap)
+        {
+            if (key is '?' or '\x1B')
+            {
+                _pendingFile = null;
+                return ui.ToggleKeymap();
+            }
+            return (UIResponse.None, []);
+        }
+
+        if (key is '?')
+        {
+            _pendingFile = null;
+            return ui.ToggleKeymap();
+        }
+
         if (ui.IsSetupMode)
         {
             return HandleSetupKeyInput(ui, key);

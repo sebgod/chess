@@ -142,7 +142,11 @@ internal sealed class ConsoleTerminal : IDisposable
         {
             var first = System.Console.ReadKey(intercept: false);
 
-            if (first.Key != ConsoleKey.Escape)
+            if (first.Key == ConsoleKey.F1)
+            {
+                return (null, '?');
+            }
+            else if (first.Key != ConsoleKey.Escape)
             {
                 return (null, first.KeyChar);
             }
@@ -227,7 +231,8 @@ internal sealed class ConsoleTerminal : IDisposable
         var first = System.Console.ReadKey(intercept: true);
         if (first.Key != ConsoleKey.Escape)
         {
-            return (null, first.KeyChar);
+            // Map F1 to '?'
+            return (null, first.Key == ConsoleKey.F1 ? '?' : first.KeyChar);
         }
 
         var sb = new StringBuilder();
@@ -294,7 +299,8 @@ internal sealed class ConsoleTerminal : IDisposable
         var first = System.Console.ReadKey(intercept: true);
         if (first.Key != ConsoleKey.Escape)
         {
-            return (null, first.KeyChar);
+            // Map F1 to '?'
+            return (null, first.Key == ConsoleKey.F1 ? '?' : first.KeyChar);
         }
 
         while (true)
