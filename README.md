@@ -106,5 +106,29 @@ In Custom Game mode, you place pieces on the board before playing. The popup app
 | `Chess.UCI` | Shared UCI protocol library (parsing, formatting, client/server) |
 | `Chess.Engine` | Standalone UCI engine executable (`chess-engine`) |
 | `Chess.Console` | Console application with Sixel rendering |
-| `Chess.Tests` | NUnit test suite |
+| `Chess.Tests` | xUnit v3 test suite |
 | `BenchmarkSuite1` | BenchmarkDotNet performance benchmarks |
+
+### Architecture
+
+```mermaid
+graph TD
+    Console["Chess.Console<br/><i>Terminal UI + Sixel rendering</i>"]
+    Engine["Chess.Engine<br/><i>Standalone UCI engine</i>"]
+    UCI["Chess.UCI<br/><i>UCI protocol library</i>"]
+    Lib["Chess.Lib<br/><i>Board, rules, AI engine</i>"]
+    Tests["Chess.Tests<br/><i>xUnit v3 + Shouldly</i>"]
+    Bench["BenchmarkSuite1<br/><i>Performance benchmarks</i>"]
+
+    Console -- "project ref" --> Lib
+    Console -- "project ref" --> UCI
+    Console -. "launches as<br/>child process" .-> Engine
+    Engine -- "project ref" --> Lib
+    Engine -- "project ref" --> UCI
+    UCI -- "project ref" --> Lib
+    Tests -- "project ref" --> Lib
+    Tests -- "project ref" --> UCI
+    Bench -- "project ref" --> Console
+
+    Console <-- "UCI over<br/>stdin/stdout" --> Engine
+```

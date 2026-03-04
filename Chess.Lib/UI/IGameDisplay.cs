@@ -1,15 +1,11 @@
 using System.Collections.Immutable;
-using Chess.Lib;
-using Chess.Lib.UI;
 
-using File = Chess.Lib.File;
-
-namespace Chess.Console;
+namespace Chess.Lib.UI;
 
 /// <summary>
 /// Abstracts the display backend so the game loop is renderer-agnostic.
 /// </summary>
-internal interface IGameDisplay : IDisposable
+public interface IGameDisplay : IDisposable
 {
     GameUI UI { get; }
     void RenderInitial(Game game, File? pendingFile = null);

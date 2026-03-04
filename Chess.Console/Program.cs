@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.CommandLine;
 using Chess.Console;
 using Chess.Lib;
+using Chess.Lib.UI;
 
 var noColorOption = new Option<bool>("--no-color")
 {
@@ -92,7 +93,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
     }
 
     var game = gameMode is GameMode.CustomGame
-        ? new Game(useStandardBoard ? Board.StandardBoard : new Board(), Side.White, ImmutableList<RecordedPly>.Empty)
+        ? new Game(useStandardBoard ? Board.StandardBoard : new Board(), Side.White, [])
         : new Game();
 
     var (cellWidth, cellHeight) = hasSixel
@@ -136,7 +137,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
 
         // Transition from setup to gameplay: create a fresh game from the setup board
         var setupBoard = game.Board;
-        game = new Game(setupBoard, Side.White, ImmutableList<RecordedPly>.Empty);
+        game = new Game(setupBoard, Side.White, []);
         gameDisplay.ResetGame(game);
     }
 
