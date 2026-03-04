@@ -19,6 +19,17 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Chess.Lib\Chess.Lib.csproj" />
+    <ProjectReference Include="..\Chess.UCI\Chess.UCI.csproj" />
+    <ProjectReference Include="..\Chess.Engine\Chess.Engine.csproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+    </ProjectReference>
   </ItemGroup>
+
+  <Target Name="CopyEngineExecutable" AfterTargets="Build">
+    <ItemGroup>
+      <EngineFiles Include="..\Chess.Engine\bin\$(Configuration)\$(TargetFramework)\chess-engine.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(EngineFiles)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>

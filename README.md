@@ -8,6 +8,7 @@ A terminal chess game with graphical board rendering via [Sixel](https://en.wiki
 
 - Full chess rules: movement, captures, check, checkmate, stalemate, pawn promotion
 - Player vs Player and Player vs Computer modes
+- [UCI](https://en.wikipedia.org/wiki/Universal_Chess_Interface) protocol support — the engine runs as a separate process, communicating via standard UCI commands
 - Graphical board rendered in the terminal using ImageMagick and the Sixel protocol
 - Move history panel with algebraic notation
 - Cross-platform: Windows, Linux, and macOS (x64 and ARM64)
@@ -53,6 +54,8 @@ dotnet test -c Release
 | Directory | Description |
 |---|---|
 | `Chess.Lib` | Core chess library: board, pieces, rules, AI engine |
+| `Chess.UCI` | Shared UCI protocol library (parsing, formatting, client/server) |
+| `Chess.Engine` | Standalone UCI engine executable (`chess-engine`) |
 | `Chess.Console` | Console application with Sixel rendering |
 | `Chess.Tests` | NUnit test suite |
 | `BenchmarkSuite1` | BenchmarkDotNet performance benchmarks |

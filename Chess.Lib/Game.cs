@@ -16,7 +16,7 @@ public class Game
         _currentSide = Side.White;
     }
 
-    internal Game(Board board, Side side, ImmutableList<RecordedPly> plies)
+    public Game(Board board, Side side, ImmutableList<RecordedPly> plies)
     {
         _plies = plies;
         _board = board;

@@ -53,6 +53,48 @@ public record struct Board()
 
     public static Board StandardBoard => _standardGameBoard;
 
+    public static Board FromFenPlacement(string placement)
+    {
+        var board = new Board();
+        var ranks = placement.Split('/');
+
+        for (var rankIdx = 0; rankIdx < ranks.Length && rankIdx < 8; rankIdx++)
+        {
+            var rank = (Rank)(7 - rankIdx);
+            var file = 0;
+
+            foreach (var c in ranks[rankIdx])
+            {
+                if (c is >= '1' and <= '8')
+                {
+                    file += c - '0';
+                }
+                else
+                {
+                    var side = char.IsUpper(c) ? Side.White : Side.Black;
+                    var pieceType = char.ToLowerInvariant(c) switch
+                    {
+                        'p' => PieceType.Pawn,
+                        'n' => PieceType.Knight,
+                        'b' => PieceType.Bishop,
+                        'r' => PieceType.Rook,
+                        'q' => PieceType.Queen,
+                        'k' => PieceType.King,
+                        _ => PieceType.None
+                    };
+
+                    if (pieceType is not PieceType.None && file < 8)
+                    {
+                        board[new Position((File)file, rank)] = new Piece(pieceType, side);
+                    }
+                    file++;
+                }
+            }
+        }
+
+        return board;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveOptimization)]
     public readonly (EvaluationResult Result, Board Board, ImmutableList<RecordedPly> Plies) EvaluateAction(ImmutableList<RecordedPly> plies, Action action, bool skipGameResultCheck = false)
     {

@@ -38,21 +38,27 @@ var chrome = new ConsoleGameRenderer(historyColumns, Console.WindowWidth, Consol
 
 var humanPlayer = new HumanPlayer(terminal);
 IGamePlayer whitePlayer, blackPlayer;
+UciPlayer? uciPlayer;
 
 if (gameMode is GameMode.PlayerVsComputer)
 {
-    var aiPlayer = new AiPlayer(new AiEngine(computerSide));
+    var engineName = "chess-engine" + (OperatingSystem.IsWindows() ? ".exe" : "");
+    var enginePath = Path.Combine(AppContext.BaseDirectory, engineName);
+    uciPlayer = new UciPlayer(enginePath, computerSide);
+    await uciPlayer.InitAsync(cts.Token);
+
     if (computerSide is Side.White)
     {
-        (whitePlayer, blackPlayer) = (aiPlayer, humanPlayer);
+        (whitePlayer, blackPlayer) = (uciPlayer, humanPlayer);
     }
     else
     {
-        (whitePlayer, blackPlayer) = (humanPlayer, aiPlayer);
+        (whitePlayer, blackPlayer) = (humanPlayer, uciPlayer);
     }
 }
 else
 {
+    uciPlayer = null;
     (whitePlayer, blackPlayer) = (humanPlayer, humanPlayer);
 }
 
@@ -109,4 +115,8 @@ try
 catch (OperationCanceledException)
 {
     // Expected on Ctrl+C
+}
+finally
+{
+    uciPlayer?.Dispose();
 }

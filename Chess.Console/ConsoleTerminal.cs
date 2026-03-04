@@ -13,9 +13,27 @@ internal readonly record struct MouseEvent(int Button, int X, int Y, bool IsRele
 /// </summary>
 internal sealed class ConsoleTerminal : IDisposable
 {
+    private HashSet<TerminalCapability>? _deviceCapabilities;
     private uint? _cellWidth;
     private uint? _cellHeight;
     private bool _useDecLocator;
+
+    public async Task<bool> HasSixelSupportAsync()
+    {
+        if (_deviceCapabilities is null)
+        {
+            var response = await GetControlSequenceResponseAsync("\e[0c");
+
+            _deviceCapabilities = [.. response
+                    .TrimStart('\e', '[', '?')
+                    .TrimEnd('c')
+                    .Split(';')
+                    .Select((s) => (TerminalCapability) int.Parse(s))
+            ];
+        }
+
+        return _deviceCapabilities.Contains(TerminalCapability.Sixel);
+    }
 
     /// <summary>
     /// Queries the terminal cell size in pixels using XTWINOPS (CSI 16 t).
