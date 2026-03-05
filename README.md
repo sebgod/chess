@@ -114,21 +114,25 @@ In Custom Game mode, you place pieces on the board before playing. The popup app
 
 ```mermaid
 graph TD
-    Console["Chess.Console<br/><i>Terminal UI + Sixel rendering</i>"]
+    Console["Chess.Console<br/><i>Terminal UI</i>"]
+    ConLib["Console.Lib<br/><i>Terminal I/O + Sixel rendering</i>"]
     Engine["Chess.Engine<br/><i>Standalone UCI engine</i>"]
     UCI["Chess.UCI<br/><i>UCI protocol library</i>"]
     Lib["Chess.Lib<br/><i>Board, rules, AI engine</i>"]
     Tests["Chess.Tests<br/><i>xUnit v3 + Shouldly</i>"]
     Bench["BenchmarkSuite1<br/><i>Performance benchmarks</i>"]
 
+    Console -- "project ref" --> ConLib
     Console -- "project ref" --> Lib
     Console -- "project ref" --> UCI
     Console -. "launches as<br/>child process" .-> Engine
     Engine -- "project ref" --> Lib
     Engine -- "project ref" --> UCI
     UCI -- "project ref" --> Lib
+    Tests -- "project ref" --> ConLib
     Tests -- "project ref" --> Lib
     Tests -- "project ref" --> UCI
+    Bench -- "project ref" --> ConLib
     Bench -- "project ref" --> Console
 
     Console <-- "UCI over<br/>stdin/stdout" --> Engine
