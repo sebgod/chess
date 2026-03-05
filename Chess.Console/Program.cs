@@ -53,7 +53,8 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
         || Environment.GetEnvironmentVariable("NO_COLOR") is "1"
         || Environment.GetEnvironmentVariable("NOCOLOR") is "1";
 
-    using var terminal = new ConsoleTerminal();
+    var timeProvider = TimeProvider.System;
+    await using var terminal = new ConsoleTerminal();
     var hasSixel = !forceAscii && await terminal.HasSixelSupportAsync();
 
     if (hasSixel)
@@ -67,7 +68,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
     var modeArg = parseResult.GetValue(modeOption);
     if (modeArg is null)
     {
-        var startupMenu = new StartupMenu(terminal);
+        var startupMenu = new StartupMenu(terminal, timeProvider);
         (gameMode, computerSide) = await startupMenu.ShowAsync(cancellationToken);
     }
     else
@@ -95,7 +96,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
         : (10u, 20u);
 
     var gameLoop = new GameLoop(
-        TimeProvider.System,
+        timeProvider,
         game => hasSixel  ? new SixelGameDisplay(game, cellWidth, cellHeight) : new AsciiDisplay(game),
         () => new HumanPlayer(terminal),
         (computerSide, tp) => new UciPlayer(Path.Combine(AppContext.BaseDirectory, "chess-engine" + (OperatingSystem.IsWindows() ? ".exe" : "")), computerSide, tp)

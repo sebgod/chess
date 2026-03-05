@@ -5,24 +5,35 @@ namespace Chess.Console;
 /// <summary>
 /// Represents a mouse button event with pixel position and press/release state.
 /// </summary>
-internal readonly record struct MouseEvent(int Button, int X, int Y, bool IsRelease);
+public readonly record struct MouseEvent(int Button, int X, int Y, bool IsRelease);
 
 /// <summary>
 /// Represents a console input event: either a mouse event, a key press, or both with modifier state.
 /// </summary>
-internal readonly record struct ConsoleInputEvent(MouseEvent? Mouse, ConsoleKey Key, ConsoleModifiers Modifiers);
+public readonly record struct ConsoleInputEvent(MouseEvent? Mouse, ConsoleKey Key, ConsoleModifiers Modifiers);
+
+public interface IConsoleTerminal
+    : IAsyncDisposable
+{
+    Task<bool> HasSixelSupportAsync();
+    Task<(uint Width, uint Height)?> QueryCellSizeAsync();
+    ValueTask EnterAsync();
+    bool IsAlternateScreen { get; }
+    bool HasInput();
+    ConsoleInputEvent TryReadInput();
+}
 
 /// <summary>
 /// Manages terminal lifecycle (alternate buffer, cursor, mouse tracking)
 /// and provides platform-aware mouse input reading.
 /// </summary>
-internal sealed class ConsoleTerminal : IDisposable
+internal sealed class ConsoleTerminal : IConsoleTerminal
 {
     private HashSet<TerminalCapability>? _deviceCapabilities;
     private uint? _cellWidth;
     private uint? _cellHeight;
-    private bool _useDecLocator;
     private bool _alternateScreen;
+    private Stream? _stdIn;
 
     public async Task<bool> HasSixelSupportAsync()
     {
@@ -85,37 +96,25 @@ internal sealed class ConsoleTerminal : IDisposable
         // cache cell size
         _ = await QueryCellSizeAsync();
 
-        var decLocatorAvailable = await ProbeDecLocatorAsync();
-        if (decLocatorAvailable && (!OperatingSystem.IsWindows() || WindowsConsoleInput.EnableVirtualTerminalInput()))
+        if (OperatingSystem.IsWindows())
         {
-            _useDecLocator = true;
-            System.Console.Write("\e[1;1'z");  // DECELR: enable locator, pixel coordinates
-            System.Console.Write("\e[1;3'{");  // DECSLE: report button down + up
-        }
-        else if (OperatingSystem.IsWindows())
-        {
-            WindowsConsoleInput.EnableMouseInput();
-        }
-        else
-        {
-            System.Console.Write("\e[?1006h"); // SGR mouse tracking fallback
+            WindowsConsoleInput.EnableVirtualTerminalIO();
         }
 
         System.Console.Write("\e[?1049h"); // Enter alternate buffer
         System.Console.Write("\e[?25l");   // Hide cursor
+        System.Console.Write("\e[?1000h"); // SGR Mouse press/release tracking
+        System.Console.Write("\e[?1006h"); // SGR extended tracking
+        System.Console.Out.Flush(); // Ensure all control sequences are sent before we start reading input
 
+
+        _stdIn = System.Console.OpenStandardInput();
         _alternateScreen = true;
     }
 
     public bool IsAlternateScreen => _alternateScreen;
 
-    /// <summary>
-    /// Returns true if there are pending input events to read.
-    /// </summary>
-    public bool HasInput() =>
-        _alternateScreen && OperatingSystem.IsWindows() && !_useDecLocator
-            ? WindowsConsoleInput.HasInputEvents()
-            : System.Console.KeyAvailable;
+    public bool HasInput() => System.Console.KeyAvailable;
 
     /// <summary>
     /// Attempts to read input from the terminal.
@@ -124,16 +123,10 @@ internal sealed class ConsoleTerminal : IDisposable
     /// </summary>
     public ConsoleInputEvent TryReadInput()
     {
+        // only in alternate screen we enabled SGR mouse tracking, so we only attempt to parse it there
         if (_alternateScreen)
         {
-            if (_useDecLocator)
-            {
-                return ParseDecLocatorInput();
-            }
-
-            var result = OperatingSystem.IsWindows()
-                ? WindowsConsoleInput.TryReadInputEvent()
-                : ParseSgrInput();
+            var result = ParseSgrInput();
 
             if (result.Mouse is not { } r || !_cellWidth.HasValue || !_cellHeight.HasValue)
             {
@@ -162,16 +155,10 @@ internal sealed class ConsoleTerminal : IDisposable
         }
     }
 
-    public void Dispose()
+    public ValueTask DisposeAsync()
     {
-        if (_useDecLocator)
-        {
-            System.Console.Write("\e[0'z"); // DECELR: disable locator
-        }
-        else if (!OperatingSystem.IsWindows())
-        {
-            System.Console.Write("\e[?1006l"); // Disable SGR mouse tracking
-        }
+        System.Console.Write("\e[?1000l"); // Disable SGR Mouse press/release tracking
+        System.Console.Write("\e[?1006l"); // Disable SGR extended tracking
 
         if (OperatingSystem.IsWindows())
         {
@@ -180,6 +167,12 @@ internal sealed class ConsoleTerminal : IDisposable
 
         System.Console.Write("\e[?25h");   // Show cursor
         System.Console.Write("\e[?1049l"); // Leave alternate buffer
+
+        if (_stdIn is { } stdIn)
+        {
+            return stdIn.DisposeAsync();
+        }
+        return ValueTask.CompletedTask;
     }
 
     private static async ValueTask<string> GetControlSequenceResponseAsync(string sequence)
@@ -205,120 +198,42 @@ internal sealed class ConsoleTerminal : IDisposable
     }
 
     /// <summary>
-    /// Probes whether the terminal supports DEC Locator by sending DECRQLP and checking for a DECLRP response.
-    /// </summary>
-    private static async Task<bool> ProbeDecLocatorAsync()
-    {
-        var response = await GetControlSequenceResponseAsync("\e[1'|");
-        if (!response.Contains("&w"))
-        {
-            return false;
-        }
-
-        var content = response.TrimStart('\e', '[');
-        var ampIndex = content.IndexOf('&');
-        if (ampIndex < 0)
-        {
-            return false;
-        }
-
-        var parts = content[..ampIndex].Split(';');
-        // Pe=0 means locator unavailable
-        return parts.Length >= 1 && int.TryParse(parts[0], out var pe) && pe != 0;
-    }
-
-    /// <summary>
-    /// Parses a DECLRP response (CSI Pe;Pb;Pr;Pc;Pp &amp; w) into a mouse event with pixel coordinates,
-    /// or returns the raw key character if the input was not an escape sequence.
-    /// </summary>
-    private static ConsoleInputEvent ParseDecLocatorInput()
-    {
-        var first = System.Console.ReadKey(intercept: true);
-        if (first.Key != ConsoleKey.Escape)
-        {
-            // Map F1 to '?'
-            return new(null, first.Key, first.Modifiers);
-        }
-
-        var sb = new StringBuilder();
-        while (true)
-        {
-            if (!System.Console.KeyAvailable)
-            {
-                return default;
-            }
-
-            var ch = System.Console.ReadKey(intercept: true);
-            if (ch.KeyChar == '&')
-            {
-                if (!System.Console.KeyAvailable)
-                {
-                    return default;
-                }
-
-                var next = System.Console.ReadKey(intercept: true);
-                if (next.KeyChar != 'w')
-                {
-                    return default;
-                }
-
-                var parts = sb.ToString().TrimStart('[').Split(';');
-                if (parts.Length >= 4 &&
-                    int.TryParse(parts[0], out var pe) &&
-                    int.TryParse(parts[2], out var pr) &&
-                    int.TryParse(parts[3], out var pc))
-                {
-                    // Pe: 2=left down, 3=left up, 4=middle down, 5=middle up, 6=right down, 7=right up
-                    var button = pe switch
-                    {
-                        2 or 3 => 0,
-                        4 or 5 => 1,
-                        6 or 7 => 2,
-                        _ => -1
-                    };
-                    if (button < 0)
-                    {
-                        return default;
-                    }
-
-                    var isRelease = pe is 3 or 5 or 7;
-                    // DECLRP pixel coordinates are 1-based
-                    return new(new MouseEvent(button, pc - 1, pr - 1, isRelease), ConsoleKey.None, ConsoleModifiers.None);
-                }
-
-                return default;
-            }
-
-            sb.Append(ch.KeyChar);
-        }
-    }
-
-    /// <summary>
     /// Parses an SGR mouse event (CSI &lt; Pb;Px;Py M/m), or returns the raw key character
     /// if the input was not an escape sequence.
     /// </summary>
-    private static ConsoleInputEvent ParseSgrInput()
+    private ConsoleInputEvent ParseSgrInput()
     {
-        var sb = new StringBuilder();
-
-        var first = System.Console.ReadKey(intercept: true);
-        if (first.Key != ConsoleKey.Escape)
+        if (_stdIn is not { })
         {
-            // Map F1 to '?'
-            return new(null, first.Key, first.Modifiers);
+            throw new InvalidOperationException("Standard input stream is not available.");
         }
 
-        while (true)
+        var sb = new StringBuilder();
+
+        var @byte = _stdIn.ReadByte(); // Consume the initial ESC
+
+        if (@byte == -1)
         {
-            if (!System.Console.KeyAvailable)
+            return default;
+        }
+        else if (@byte != '\e')
+        {
+            var (key, modifiers) = ByteToConsoleKey(@byte);
+            return new(null, key, modifiers);
+        }
+
+        while (System.Console.KeyAvailable)
+        {
+            var ch = _stdIn.ReadByte();
+            if (ch == -1)
             {
                 return default;
             }
 
-            var ch = System.Console.ReadKey(intercept: true);
-            if (ch.KeyChar is 'M' or 'm')
+            // SGR mouse terminator: M (press) or m (release) — don't append, params are already in sb
+            if (ch is 'M' or 'm')
             {
-                var isRelease = ch.KeyChar == 'm';
+                var isRelease = ch == 'm';
                 var parts = sb.ToString().TrimStart('[', '<').Split(';');
                 if (parts.Length == 3 &&
                     int.TryParse(parts[0], out var pb) &&
@@ -337,7 +252,100 @@ internal sealed class ConsoleTerminal : IDisposable
                 return default;
             }
 
-            sb.Append(ch);
+            sb.Append((char)ch);
+
+            if (sb[0] == '[' && TryParseCsiKey(sb, out var csiKey, out var csiMods))
+            {
+                return new(null, csiKey, csiMods);
+            }
         }
+
+        return default;
     }
+
+    /// <summary>
+    /// Converts a raw stdin byte to a <see cref="ConsoleKey"/> with <see cref="ConsoleModifiers"/>.
+    /// Uppercase letters produce Shift, Ctrl+letter (0x01-0x1A) produces Control.
+    /// </summary>
+    /// <summary>
+    /// Tries to parse a CSI sequence from the buffer (including final byte as last char).
+    /// Buffer format: [ params final — e.g. "[A", "[1;5A", "[3~", "[3;5~".
+    /// Modifier parameter: 2=Shift, 3=Alt, 4=Shift+Alt, 5=Ctrl, 6=Ctrl+Shift, 7=Ctrl+Alt, 8=Ctrl+Shift+Alt.
+    /// </summary>
+    private static bool TryParseCsiKey(StringBuilder sb, out ConsoleKey key, out ConsoleModifiers modifiers)
+    {
+        key = ConsoleKey.None;
+        modifiers = ConsoleModifiers.None;
+
+        if (sb.Length < 2)
+            return false;
+
+        var final = sb[^1];
+        var param = sb.ToString().AsSpan(1, sb.Length - 2); // between '[' and final byte
+
+        // Extract optional modifier after ';': e.g. "1;5" → n=1, mod=5
+        var semiPos = param.IndexOf(';');
+        if (semiPos >= 0 && int.TryParse(param[(semiPos + 1)..], out var mod))
+        {
+            if ((mod - 1 & 1) != 0) modifiers |= ConsoleModifiers.Shift;
+            if ((mod - 1 & 2) != 0) modifiers |= ConsoleModifiers.Alt;
+            if ((mod - 1 & 4) != 0) modifiers |= ConsoleModifiers.Control;
+            param = param[..semiPos];
+        }
+
+        // Letter final byte: arrow keys, Home, End
+        if (final is >= 'A' and <= 'D' or 'H' or 'F')
+        {
+            key = final switch
+            {
+                'A' => ConsoleKey.UpArrow,
+                'B' => ConsoleKey.DownArrow,
+                'C' => ConsoleKey.RightArrow,
+                'D' => ConsoleKey.LeftArrow,
+                'H' => ConsoleKey.Home,
+                _ => ConsoleKey.End,
+            };
+            return true;
+        }
+
+        // Tilde final byte: ESC [ n ~ or ESC [ n;mod ~
+        if (final == '~' && int.TryParse(param, out var n))
+        {
+            key = n switch
+            {
+                1 => ConsoleKey.Home,
+                2 => ConsoleKey.Insert,
+                3 => ConsoleKey.Delete,
+                4 => ConsoleKey.End,
+                5 => ConsoleKey.PageUp,
+                6 => ConsoleKey.PageDown,
+                15 => ConsoleKey.F5,
+                17 => ConsoleKey.F6,
+                18 => ConsoleKey.F7,
+                19 => ConsoleKey.F8,
+                20 => ConsoleKey.F9,
+                21 => ConsoleKey.F10,
+                23 => ConsoleKey.F11,
+                24 => ConsoleKey.F12,
+                _ => ConsoleKey.None,
+            };
+            return key != ConsoleKey.None;
+        }
+
+        return false;
+    }
+
+    private static (ConsoleKey Key, ConsoleModifiers Modifiers) ByteToConsoleKey(int b) => b switch
+    {
+        >= 'a' and <= 'z' => ((ConsoleKey)(b - 'a' + 'A'), 0),
+        >= 'A' and <= 'Z' => ((ConsoleKey)b, ConsoleModifiers.Shift),
+        >= '0' and <= '9' => ((ConsoleKey)b, 0),
+        '\b' => (ConsoleKey.Backspace, 0),
+        '\t' => (ConsoleKey.Tab, 0),
+        '\r' or '\n' => (ConsoleKey.Enter, 0),
+        ' ' => (ConsoleKey.Spacebar, 0),
+        0x7F => (ConsoleKey.Delete, 0),
+        >= 0x01 and <= 0x1A => ((ConsoleKey)(b - 0x01 + 'A'), ConsoleModifiers.Control),
+        _ => (ConsoleKey.None, 0),
+    };
 }

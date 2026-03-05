@@ -6,7 +6,7 @@ namespace Chess.Console;
 /// Renders a startup menu in the terminal with arrow-key navigation
 /// and returns the selected game mode.
 /// </summary>
-internal class StartupMenu(ConsoleTerminal terminal)
+internal class StartupMenu(IConsoleTerminal terminal, TimeProvider timeProvider)
 {
     private int? _lastWindowWidth;
     private int? _lastWindowHeight;
@@ -18,12 +18,6 @@ internal class StartupMenu(ConsoleTerminal terminal)
     /// </summary>
     public async Task<(GameMode Mode, Side ComputerSide)> ShowAsync(CancellationToken cancellationToken)
     {
-        if (terminal.IsAlternateScreen)
-        {
-            System.Console.Clear();
-            System.Console.CursorVisible = false;
-        }
-
         var mode = await ShowMenuAsync(
             "\u265A Chess \u2654",
             "Select game mode:",
@@ -83,12 +77,13 @@ internal class StartupMenu(ConsoleTerminal terminal)
         {
             if (!System.Console.KeyAvailable)
             {
-                await Task.Delay(25, cancellationToken);
+                await Task.Delay(TimeSpan.FromMilliseconds(25), timeProvider, cancellationToken);
                 continue;
             }
 
-            var key = System.Console.ReadKey(intercept: true);
-            var digit = key.KeyChar - '1';
+            var input = terminal.TryReadInput();
+            
+            var digit = input.Key - ConsoleKey.D1;
             if (digit >= 0 && digit < items.Length)
             {
                 System.Console.WriteLine(items[digit]);
@@ -113,11 +108,11 @@ internal class StartupMenu(ConsoleTerminal terminal)
         {
             if (!System.Console.KeyAvailable)
             {
-                await Task.Delay(25, cancellationToken);
+                await Task.Delay(TimeSpan.FromMilliseconds(25), timeProvider, cancellationToken);
                 continue;
             }
 
-            var key = System.Console.ReadKey(intercept: true);
+            var key = terminal.TryReadInput();
             switch (key.Key)
             {
                 case ConsoleKey.UpArrow:
@@ -131,7 +126,7 @@ internal class StartupMenu(ConsoleTerminal terminal)
                 case ConsoleKey.Enter:
                     return selected;
                 default:
-                    var digit = key.KeyChar - '1';
+                    var digit = key.Key - ConsoleKey.D1;
                     if (digit >= 0 && digit < items.Length)
                     {
                         return digit;

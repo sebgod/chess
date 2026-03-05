@@ -15,7 +15,7 @@ namespace Chess.Console;
 ///   <item>When a piece is already selected, just a row digit to move along the same file.</item>
 /// </list>
 /// </summary>
-internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
+internal sealed class HumanPlayer(IConsoleTerminal terminal) : IGamePlayer
 {
     private File? _pendingFile;
 
