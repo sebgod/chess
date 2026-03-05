@@ -10,6 +10,7 @@ internal class StartupMenu(IConsoleTerminal terminal, TimeProvider timeProvider)
 {
     private int? _lastWindowWidth;
     private int? _lastWindowHeight;
+    private uint? _cellHeight;
 
     /// <summary>
     /// Displays the game mode menu and waits for the user to make a selection.
@@ -17,6 +18,12 @@ internal class StartupMenu(IConsoleTerminal terminal, TimeProvider timeProvider)
     /// and whether to use the standard board (only relevant for <see cref="GameMode.CustomGame"/>).
     /// </summary>
     public async Task<(GameMode Mode, Side ComputerSide)> ShowAsync(CancellationToken cancellationToken)
+    {
+        _cellHeight = (await terminal.QueryCellSizeAsync())?.Height;
+        return await ShowAsyncCore(cancellationToken);
+    }
+
+    private async Task<(GameMode Mode, Side ComputerSide)> ShowAsyncCore(CancellationToken cancellationToken)
     {
         var mode = await ShowMenuAsync(
             "\u265A Chess \u2654",
@@ -102,7 +109,7 @@ internal class StartupMenu(IConsoleTerminal terminal, TimeProvider timeProvider)
         _lastWindowHeight = null;
 
         var selected = 0;
-        DrawMenuAlternateScreen(title, prompt, items, selected);
+        var menuStartRow = DrawMenuAlternateScreen(title, prompt, items, selected);
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -112,21 +119,33 @@ internal class StartupMenu(IConsoleTerminal terminal, TimeProvider timeProvider)
                 continue;
             }
 
-            var key = terminal.TryReadInput();
-            switch (key.Key)
+            var input = terminal.TryReadInput();
+
+            if (input.Mouse is { IsRelease: true } mouse)
+            {
+                var row = _cellHeight is > 0 ? mouse.Y / (int)_cellHeight.Value : mouse.Y;
+                var clickedItem = row - menuStartRow;
+                if (clickedItem >= 0 && clickedItem < items.Length)
+                {
+                    return clickedItem;
+                }
+                continue;
+            }
+
+            switch (input.Key)
             {
                 case ConsoleKey.UpArrow:
                     selected = (selected - 1 + items.Length) % items.Length;
-                    DrawMenuAlternateScreen(title, prompt, items, selected);
+                    menuStartRow = DrawMenuAlternateScreen(title, prompt, items, selected);
                     break;
                 case ConsoleKey.DownArrow:
                     selected = (selected + 1) % items.Length;
-                    DrawMenuAlternateScreen(title, prompt, items, selected);
+                    menuStartRow = DrawMenuAlternateScreen(title, prompt, items, selected);
                     break;
                 case ConsoleKey.Enter:
                     return selected;
                 default:
-                    var digit = key.Key - ConsoleKey.D1;
+                    var digit = input.Key - ConsoleKey.D1;
                     if (digit >= 0 && digit < items.Length)
                     {
                         return digit;
@@ -138,11 +157,12 @@ internal class StartupMenu(IConsoleTerminal terminal, TimeProvider timeProvider)
         return 0;
     }
 
-    private void DrawMenuAlternateScreen(string title, string prompt, string[] items, int selected)
+    /// <returns>The row of the first menu item (for mouse hit testing).</returns>
+    private int DrawMenuAlternateScreen(string title, string prompt, string[] items, int selected)
     {
         var windowWidth = System.Console.WindowWidth;
         var windowHeight = System.Console.WindowHeight;
-        
+
         // full redraw
         if (windowWidth != _lastWindowWidth || windowHeight != _lastWindowHeight)
         {
@@ -155,6 +175,7 @@ internal class StartupMenu(IConsoleTerminal terminal, TimeProvider timeProvider)
         // Total lines: title + blank + prompt + blank + items
         var totalLines = 4 + items.Length;
         var startRow = Math.Max(0, (windowHeight - totalLines) / 2);
+        var menuStartRow = startRow + 4;
 
         WriteCenterPadded(startRow, title, windowWidth);
         WriteCenterPadded(startRow + 2, prompt, windowWidth);
@@ -163,7 +184,7 @@ internal class StartupMenu(IConsoleTerminal terminal, TimeProvider timeProvider)
         {
             var indicator = i == selected ? " \u25B6 " : "   ";
             var label = $"{indicator}{items[i]}";
-            var row = startRow + 4 + i;
+            var row = menuStartRow + i;
 
             if (i == selected)
             {
@@ -174,6 +195,8 @@ internal class StartupMenu(IConsoleTerminal terminal, TimeProvider timeProvider)
                 WriteCenterPadded(row, label, windowWidth);
             }
         }
+
+        return menuStartRow;
     }
 
     /// <summary>

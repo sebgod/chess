@@ -107,7 +107,6 @@ internal sealed class ConsoleTerminal : IConsoleTerminal
         System.Console.Write("\e[?1006h"); // SGR extended tracking
         System.Console.Out.Flush(); // Ensure all control sequences are sent before we start reading input
 
-
         _stdIn = System.Console.OpenStandardInput();
         _alternateScreen = true;
     }
@@ -157,16 +156,19 @@ internal sealed class ConsoleTerminal : IConsoleTerminal
 
     public ValueTask DisposeAsync()
     {
-        System.Console.Write("\e[?1000l"); // Disable SGR Mouse press/release tracking
-        System.Console.Write("\e[?1006l"); // Disable SGR extended tracking
-
-        if (OperatingSystem.IsWindows())
+        if (_alternateScreen)
         {
-            WindowsConsoleInput.RestoreConsoleMode();
-        }
+            System.Console.Write("\e[?1000l"); // Disable SGR Mouse press/release tracking
+            System.Console.Write("\e[?1006l"); // Disable SGR extended tracking
 
-        System.Console.Write("\e[?25h");   // Show cursor
-        System.Console.Write("\e[?1049l"); // Leave alternate buffer
+            if (OperatingSystem.IsWindows())
+            {
+                WindowsConsoleInput.RestoreConsoleMode();
+            }
+
+            System.Console.Write("\e[?25h");   // Show cursor
+            System.Console.Write("\e[?1049l"); // Leave alternate buffer
+        }
 
         if (_stdIn is { } stdIn)
         {
