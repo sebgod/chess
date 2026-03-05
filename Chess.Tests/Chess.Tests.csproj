@@ -27,6 +27,8 @@
   <ItemGroup>
     <ProjectReference Include="..\Chess.Lib\Chess.Lib.csproj" />
     <ProjectReference Include="..\Chess.UCI\Chess.UCI.csproj" />
+    <ProjectReference Include="..\Console.Lib\Console.Lib.csproj" />
+    <ProjectReference Include="..\Chess.Console\Chess.Console.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,4 +1,4 @@
-namespace Chess.Console;
+namespace Console.Lib;
 
 public enum TerminalCapability
 {

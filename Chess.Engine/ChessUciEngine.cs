@@ -47,7 +47,7 @@ internal sealed class ChessUciEngine : IUciEngine
             {
                 if (_debug)
                 {
-                    Console.Error.WriteLine($"info string failed to apply move {moveStr}: {result}");
+                    System.Console.Error.WriteLine($"info string failed to apply move {moveStr}: {result}");
                 }
             }
         }

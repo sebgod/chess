@@ -2,13 +2,13 @@ using ImageMagick;
 using System.Buffers;
 using System.Runtime.InteropServices;
 
-namespace Chess.Console;
+namespace Console.Lib;
 
 /// <summary>
 /// Encodes a <see cref="MagickImage"/> (Q8) to Sixel terminal graphics format,
 /// replacing the built-in <see cref="MagickFormat.Sixel"/> writer with a custom
 /// implementation that supports partial-image encoding without clone/crop.
-/// 
+///
 /// The key optimizations that drove this:
 /// <list type="number">
 /// <item>Precomputed sixel grid — instead of scanning each pixel against each color per band (<c>O(colors × rows × width)</c>),

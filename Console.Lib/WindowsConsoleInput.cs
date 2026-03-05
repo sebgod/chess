@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
-namespace Chess.Console;
+namespace Console.Lib;
 
 [SupportedOSPlatform("windows")]
 internal static class WindowsConsoleInput

@@ -20,6 +20,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Chess.UCI", "Chess.UCI\Ches
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Chess.Engine", "Chess.Engine\Chess.Engine.csproj", "{E196986A-AB0F-4A50-BC64-A5B8DE1F4DE4}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Console.Lib", "Console.Lib\Console.Lib.csproj", "{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -154,6 +156,26 @@ Global
 		{E196986A-AB0F-4A50-BC64-A5B8DE1F4DE4}.Release|x64.Build.0 = Release|Any CPU
 		{E196986A-AB0F-4A50-BC64-A5B8DE1F4DE4}.Release|x86.ActiveCfg = Release|Any CPU
 		{E196986A-AB0F-4A50-BC64-A5B8DE1F4DE4}.Release|x86.Build.0 = Release|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Debug|ARM.ActiveCfg = Debug|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Debug|ARM.Build.0 = Debug|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Debug|ARM64.ActiveCfg = Debug|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Debug|ARM64.Build.0 = Debug|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Debug|x64.Build.0 = Debug|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Debug|x86.Build.0 = Debug|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Release|ARM.ActiveCfg = Release|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Release|ARM.Build.0 = Release|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Release|ARM64.ActiveCfg = Release|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Release|ARM64.Build.0 = Release|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Release|x64.ActiveCfg = Release|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Release|x64.Build.0 = Release|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Release|x86.ActiveCfg = Release|Any CPU
+		{F4382B0E-6B4C-4B41-BDCF-1492A7CFC8E3}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

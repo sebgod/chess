@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace Chess.Console;
+namespace Console.Lib;
 
 /// <summary>
 /// Represents a mouse button event with pixel position and press/release state.
@@ -12,12 +12,12 @@ public readonly record struct MouseEvent(int Button, int X, int Y, bool IsReleas
 /// </summary>
 public readonly record struct ConsoleInputEvent(MouseEvent? Mouse, ConsoleKey Key, ConsoleModifiers Modifiers);
 
-public interface IConsoleTerminal
+public interface IVirtualTerminal
     : IAsyncDisposable
 {
     Task<bool> HasSixelSupportAsync();
     Task<(uint Width, uint Height)?> QueryCellSizeAsync();
-    ValueTask EnterAsync();
+    ValueTask EnterAlternateScreenAsync();
     bool IsAlternateScreen { get; }
     bool HasInput();
     ConsoleInputEvent TryReadInput();
@@ -27,7 +27,7 @@ public interface IConsoleTerminal
 /// Manages terminal lifecycle (alternate buffer, cursor, mouse tracking)
 /// and provides platform-aware mouse input reading.
 /// </summary>
-internal sealed class ConsoleTerminal : IConsoleTerminal
+internal sealed class VirtualTerminal : IVirtualTerminal
 {
     private HashSet<TerminalCapability>? _deviceCapabilities;
     private uint? _cellWidth;
@@ -91,7 +91,7 @@ internal sealed class ConsoleTerminal : IConsoleTerminal
     /// Prefers DEC Locator in pixel mode when available, falling back to
     /// Win32 mouse input (Windows) or SGR mouse tracking (other platforms).
     /// </summary>
-    public async ValueTask EnterAsync()
+    public async ValueTask EnterAlternateScreenAsync()
     {
         // cache cell size
         _ = await QueryCellSizeAsync();

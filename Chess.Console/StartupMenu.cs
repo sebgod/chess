@@ -1,4 +1,5 @@
 using Chess.Lib;
+using Console.Lib;
 
 namespace Chess.Console;
 
@@ -6,7 +7,7 @@ namespace Chess.Console;
 /// Renders a startup menu in the terminal with arrow-key navigation
 /// and returns the selected game mode.
 /// </summary>
-internal class StartupMenu(IConsoleTerminal terminal, TimeProvider timeProvider)
+internal class StartupMenu(IVirtualTerminal terminal, TimeProvider timeProvider)
 {
     private int? _lastWindowWidth;
     private int? _lastWindowHeight;
@@ -82,14 +83,14 @@ internal class StartupMenu(IConsoleTerminal terminal, TimeProvider timeProvider)
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            if (!System.Console.KeyAvailable)
+            if (!terminal.HasInput())
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(25), timeProvider, cancellationToken);
                 continue;
             }
 
             var input = terminal.TryReadInput();
-            
+
             var digit = input.Key - ConsoleKey.D1;
             if (digit >= 0 && digit < items.Length)
             {
@@ -113,7 +114,7 @@ internal class StartupMenu(IConsoleTerminal terminal, TimeProvider timeProvider)
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            if (!System.Console.KeyAvailable)
+            if (!terminal.HasInput())
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(25), timeProvider, cancellationToken);
                 continue;
@@ -160,8 +161,18 @@ internal class StartupMenu(IConsoleTerminal terminal, TimeProvider timeProvider)
     /// <returns>The row of the first menu item (for mouse hit testing).</returns>
     private int DrawMenuAlternateScreen(string title, string prompt, string[] items, int selected)
     {
-        var windowWidth = System.Console.WindowWidth;
-        var windowHeight = System.Console.WindowHeight;
+        int windowWidth, windowHeight;
+        try
+        {
+            windowWidth = System.Console.WindowWidth;
+            windowHeight = System.Console.WindowHeight;
+        }
+        catch (IOException)
+        {
+            // No console available (e.g. redirected output) — compute layout but skip drawing
+            var fallbackLines = 4 + items.Length;
+            return Math.Max(0, (0 - fallbackLines) / 2) + 4;
+        }
 
         // full redraw
         if (windowWidth != _lastWindowWidth || windowHeight != _lastWindowHeight)

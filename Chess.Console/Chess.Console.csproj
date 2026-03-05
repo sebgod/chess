@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="BenchmarkSuite1" />
+    <InternalsVisibleTo Include="Chess.Tests" />
   </ItemGroup>
 
   <ItemGroup>
@@ -19,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Console.Lib\Console.Lib.csproj" />
     <ProjectReference Include="..\Chess.Lib\Chess.Lib.csproj" />
     <ProjectReference Include="..\Chess.UCI\Chess.UCI.csproj" />
     <ProjectReference Include="..\Chess.Engine\Chess.Engine.csproj">

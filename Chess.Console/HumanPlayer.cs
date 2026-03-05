@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Chess.Lib;
 using Chess.Lib.UI;
+using Console.Lib;
 
 using File = Chess.Lib.File;
 
@@ -15,7 +16,7 @@ namespace Chess.Console;
 ///   <item>When a piece is already selected, just a row digit to move along the same file.</item>
 /// </list>
 /// </summary>
-internal sealed class HumanPlayer(IConsoleTerminal terminal) : IGamePlayer
+internal sealed class HumanPlayer(IVirtualTerminal terminal) : IGamePlayer
 {
     private File? _pendingFile;
 

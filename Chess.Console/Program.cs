@@ -1,5 +1,6 @@
 using Chess.Console;
 using Chess.Lib;
+using Console.Lib;
 using Chess.Lib.UI;
 using System.CommandLine;
 
@@ -54,12 +55,12 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
         || Environment.GetEnvironmentVariable("NOCOLOR") is "1";
 
     var timeProvider = TimeProvider.System;
-    await using var terminal = new ConsoleTerminal();
+    await using var terminal = new VirtualTerminal();
     var hasSixel = !forceAscii && await terminal.HasSixelSupportAsync();
 
     if (hasSixel)
     {
-        await terminal.EnterAsync();
+        await terminal.EnterAlternateScreenAsync();
     }
 
     GameMode gameMode;

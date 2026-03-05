@@ -1,4 +1,5 @@
 using Chess.Lib.UI;
+using Console.Lib;
 using ImageMagick;
 using System.Collections.Immutable;
 
