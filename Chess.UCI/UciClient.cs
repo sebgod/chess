@@ -14,8 +14,11 @@ public sealed class UciClient : IAsyncDisposable
     private Task? _readTask;
     private bool _disposed;
 
-    public UciClient(string enginePath)
+    private readonly TimeProvider _timeProvider;
+
+    public UciClient(string enginePath, TimeProvider timeProvider)
     {
+        _timeProvider = timeProvider;
         _process = new Process
         {
             StartInfo = new ProcessStartInfo
@@ -94,7 +97,7 @@ public sealed class UciClient : IAsyncDisposable
                 return typed;
             }
 
-            await Task.Delay(1, ct);
+            await Task.Delay(TimeSpan.FromMilliseconds(1), _timeProvider, ct);
         }
 
         throw new OperationCanceledException(ct);
@@ -129,7 +132,7 @@ public sealed class UciClient : IAsyncDisposable
             {
                 Send(new UciCommand.Quit());
                 var exited = _exited.Task;
-                if (await Task.WhenAny(exited, Task.Delay(3000)) != exited && !_process.HasExited)
+                if (await Task.WhenAny(exited, Task.Delay(TimeSpan.FromSeconds(3), _timeProvider)) != exited && !_process.HasExited)
                 {
                     _process.Kill();
                 }

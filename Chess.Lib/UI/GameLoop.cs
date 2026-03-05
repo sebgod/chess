@@ -1,9 +1,10 @@
 namespace Chess.Lib.UI;
 
 public class GameLoop(
+    TimeProvider timeProvider,
     Func<Game, IGameDisplay> displayFactory,
     Func<IGamePlayer> playerFactory,
-    Func<Side, IEngineBasedPlayer> engineBasedPlayerFactory
+    Func<Side, TimeProvider, IEngineBasedPlayer> engineBasedPlayerFactory
 )
 {
     public async Task RunAsync(
@@ -38,7 +39,7 @@ public class GameLoop(
                     }
                     else
                     {
-                        await Task.Delay(16, cancellationToken);
+                        await Task.Delay(TimeSpan.FromMilliseconds(16), timeProvider, cancellationToken);
                     }
 
                     gameDisplay.HandleResize(game);
@@ -61,7 +62,7 @@ public class GameLoop(
         var humanPlayer = playerFactory();
         if (gameMode is GameMode.PlayerVsComputer or GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard)
         {
-            uciPlayer = engineBasedPlayerFactory(computerSide);
+            uciPlayer = engineBasedPlayerFactory(computerSide, timeProvider);
 
             await uciPlayer.InitAsync(gameMode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard
                 ? game.Board.ToFEN() + " w - - 0 1"
@@ -99,7 +100,7 @@ public class GameLoop(
                 }
                 else
                 {
-                    await Task.Delay(16, cancellationToken);
+                    await Task.Delay(TimeSpan.FromMilliseconds(16), timeProvider, cancellationToken);
                 }
 
                 gameDisplay.HandleResize(game);

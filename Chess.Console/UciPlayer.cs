@@ -11,9 +11,9 @@ namespace Chess.Console;
 /// <summary>
 /// An AI player that communicates with a UCI engine process to make moves.
 /// </summary>
-internal sealed class UciPlayer(string enginePath, Side side) : IEngineBasedPlayer
+internal sealed class UciPlayer(string enginePath, Side side, TimeProvider timeProvider) : IEngineBasedPlayer
 {
-    private readonly UciClient _client = new UciClient(enginePath);
+    private readonly UciClient _client = new UciClient(enginePath, timeProvider);
     private Task<UciResponse.BestMove>? _pendingMove;
     private string? _initialFen;
     private bool _disposed;
