@@ -265,10 +265,32 @@ public sealed class VirtualTerminal : IVirtualTerminal
 
             sb.Append((char)ch);
 
+            // CSI sequences: \e[ ...
             if (sb[0] == '[' && TryParseCsiKey(sb, out var csiKey, out var csiMods))
             {
                 return new(null, csiKey, csiMods);
             }
+
+            // SS3 sequences: \eO{P|Q|R|S} → F1-F4
+            if (sb[0] == 'O' && sb.Length == 2)
+            {
+                var ss3Key = sb[1] switch
+                {
+                    'P' => ConsoleKey.F1,
+                    'Q' => ConsoleKey.F2,
+                    'R' => ConsoleKey.F3,
+                    'S' => ConsoleKey.F4,
+                    _ => ConsoleKey.None,
+                };
+                if (ss3Key != ConsoleKey.None)
+                    return new(null, ss3Key, ConsoleModifiers.None);
+            }
+        }
+
+        // No bytes followed ESC → bare Escape key
+        if (sb.Length == 0)
+        {
+            return new(null, ConsoleKey.Escape, ConsoleModifiers.None);
         }
 
         return default;

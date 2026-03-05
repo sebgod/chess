@@ -10,7 +10,7 @@ A terminal chess game with graphical board rendering via [Sixel](https://en.wiki
 - Player vs Player, Player vs Computer, and Custom Game (board editor) modes
 - [UCI](https://en.wikipedia.org/wiki/Universal_Chess_Interface) protocol support — the engine runs as a separate process, communicating via standard UCI commands
 - Graphical board rendered in the terminal using ImageMagick and the Sixel protocol
-- Move history panel with algebraic notation
+- Move history panel with algebraic notation — click any move or use Ctrl+Arrow to review past positions
 - Cross-platform: Windows, Linux, and macOS (x64 and ARM64)
 - Native AOT compiled for fast startup and small footprint
 
@@ -61,6 +61,16 @@ dotnet test -c Release
 | `F1` | Toggle help |
 
 Select a piece by typing its file + rank (e.g. `e2`), then type the target square (e.g. `e4`) to move. When a piece is already selected, typing just a rank moves it along the same file.
+
+### Playback
+
+During a game, you can review past positions by navigating the move history. Click a move in the history panel, or use:
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+Left` / `Ctrl+Right` | Step back / forward by one ply |
+| `Ctrl+Up` / `Ctrl+Down` | Step back / forward by one full move |
+| `Esc` | Exit playback and return to the game |
 
 ### Promotion popup
 

@@ -55,7 +55,7 @@ internal sealed class AsciiDisplay : IGameDisplay
 
     private void RenderBoard(Game game)
     {
-        var fen = game.Board.ToFEN();
+        var fen = UI.DisplayBoard.ToFEN();
         if (fen == _lastFen)
             return;
 
@@ -92,7 +92,14 @@ internal sealed class AsciiDisplay : IGameDisplay
         _terminal.WriteLine("  ");
 
         _terminal.WriteLine();
-        _terminal.Write($" {game.GameStatus.ToMessage(game.CurrentSide)}  ");
+        if (UI.Mode == GameUIMode.Playback)
+        {
+            _terminal.Write($" Playback: ply {UI.PlaybackPlyIndex + 2}/{game.PlyCount + 1} [Ctrl+Up/Down, Esc exit]  ");
+        }
+        else
+        {
+            _terminal.Write($" {game.GameStatus.ToMessage(game.CurrentSide)}  ");
+        }
 
         var plies = game.Plies;
         if (plies.Count > 0)

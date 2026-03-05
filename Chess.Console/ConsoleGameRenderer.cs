@@ -53,7 +53,7 @@ internal sealed class ConsoleGameRenderer
     /// <summary>
     /// Renders the status bar showing the current game state.
     /// </summary>
-    public void RenderStatusBar(Game game, RenderStats? stats = null, File? pendingFile = null, Side? placementSide = null)
+    public void RenderStatusBar(Game game, RenderStats? stats = null, File? pendingFile = null, Side? placementSide = null, (int PlyIndex, int PlyCount)? playbackInfo = null)
     {
         if (_statusBarRow < 0 || _totalWidth <= 0)
             return;
@@ -63,9 +63,19 @@ internal sealed class ConsoleGameRenderer
 
         var fileInfo = pendingFile is { } f ? $" [{f.ToLabel()}]" : "";
         var setupInfo = placementSide is { } side ? $" Setup: placing {side} pieces [Tab to toggle; s to start]" : "";
-        var status = placementSide is { }
-            ? $" {setupInfo}{fileInfo}"
-            : $" {game.GameStatus.ToMessage(game.CurrentSide)}{fileInfo}";
+        string status;
+        if (playbackInfo is (var plyIdx, var plyCount))
+        {
+            status = $" Playback: ply {plyIdx + 2}/{plyCount + 1} [Ctrl+Up/Down, Esc exit]";
+        }
+        else if (placementSide is { })
+        {
+            status = $" {setupInfo}{fileInfo}";
+        }
+        else
+        {
+            status = $" {game.GameStatus.ToMessage(game.CurrentSide)}{fileInfo}";
+        }
 
         var debugInfo = "";
         if (stats is { } s)
@@ -84,7 +94,7 @@ internal sealed class ConsoleGameRenderer
     /// <summary>
     /// Renders the move history panel on the right side of the screen.
     /// </summary>
-    public void RenderHistory(Game game)
+    public void RenderHistory(Game game, int? highlightPlyIndex = null)
     {
         if (_historyStartColumn < 0)
             return;
@@ -109,15 +119,62 @@ internal sealed class ConsoleGameRenderer
             if (plyIdx < plies.Count)
             {
                 var (idxStr, whitePly) = plies.GetRecordAndPGNIdx(plyIdx);
-                var blackPly = plyIdx + 1 < plies.Count ? plies.GetRecordAndPGNIdx(plyIdx + 1).Ply.ToString() : "";
+                var blackPlyStr = plyIdx + 1 < plies.Count ? plies.GetRecordAndPGNIdx(plyIdx + 1).Ply.ToString() : "";
 
-                var line = $" {idxStr} {whitePly,-8} {blackPly,-8}";
-                _terminal.Write($"\e[37;40m{line.PadRight(_historyColumnWidth)}\e[0m");
+                var isHighlightedWhite = highlightPlyIndex == plyIdx;
+                var isHighlightedBlack = highlightPlyIndex == plyIdx + 1;
+
+                if (isHighlightedWhite || isHighlightedBlack)
+                {
+                    // Render move number prefix in normal color
+                    var prefix = $" {idxStr} ";
+                    var whiteText = $"{whitePly,-8}";
+                    var blackText = $" {blackPlyStr,-8}";
+                    var remaining = _historyColumnWidth - prefix.Length - whiteText.Length - blackText.Length;
+
+                    var whiteColor = isHighlightedWhite ? "\e[97;44m" : "\e[37;40m";
+                    var blackColor = isHighlightedBlack ? "\e[97;44m" : "\e[37;40m";
+
+                    _terminal.Write($"\e[37;40m{prefix}{whiteColor}{whiteText}\e[37;40m{blackColor}{blackText}\e[37;40m{new string(' ', Math.Max(0, remaining))}\e[0m");
+                }
+                else
+                {
+                    var line = $" {idxStr} {whitePly,-8} {blackPlyStr,-8}";
+                    _terminal.Write($"\e[37;40m{line.PadRight(_historyColumnWidth)}\e[0m");
+                }
             }
             else
             {
                 _terminal.Write($"\e[37;40m{new string(' ', _historyColumnWidth)}\e[0m");
             }
         }
+    }
+
+    /// <summary>
+    /// Converts pixel coordinates to a ply index in the history panel.
+    /// Returns null if the click is outside the history area.
+    /// </summary>
+    public int? PlyIndexFromPixel(int pixelX, int pixelY, uint cellWidth, uint cellHeight, int plyCount)
+    {
+        var cellCol = pixelX / (int)cellWidth;
+        var cellRow = pixelY / (int)cellHeight;
+
+        if (cellCol < _historyStartColumn || cellRow < 1 || cellRow >= _historyRowCount)
+            return null;
+
+        var moveCount = (plyCount + 1) / 2;
+        var startMove = Math.Max(0, moveCount - _historyRowCount);
+        var moveIdx = startMove + cellRow - 1;
+        var whitePlyIdx = moveIdx * 2;
+
+        if (whitePlyIdx >= plyCount)
+            return null;
+
+        // Right half of the row → black ply if it exists
+        var midCol = _historyStartColumn + _historyColumnWidth / 2;
+        if (cellCol >= midCol && whitePlyIdx + 1 < plyCount)
+            return whitePlyIdx + 1;
+
+        return whitePlyIdx;
     }
 }

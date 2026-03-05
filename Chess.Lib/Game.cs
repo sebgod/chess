@@ -5,6 +5,7 @@ namespace Chess.Lib;
 public class Game
 {
     private ImmutableList<RecordedPly> _plies = [];
+    private readonly List<Board> _boardHistory = [];
     private Board _board;
     private Side _currentSide;
     private GameStatus _gameStatus;
@@ -13,6 +14,7 @@ public class Game
     {
         _board = Board.StandardBoard;
         _currentSide = Side.White;
+        _boardHistory.Add(_board);
     }
 
     public Game(Board board, Side side, ImmutableList<RecordedPly> plies)
@@ -20,6 +22,7 @@ public class Game
         _plies = plies;
         _board = board;
         _currentSide = side;
+        _boardHistory.Add(_board);
     }
 
     public static Game FromReplay(ImmutableList<RecordedPly> plies)
@@ -58,6 +61,14 @@ public class Game
 
     public ImmutableList<RecordedPly> Plies => _plies;
 
+    public int PlyCount => _plies.Count;
+
+    /// <summary>
+    /// Returns the board state after the given ply index (0 = after first ply).
+    /// Pass -1 to get the initial board before any moves.
+    /// </summary>
+    public Board BoardAtPly(int plyIndex) => _boardHistory[plyIndex + 1];
+
     public Piece this[in Position position] => _board[position];
 
     public ActionResult TryMove(in Position from, in Position to) => TryMove(new Action(from, to, IsMove: true));
@@ -80,6 +91,7 @@ public class Game
         {
             _board = board;
             _plies = plies;
+            _boardHistory.Add(board);
             _gameStatus = status;
 
             if (status is GameStatus.Stalemate)

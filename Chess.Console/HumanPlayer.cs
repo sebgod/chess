@@ -27,7 +27,7 @@ internal sealed class HumanPlayer(IVirtualTerminal terminal) : IGamePlayer
             return null;
         }
 
-        var (mouseEvent, key, _) = terminal.TryReadInput();
+        var (mouseEvent, key, modifiers) = terminal.TryReadInput();
         if (mouseEvent is { Button: 0, IsRelease: true } mouse)
         {
             var hadPendingFile = _pendingFile is not null;
@@ -39,13 +39,13 @@ internal sealed class HumanPlayer(IVirtualTerminal terminal) : IGamePlayer
 
         if (key is not ConsoleKey.None)
         {
-            return HandleKeyInput(ui, key);
+            return HandleKeyInput(ui, key, modifiers);
         }
 
         return Result(UIResponse.None);
     }
 
-    private PlayerMoveResult HandleKeyInput(GameUI ui, ConsoleKey key)
+    private PlayerMoveResult HandleKeyInput(GameUI ui, ConsoleKey key, ConsoleModifiers modifiers)
     {
         // Keymap overlay: '?' toggles, Escape dismisses
         if (ui.ShowingKeymap)
@@ -62,6 +62,42 @@ internal sealed class HumanPlayer(IVirtualTerminal terminal) : IGamePlayer
         {
             _pendingFile = null;
             return Result(ui.ToggleKeymap());
+        }
+
+        // Playback navigation: Ctrl+Arrow
+        if (modifiers.HasFlag(ConsoleModifiers.Control))
+        {
+            if (key is ConsoleKey.LeftArrow)
+            {
+                _pendingFile = null;
+                return Result(ui.NavigateBack());
+            }
+            if (key is ConsoleKey.RightArrow)
+            {
+                _pendingFile = null;
+                return Result(ui.NavigateForward());
+            }
+            if (key is ConsoleKey.UpArrow)
+            {
+                _pendingFile = null;
+                return Result(ui.NavigateBack(2));
+            }
+            if (key is ConsoleKey.DownArrow)
+            {
+                _pendingFile = null;
+                return Result(ui.NavigateForward(2));
+            }
+        }
+
+        // During playback, only Escape (to exit) is allowed
+        if (ui.Mode == GameUIMode.Playback)
+        {
+            if (key is ConsoleKey.Escape)
+            {
+                _pendingFile = null;
+                return Result(ui.ExitPlayback());
+            }
+            return Result(UIResponse.None);
         }
 
         if (ui.IsSetupMode)

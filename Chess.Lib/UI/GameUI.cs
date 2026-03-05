@@ -42,6 +42,10 @@ public class GameUI
         "  1-8    Select rank\n" +
         "  Esc    Cancel selection\n" +
         "\n" +
+        "Playback\n" +
+        "  Ctrl+Arrow Navigate history\n" +
+        "  Esc        Exit playback\n" +
+        "\n" +
         "Promotion\n" +
         "  n/b/r/q  Select piece\n" +
         "\n" +
@@ -69,9 +73,11 @@ public class GameUI
         string pieceFont = FontMerida,
         RGBAColor32? mainFontColor = null,
         RGBAColor32? backgroundColor = null,
-        (uint X, uint Y)? alignment = null)
+        (uint X, uint Y)? alignment = null,
+        Func<int, int, int?>? resolveHistoryClick = null)
     {
         Game = game;
+        ResolveHistoryClick = resolveHistoryClick;
         _alignment = alignment;
         _squareSize = CalculateSquareSize(uiSizeX, uiSizeY);
 
@@ -127,7 +133,28 @@ public class GameUI
 
     public Position? PendingPromotion { get; private set; }
 
-    public bool IsSetupMode { get; set; }
+    public GameUIMode Mode { get; set; } = GameUIMode.Playing;
+
+    public bool IsSetupMode
+    {
+        get => Mode == GameUIMode.Setup;
+        set => Mode = value ? GameUIMode.Setup : GameUIMode.Playing;
+    }
+
+    public int PlaybackPlyIndex { get; private set; }
+
+    /// <summary>
+    /// Optional delegate set by the display to resolve pixel coordinates to a ply index in the history panel.
+    /// Returns null if the click is outside the history area.
+    /// </summary>
+    public Func<int, int, int?>? ResolveHistoryClick { get; }
+
+    /// <summary>
+    /// Returns the board to display: historical board during playback, current board otherwise.
+    /// </summary>
+    public Board DisplayBoard => Mode == GameUIMode.Playback
+        ? Game.BoardAtPly(PlaybackPlyIndex)
+        : Game.Board;
 
     public Side PlacementSide { get; set; } = Side.White;
 
@@ -137,11 +164,23 @@ public class GameUI
 
     /// <summary>
     /// The destination square of the last completed move, derived from game history.
+    /// During playback, returns the ply at the current playback index.
     /// </summary>
-    public (Position To, bool IsCapture)? LastMove =>
-        Game.Plies is [.., var last]
-            ? (last.To, last.Result.IsCapture())
-            : null;
+    public (Position To, bool IsCapture)? LastMove
+    {
+        get
+        {
+            var plies = Game.Plies;
+            if (Mode == GameUIMode.Playback && PlaybackPlyIndex >= 0 && PlaybackPlyIndex < plies.Count)
+            {
+                var ply = plies[PlaybackPlyIndex];
+                return (ply.To, ply.Result.IsCapture());
+            }
+            return plies is [.., var last]
+                ? (last.To, last.Result.IsCapture())
+                : null;
+        }
+    }
 
     public int SquareSize => _squareSize;
 
@@ -158,8 +197,10 @@ public class GameUI
             pieceFont: _pieceFont,
             mainFontColor: _mainFontColor,
             backgroundColor: _backgroundColor,
-            alignment: _alignment);
-        resized.IsSetupMode = IsSetupMode;
+            alignment: _alignment,
+            resolveHistoryClick: ResolveHistoryClick);
+        resized.Mode = Mode;
+        resized.PlaybackPlyIndex = PlaybackPlyIndex;
         resized.PlacementSide = PlacementSide;
         resized.PendingPlacement = PendingPlacement;
         resized.ShowingKeymap = ShowingKeymap;
@@ -206,7 +247,7 @@ public class GameUI
 
         // captured pieces
         var plies = Game.Plies;
-        var plyCount = plies.Count;
+        var plyCount = Mode == GameUIMode.Playback ? PlaybackPlyIndex + 1 : plies.Count;
 
         if (plyCount > 0)
         {
@@ -287,7 +328,7 @@ public class GameUI
                 DrawPiece(renderer, surface, new Piece((PieceType)(i + (int)PieceType.Knight), currentSide), squareRect, _pieceFontSize);
             }
         }
-        else if (Game is { GameStatus: GameStatus.Checkmate or GameStatus.Checkmate })
+        else if (Mode != GameUIMode.Playback && Game is { GameStatus: GameStatus.Checkmate or GameStatus.Checkmate })
         {
             renderer.FillRectangle(surface, boardRect, OverlayFill);
 
@@ -348,7 +389,7 @@ public class GameUI
                 }
 
                 var position = Position.FromIndex(fileIdx, rankIdx);
-                var piece = Game[position];
+                var piece = DisplayBoard[position];
 
                 RGBAColor32 squareFill;
 
@@ -356,7 +397,7 @@ public class GameUI
                 {
                     squareFill = SelectedSquareFill;
                 }
-                else if (piece is { PieceType: PieceType.King } && Game is { GameStatus: GameStatus.Check } && piece.Side == Game.CurrentSide)
+                else if (Mode != GameUIMode.Playback && piece is { PieceType: PieceType.King } && Game is { GameStatus: GameStatus.Check } && piece.Side == Game.CurrentSide)
                 {
                     squareFill = CheckSquareFill;
                 }
@@ -563,6 +604,9 @@ public class GameUI
 
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TryPerformAction(int x, int y)
     {
+        if (Mode == GameUIMode.Playback)
+            return TryHistoryClick(x, y);
+
         if (IsSetupMode)
         {
             if (PendingPlacement is { } pendingPos)
@@ -599,7 +643,7 @@ public class GameUI
             return TryPerformAction(selected);
         }
 
-        return (UIResponse.None, []);
+        return TryHistoryClick(x, y);
     }
 
     /// <summary>
@@ -609,6 +653,9 @@ public class GameUI
     /// </summary>
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TryPerformAction(Position position)
     {
+        if (Mode == GameUIMode.Playback)
+            return (UIResponse.None, []);
+
         if (Selected is { } prev && prev != position)
         {
             return TryPerformAction(Action.DoMove(prev, position));
@@ -629,6 +676,9 @@ public class GameUI
 
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TryPerformAction(Action action)
     {
+        if (Mode == GameUIMode.Playback)
+            return (UIResponse.None, []);
+
         var prevLastMove = LastMove;
 
         if (action is { IsMove: true } promotion and not { Promoted: PieceType.None })
@@ -777,5 +827,94 @@ public class GameUI
             return (UIResponse.NeedsRefresh, []);
         }
         return (UIResponse.IsUpdate, []);
+    }
+
+    /// <summary>
+    /// Navigates backward in move history. Enters playback mode from playing if there are moves to review.
+    /// </summary>
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) NavigateBack(int step = 1)
+    {
+        var plyCount = Game.PlyCount;
+        if (plyCount == 0)
+            return (UIResponse.None, []);
+
+        Selected = default;
+        PendingPromotion = default;
+
+        if (Mode == GameUIMode.Playing)
+        {
+            Mode = GameUIMode.Playback;
+            PlaybackPlyIndex = plyCount - 1 - step;
+        }
+        else if (PlaybackPlyIndex > -1)
+        {
+            PlaybackPlyIndex -= step;
+        }
+        else
+        {
+            return (UIResponse.None, []);
+        }
+
+        // Clamp to valid range (-1 = initial board)
+        PlaybackPlyIndex = Math.Max(-1, PlaybackPlyIndex);
+
+        return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
+    }
+
+    /// <summary>
+    /// Navigates forward in move history. Auto-resumes playing when reaching the latest move.
+    /// </summary>
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) NavigateForward(int step = 1)
+    {
+        if (Mode != GameUIMode.Playback)
+            return (UIResponse.None, []);
+
+        Selected = default;
+        PendingPromotion = default;
+
+        PlaybackPlyIndex += step;
+
+        if (PlaybackPlyIndex >= Game.PlyCount)
+        {
+            return ExitPlayback();
+        }
+
+        return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
+    }
+
+    /// <summary>
+    /// Exits playback mode and returns to normal playing.
+    /// </summary>
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) ExitPlayback()
+    {
+        Mode = GameUIMode.Playing;
+        PlaybackPlyIndex = 0;
+        Selected = default;
+        PendingPromotion = default;
+        return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
+    }
+
+    /// <summary>
+    /// Enters playback mode at the given ply index.
+    /// </summary>
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) NavigateToPly(int plyIndex)
+    {
+        if (plyIndex < 0 || plyIndex >= Game.PlyCount)
+            return (UIResponse.None, []);
+
+        Selected = default;
+        PendingPromotion = default;
+        Mode = GameUIMode.Playback;
+        PlaybackPlyIndex = plyIndex;
+        return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
+    }
+
+    private (UIResponse Response, ImmutableArray<RectInt> ClipRects) TryHistoryClick(int x, int y)
+    {
+        if (ResolveHistoryClick?.Invoke(x, y) is { } plyIndex && plyIndex >= 0 && plyIndex < Game.PlyCount)
+        {
+            return NavigateToPly(plyIndex);
+        }
+        return (UIResponse.None, []);
     }
 }

@@ -50,14 +50,18 @@ internal sealed class SixelGameDisplay : IGameDisplay
         UI = new GameUI(game, _image.Width, _image.Height,
             mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
             backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff),
-            alignment: (cellWidth, cellHeight));
+            alignment: (cellWidth, cellHeight),
+            resolveHistoryClick: ResolveHistoryClick);
     }
+
+    private int? ResolveHistoryClick(int px, int py) =>
+        _chrome.PlyIndexFromPixel(px, py, _cellWidth, _cellHeight, UI.Game.PlyCount);
 
     public void RenderInitial(Game game)
     {
         _display.RenderFrame(UI, _imageRenderer, _image, [], _cellHeight);
-        _chrome.RenderStatusBar(game, _display.Stats, placementSide: SetupPlacementSide);
-        _chrome.RenderHistory(game);
+        _chrome.RenderStatusBar(game, _display.Stats, placementSide: SetupPlacementSide, playbackInfo: PlaybackInfo);
+        _chrome.RenderHistory(game, HighlightPlyIndex);
     }
 
     public void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects, File? pendingFile)
@@ -68,12 +72,18 @@ internal sealed class SixelGameDisplay : IGameDisplay
         }
         if (response.HasFlag(UIResponse.IsUpdate) || response.HasFlag(UIResponse.NeedsPiecePlacement))
         {
-            _chrome.RenderStatusBar(game, _display.Stats, pendingFile, placementSide: SetupPlacementSide);
-            _chrome.RenderHistory(game);
+            _chrome.RenderStatusBar(game, _display.Stats, pendingFile, placementSide: SetupPlacementSide, playbackInfo: PlaybackInfo);
+            _chrome.RenderHistory(game, HighlightPlyIndex);
         }
     }
 
     private Side? SetupPlacementSide => UI.IsSetupMode ? UI.PlacementSide : null;
+
+    private (int PlyIndex, int PlyCount)? PlaybackInfo => UI.Mode == GameUIMode.Playback
+        ? (UI.PlaybackPlyIndex, UI.Game.PlyCount)
+        : null;
+
+    private int? HighlightPlyIndex => UI.Mode == GameUIMode.Playback ? UI.PlaybackPlyIndex : null;
 
     public void HandleResize(Game game)
     {
@@ -94,8 +104,8 @@ internal sealed class SixelGameDisplay : IGameDisplay
         _chrome.Resize(newConsoleWidth, newConsoleHeight);
 
         _display.RenderFrame(UI, _imageRenderer, _image, [], _cellHeight);
-        _chrome.RenderStatusBar(game, _display.Stats);
-        _chrome.RenderHistory(game);
+        _chrome.RenderStatusBar(game, _display.Stats, playbackInfo: PlaybackInfo);
+        _chrome.RenderHistory(game, HighlightPlyIndex);
     }
 
     public void ResetGame(Game game)
@@ -103,7 +113,8 @@ internal sealed class SixelGameDisplay : IGameDisplay
         UI = new GameUI(game, _image.Width, _image.Height,
             mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
             backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff),
-            alignment: (_cellWidth, _cellHeight));
+            alignment: (_cellWidth, _cellHeight),
+            resolveHistoryClick: ResolveHistoryClick);
     }
 
     public void Dispose()

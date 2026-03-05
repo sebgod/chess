@@ -91,7 +91,9 @@ public class GameLoop(
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                var currentPlayer = game.CurrentSide == Side.White ? whitePlayer : blackPlayer;
+                var currentPlayer = gameDisplay.UI.Mode == GameUIMode.Playback
+                    ? humanPlayer
+                    : (game.CurrentSide == Side.White ? whitePlayer : blackPlayer);
                 var result = currentPlayer.TryMakeMove(gameDisplay.UI);
 
                 if (result is { } moveResult)
