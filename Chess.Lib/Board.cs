@@ -145,7 +145,7 @@ public record struct Board()
 
             if (isValidPawnForwardMove && action.To.Rank == oppositeSide.HomeRank())
             {
-                result = action.Promoted.IsValidPromotion() ? ActionResult.Promotion : ActionResult.NeedsPromotionType;
+                result = action.Promoted.IsValidPromotion ? ActionResult.Promotion : ActionResult.NeedsPromotionType;
             }
             else if (isValidPawnForwardMove)
             {
@@ -252,7 +252,7 @@ public record struct Board()
         }
         else if (pieceFrom.PieceType is PieceType.Pawn && action.IsMove && action.To.Rank == pieceTo.Side.HomeRank())
         {
-            return action.Promoted.IsValidPromotion() ? ActionResult.CaptureAndPromotion : ActionResult.NeedsPromotionType;
+            return action.Promoted.IsValidPromotion ? ActionResult.CaptureAndPromotion : ActionResult.NeedsPromotionType;
         }
         else if (action.IsMove)
         {

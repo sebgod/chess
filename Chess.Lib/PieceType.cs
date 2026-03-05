@@ -14,46 +14,49 @@ public enum PieceType : byte
 
 public static class PieceTypeExtensions
 {
-    public static bool IsValidPromotion(this PieceType type) => type is not PieceType.None and not PieceType.Pawn and not PieceType.King;
-
-    public static char ToUnicode(this PieceType type, Side side) => type switch
+    extension(PieceType type)
     {
-        PieceType.Pawn   when side is Side.White => '\u2659',
-        PieceType.Pawn   when side is Side.Black => '\u265F',
-        PieceType.Knight when side is Side.White => '\u2658',
-        PieceType.Knight when side is Side.Black => '\u265E',
-        PieceType.Bishop when side is Side.White => '\u2657',
-        PieceType.Bishop when side is Side.Black => '\u265D',
-        PieceType.Rook   when side is Side.White => '\u2656',
-        PieceType.Rook   when side is Side.Black => '\u265C',
-        PieceType.Queen  when side is Side.White => '\u2655',
-        PieceType.Queen  when side is Side.Black => '\u265B',
-        PieceType.King   when side is Side.White => '\u2654',
-        PieceType.King   when side is Side.Black => '\u265A',
-        _ => ' ',
-    };
+        public bool IsValidPromotion => type is not PieceType.None and not PieceType.Pawn and not PieceType.King;
 
-    public static string ToPGN(this PieceType type) => type switch
-    {
-        PieceType.Pawn => "",
-        PieceType.Knight => "N",
-        PieceType.Bishop => "B",
-        PieceType.Rook => "R",
-        PieceType.Queen => "Q",
-        PieceType.King => "K",
-        _ => throw new ArgumentException($"Unhandled piece type {type}", nameof(type))
-    };
+        public char ToUnicode(Side side) => type switch
+        {
+            PieceType.Pawn when side is Side.White => '\u2659',
+            PieceType.Pawn when side is Side.Black => '\u265F',
+            PieceType.Knight when side is Side.White => '\u2658',
+            PieceType.Knight when side is Side.Black => '\u265E',
+            PieceType.Bishop when side is Side.White => '\u2657',
+            PieceType.Bishop when side is Side.Black => '\u265D',
+            PieceType.Rook when side is Side.White => '\u2656',
+            PieceType.Rook when side is Side.Black => '\u265C',
+            PieceType.Queen when side is Side.White => '\u2655',
+            PieceType.Queen when side is Side.Black => '\u265B',
+            PieceType.King when side is Side.White => '\u2654',
+            PieceType.King when side is Side.Black => '\u265A',
+            _ => ' ',
+        };
+
+        public string ToPGN() => type switch
+        {
+            PieceType.Pawn => "",
+            PieceType.Knight => "N",
+            PieceType.Bishop => "B",
+            PieceType.Rook => "R",
+            PieceType.Queen => "Q",
+            PieceType.King => "K",
+            _ => throw new ArgumentException($"Unhandled piece type {type}", nameof(type))
+        };
+    }
 
     extension(PieceType)
     {
-        public static PieceType? TryParseFromKey(char key) => char.ToLowerInvariant(key) switch
+        public static PieceType? TryParseFromKey(ConsoleKey key) => key switch
         {
-            'p' => PieceType.Pawn,
-            'n' => PieceType.Knight,
-            'b' => PieceType.Bishop,
-            'r' => PieceType.Rook,
-            'q' => PieceType.Queen,
-            'k' => PieceType.King,
+            ConsoleKey.P => PieceType.Pawn,
+            ConsoleKey.N => PieceType.Knight,
+            ConsoleKey.B => PieceType.Bishop,
+            ConsoleKey.R => PieceType.Rook,
+            ConsoleKey.Q or ConsoleKey.D => PieceType.Queen,
+            ConsoleKey.K => PieceType.King,
             _ => null
         };
     }

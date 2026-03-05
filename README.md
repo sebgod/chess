@@ -58,6 +58,7 @@ dotnet test -c Release
 | `a`–`h` | Select file (column) |
 | `1`–`8` | Select rank (row) — combines with pending file to select a square |
 | `Esc` | Clear current selection |
+| `F1` | Toggle help |
 
 Select a piece by typing its file + rank (e.g. `e2`), then type the target square (e.g. `e4`) to move. When a piece is already selected, typing just a rank moves it along the same file.
 

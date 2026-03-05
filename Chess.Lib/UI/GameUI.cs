@@ -51,7 +51,7 @@ public class GameUI
         "  Del    Clear square\n" +
         "  s      Start game\n" +
         "\n" +
-        "F1 / ?   Toggle this help";
+        "F1       Toggle this help";
 
     private const int PieceTypeStride = 7;
     private const int PortraitFlipFactor = 3;
@@ -240,7 +240,7 @@ public class GameUI
             }
         }
 
-        // keymap overlay (F1 / '?')
+        // keymap overlay (F1)
         if (ShowingKeymap)
         {
             renderer.FillRectangle(surface, boardRect, OverlayFill);

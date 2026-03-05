@@ -26,7 +26,7 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
             return null;
         }
 
-        var (mouseEvent, keyChar) = terminal.TryReadInput();
+        var (mouseEvent, key) = terminal.TryReadInput();
         if (mouseEvent is { Button: 0, IsRelease: true } mouse)
         {
             var hadPendingFile = _pendingFile is not null;
@@ -36,7 +36,7 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
             return Result(response, clips);
         }
 
-        if (keyChar is { } key)
+        if (key is not ConsoleKey.None)
         {
             return HandleKeyInput(ui, key);
         }
@@ -44,12 +44,12 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
         return Result(UIResponse.None);
     }
 
-    private PlayerMoveResult HandleKeyInput(GameUI ui, char key)
+    private PlayerMoveResult HandleKeyInput(GameUI ui, ConsoleKey key)
     {
         // Keymap overlay: '?' toggles, Escape dismisses
         if (ui.ShowingKeymap)
         {
-            if (key is '?' or '\x1B')
+            if (key is ConsoleKey.F1 or ConsoleKey.Escape)
             {
                 _pendingFile = null;
                 return Result(ui.ToggleKeymap());
@@ -57,7 +57,7 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
             return Result(UIResponse.None);
         }
 
-        if (key is '?')
+        if (key is ConsoleKey.F1)
         {
             _pendingFile = null;
             return Result(ui.ToggleKeymap());
@@ -68,7 +68,7 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
             return HandleSetupKeyInput(ui, key);
         }
 
-        if (key is '\x1B') // Escape
+        if (key is ConsoleKey.Escape)
         {
             _pendingFile = null;
             var (clearResponse, clearClips) = ui.ClearSelection();
@@ -101,17 +101,17 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
         return Result(UIResponse.None);
     }
 
-    private PlayerMoveResult HandleSetupKeyInput(GameUI ui, char key)
+    private PlayerMoveResult HandleSetupKeyInput(GameUI ui, ConsoleKey key)
     {
         // Tab toggles placement side
-        if (key is '\t')
+        if (key is ConsoleKey.Tab)
         {
             _pendingFile = null;
             return Result(ui.TogglePlacementSide());
         }
 
         // 's' ends setup mode and starts the game
-        if (key is 's' or 'S')
+        if (key is ConsoleKey.S)
         {
             _pendingFile = null;
             ui.IsSetupMode = false;
@@ -122,14 +122,14 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
         if (ui.PendingPlacement is { } pendingPos)
         {
             // Escape cancels the popup
-            if (key is '\x1B')
+            if (key is ConsoleKey.Escape)
             {
                 _pendingFile = null;
                 return Result(ui.CancelPlacement());
             }
 
             // Delete/Backspace clears the square
-            if (key is '\x7F' or '\b')
+            if (key is ConsoleKey.Delete or ConsoleKey.Backspace)
             {
                 _pendingFile = null;
                 return Result(ui.ClearSquare(pendingPos));
@@ -146,7 +146,7 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
         }
 
         // Escape clears selection
-        if (key is '\x1B')
+        if (key is ConsoleKey.Escape)
         {
             _pendingFile = null;
             var (clearResponse, clearClips) = ui.ClearSelection();
@@ -154,7 +154,7 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
         }
 
         // Delete/Backspace clears piece at selected square
-        if (key is '\x7F' or '\b')
+        if (key is ConsoleKey.Backspace or ConsoleKey.Delete)
         {
             if (ui.Selected is { } selected)
             {
@@ -192,15 +192,14 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
     private PlayerMoveResult Result((UIResponse Response, ImmutableArray<RectInt> ClipRects) uiResult)
         => new(uiResult.Response, uiResult.ClipRects, _pendingFile);
 
-    private static File? TryParseFile(char key)
+    private static File? TryParseFile(ConsoleKey key)
     {
-        var lower = char.ToLowerInvariant(key);
-        return lower is >= 'a' and <= 'h' ? (File)(lower - 'a') : null;
+        return key is >= ConsoleKey.A and <= ConsoleKey.H ? (File)(key - ConsoleKey.A) : null;
     }
 
-    private static Rank? TryParseRank(char key) => key switch
+    private static Rank? TryParseRank(ConsoleKey key) => key switch
     {
-        >= '1' and <= '8' => (Rank)(key - '1'),
+        >= ConsoleKey.D1 and <= ConsoleKey.D8 => (Rank)(key - ConsoleKey.D1),
         _ => null
     };
 }
