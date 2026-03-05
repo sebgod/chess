@@ -98,7 +98,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
 
     var gameLoop = new GameLoop(
         timeProvider,
-        game => hasSixel  ? new SixelGameDisplay(game, cellWidth, cellHeight) : new AsciiDisplay(game),
+        game => hasSixel  ? new SixelGameDisplay(terminal, game, cellWidth, cellHeight) : new AsciiDisplay(terminal, game),
         () => new HumanPlayer(terminal),
         (computerSide, tp) => new UciPlayer(Path.Combine(AppContext.BaseDirectory, "chess-engine" + (OperatingSystem.IsWindows() ? ".exe" : "")), computerSide, tp)
     );

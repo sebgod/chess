@@ -16,7 +16,7 @@ internal static class WindowsConsoleInput
     private enum ConsoleMode : uint
     {
         None = 0,
-        ProcessedInput = 0x0001,
+        Processed = 0x0001,
         VirtualTerminalProcessing = 0x0004,
         WindowInput = 0x0008,
         MouseInput = 0x0010,
@@ -67,14 +67,14 @@ internal static class WindowsConsoleInput
 
         var newInputMode = (
             ConsoleMode.VirtualTerminalInput
-            | ConsoleMode.ProcessedInput
+            | ConsoleMode.Processed
             | ConsoleMode.WindowInput
             | ConsoleMode.MouseInput
             | ConsoleMode.ExtendedFlags
         ) & ~ConsoleMode.QuickEditMode;
 
         return SetConsoleMode(_inputHandle, newInputMode)
-            && SetConsoleMode(_outputHandle, _originalOutputMode | ConsoleMode.VirtualTerminalProcessing);
+            && SetConsoleMode(_outputHandle, _originalOutputMode | ConsoleMode.Processed | ConsoleMode.VirtualTerminalProcessing);
     }
 
     /// <summary>

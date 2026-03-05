@@ -18,10 +18,8 @@ internal readonly record struct RenderStats(double LastFrameMs, long FullRenders
 /// Renders a <see cref="GameUI"/> scene to the terminal using Sixel graphics,
 /// supporting both full and partial (clip-region) output.
 /// </summary>
-internal sealed class SixelDisplay : IDisposable
+internal sealed class SixelDisplay(IVirtualTerminal terminal)
 {
-    private readonly Stream _stdout = System.Console.OpenStandardOutput();
-
 #if DEBUG
     private readonly Stopwatch _stopwatch = new();
     private double _lastFrameMs;
@@ -70,9 +68,9 @@ internal sealed class SixelDisplay : IDisposable
 
         if (isFullRender)
         {
-            System.Console.SetCursorPosition(0, 0);
-            System.Console.Out.Flush();
-            SixelEncoder.Encode(image, _stdout);
+            terminal.SetCursorPosition(0, 0);
+            terminal.Flush();
+            SixelEncoder.Encode(image, terminal.OutputStream);
         }
         else
         {
@@ -86,9 +84,9 @@ internal sealed class SixelDisplay : IDisposable
 
             if (cropHeight > 0)
             {
-                System.Console.SetCursorPosition(0, startRow);
-                System.Console.Out.Flush();
-                SixelEncoder.Encode(image, pixelStartY, (uint)cropHeight, _stdout);
+                terminal.SetCursorPosition(0, startRow);
+                terminal.Flush();
+                SixelEncoder.Encode(image, pixelStartY, (uint)cropHeight, terminal.OutputStream);
             }
         }
 
@@ -98,6 +96,4 @@ internal sealed class SixelDisplay : IDisposable
         if (isFullRender) _fullRenders++; else _partialRenders++;
 #endif
     }
-
-    public void Dispose() => _stdout.Dispose();
 }

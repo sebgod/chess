@@ -8,7 +8,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <InternalsVisibleTo Include="Chess.Console" />
     <InternalsVisibleTo Include="BenchmarkSuite1" />
     <InternalsVisibleTo Include="Chess.Tests" />
   </ItemGroup>

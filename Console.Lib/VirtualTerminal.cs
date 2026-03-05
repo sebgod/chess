@@ -3,31 +3,10 @@ using System.Text;
 namespace Console.Lib;
 
 /// <summary>
-/// Represents a mouse button event with pixel position and press/release state.
-/// </summary>
-public readonly record struct MouseEvent(int Button, int X, int Y, bool IsRelease);
-
-/// <summary>
-/// Represents a console input event: either a mouse event, a key press, or both with modifier state.
-/// </summary>
-public readonly record struct ConsoleInputEvent(MouseEvent? Mouse, ConsoleKey Key, ConsoleModifiers Modifiers);
-
-public interface IVirtualTerminal
-    : IAsyncDisposable
-{
-    Task<bool> HasSixelSupportAsync();
-    Task<(uint Width, uint Height)?> QueryCellSizeAsync();
-    ValueTask EnterAlternateScreenAsync();
-    bool IsAlternateScreen { get; }
-    bool HasInput();
-    ConsoleInputEvent TryReadInput();
-}
-
-/// <summary>
 /// Manages terminal lifecycle (alternate buffer, cursor, mouse tracking)
 /// and provides platform-aware mouse input reading.
 /// </summary>
-internal sealed class VirtualTerminal : IVirtualTerminal
+public sealed class VirtualTerminal : IVirtualTerminal
 {
     private HashSet<TerminalCapability>? _deviceCapabilities;
     private uint? _cellWidth;
@@ -113,6 +92,34 @@ internal sealed class VirtualTerminal : IVirtualTerminal
 
     public bool IsAlternateScreen => _alternateScreen;
 
+    public (int Width, int Height) Size => (System.Console.WindowWidth, System.Console.WindowHeight);
+
+    public void Clear() => System.Console.Clear();
+
+    public void SetCursorPosition(int left, int top) => System.Console.SetCursorPosition(left, top);
+
+    public void Write(string text) => System.Console.Write(text);
+
+    public void WriteLine(string? text = null) => System.Console.WriteLine(text);
+
+    public ConsoleColor ForegroundColor
+    {
+        get => System.Console.ForegroundColor;
+        set => System.Console.ForegroundColor = value;
+    }
+
+    public ConsoleColor BackgroundColor
+    {
+        get => System.Console.BackgroundColor;
+        set => System.Console.BackgroundColor = value;
+    }
+
+    public void ResetColor() => System.Console.ResetColor();
+
+    public void Flush() => System.Console.Out.Flush();
+
+    public Stream OutputStream { get; } = System.Console.OpenStandardOutput();
+
     public bool HasInput() => System.Console.KeyAvailable;
 
     /// <summary>
@@ -169,6 +176,8 @@ internal sealed class VirtualTerminal : IVirtualTerminal
             System.Console.Write("\e[?25h");   // Show cursor
             System.Console.Write("\e[?1049l"); // Leave alternate buffer
         }
+
+        OutputStream.Dispose();
 
         if (_stdIn is { } stdIn)
         {

@@ -1,4 +1,5 @@
 using Chess.Lib;
+using Console.Lib;
 
 using File = Chess.Lib.File;
 
@@ -9,14 +10,16 @@ namespace Chess.Console;
 /// </summary>
 internal sealed class ConsoleGameRenderer
 {
+    private readonly IVirtualTerminal _terminal;
     private readonly int _historyColumnWidth;
     private int _historyStartColumn;
     private int _historyRowCount;
     private int _statusBarRow;
     private int _totalWidth;
 
-    internal ConsoleGameRenderer(int historyColumnWidth, int consoleWidth, int consoleHeight)
+    internal ConsoleGameRenderer(IVirtualTerminal terminal, int historyColumnWidth, int consoleWidth, int consoleHeight)
     {
+        _terminal = terminal;
         _historyColumnWidth = historyColumnWidth;
         Resize(consoleWidth, consoleHeight);
     }
@@ -32,11 +35,11 @@ internal sealed class ConsoleGameRenderer
         _totalWidth = consoleWidth;
     }
 
-    private static bool TrySetCursorPosition(int left, int top)
+    private bool TrySetCursorPosition(int left, int top)
     {
         try
         {
-            System.Console.SetCursorPosition(left, top);
+            _terminal.SetCursorPosition(left, top);
             return true;
         }
         catch (ArgumentOutOfRangeException)
@@ -75,7 +78,7 @@ internal sealed class ConsoleGameRenderer
         }
 
         var padWidth = _totalWidth - debugInfo.Length;
-        System.Console.Write($"\e[97;100m{status.PadRight(padWidth)}{debugInfo}\e[0m");
+        _terminal.Write($"\e[97;100m{status.PadRight(padWidth)}{debugInfo}\e[0m");
     }
 
     /// <summary>
@@ -93,7 +96,7 @@ internal sealed class ConsoleGameRenderer
         // Render header
         if (!TrySetCursorPosition(_historyStartColumn, 0))
             return;
-        System.Console.Write($"\e[97;100m{" Move History".PadRight(_historyColumnWidth)}\e[0m");
+        _terminal.Write($"\e[97;100m{" Move History".PadRight(_historyColumnWidth)}\e[0m");
 
         for (var row = 1; row < _historyRowCount; row++)
         {
@@ -109,11 +112,11 @@ internal sealed class ConsoleGameRenderer
                 var blackPly = plyIdx + 1 < plies.Count ? plies.GetRecordAndPGNIdx(plyIdx + 1).Ply.ToString() : "";
 
                 var line = $" {idxStr} {whitePly,-8} {blackPly,-8}";
-                System.Console.Write($"\e[37;40m{line.PadRight(_historyColumnWidth)}\e[0m");
+                _terminal.Write($"\e[37;40m{line.PadRight(_historyColumnWidth)}\e[0m");
             }
             else
             {
-                System.Console.Write($"\e[37;40m{new string(' ', _historyColumnWidth)}\e[0m");
+                _terminal.Write($"\e[37;40m{new string(' ', _historyColumnWidth)}\e[0m");
             }
         }
     }

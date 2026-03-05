@@ -115,7 +115,7 @@ In Custom Game mode, you place pieces on the board before playing. The popup app
 ```mermaid
 graph TD
     Console["Chess.Console<br/><i>Terminal UI</i>"]
-    ConLib["Console.Lib<br/><i>Terminal I/O + Sixel rendering</i>"]
+    ConLib["Console.Lib<br/><i>Terminal I/O, menus + Sixel rendering</i>"]
     Engine["Chess.Engine<br/><i>Standalone UCI engine</i>"]
     UCI["Chess.UCI<br/><i>UCI protocol library</i>"]
     Lib["Chess.Lib<br/><i>Board, rules, AI engine</i>"]

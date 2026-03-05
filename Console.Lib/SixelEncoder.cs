@@ -28,7 +28,7 @@ namespace Console.Lib;
 /// CustomSixel_Partial 1.6 ms      0.01 (79× faster)
 /// </code>
 /// </summary>
-internal static class SixelEncoder
+public static class SixelEncoder
 {
     private const int MaxColors = 256;
 

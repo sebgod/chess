@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Chess.Lib;
 using Chess.Lib.UI;
+using Console.Lib;
 using ImageMagick;
 
 using File = Chess.Lib.File;
@@ -15,6 +16,7 @@ internal sealed class SixelGameDisplay : IGameDisplay
     private const int HistoryColumns = 24;
     private const int StatusBarRows = 1;
 
+    private readonly IVirtualTerminal _terminal;
     private readonly uint _cellWidth;
     private readonly uint _cellHeight;
     private readonly MagickImage _image;
@@ -27,20 +29,23 @@ internal sealed class SixelGameDisplay : IGameDisplay
 
     public GameUI UI { get; private set; }
 
-    public SixelGameDisplay(Game game, uint cellWidth, uint cellHeight)
+    public SixelGameDisplay(IVirtualTerminal terminal, Game game, uint cellWidth, uint cellHeight)
     {
+        _terminal = terminal;
         _cellWidth = cellWidth;
         _cellHeight = cellHeight;
-        _imageColumns = System.Console.WindowWidth - HistoryColumns;
-        _imageRows = System.Console.WindowHeight - StatusBarRows;
+
+        var (consoleWidth, consoleHeight) = terminal.Size;
+        _imageColumns = consoleWidth - HistoryColumns;
+        _imageRows = consoleHeight - StatusBarRows;
 
         var width = (uint)_imageColumns * cellWidth;
         var height = (uint)_imageRows * cellHeight;
 
         _image = new MagickImage(MagickColors.Black, width, height);
         _imageRenderer = new MagickImageRenderer();
-        _display = new SixelDisplay();
-        _chrome = new ConsoleGameRenderer(HistoryColumns, System.Console.WindowWidth, System.Console.WindowHeight);
+        _display = new SixelDisplay(terminal);
+        _chrome = new ConsoleGameRenderer(terminal, HistoryColumns, consoleWidth, consoleHeight);
 
         UI = new GameUI(game, _image.Width, _image.Height,
             mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
@@ -72,8 +77,7 @@ internal sealed class SixelGameDisplay : IGameDisplay
 
     public void HandleResize(Game game)
     {
-        var newConsoleWidth = System.Console.WindowWidth;
-        var newConsoleHeight = System.Console.WindowHeight;
+        var (newConsoleWidth, newConsoleHeight) = _terminal.Size;
 
         if (!_chrome.NeedsResize(newConsoleWidth, newConsoleHeight))
             return;
@@ -104,7 +108,6 @@ internal sealed class SixelGameDisplay : IGameDisplay
 
     public void Dispose()
     {
-        _display.Dispose();
         _imageRenderer.Dispose();
         _image.Dispose();
     }
