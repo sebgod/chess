@@ -59,9 +59,7 @@ public class GameUI
         "F9       New game";
 
     private const int PieceTypeStride = 7;
-    private const int PortraitFlipFactor = 3;
     private const int LastMoveBorderWidth = 3;
-    private const float SquaresNeededNormal = 10.5f;
     private const float SquaresNeededTight  = 11.5f;
     
     public GameUI(
@@ -114,18 +112,8 @@ public class GameUI
 
     public static int CalculateSquareSize(uint uiSizeX, uint uiSizeY)
     {
-        var diff = uiSizeX - uiSizeY;
         var minSize = MathF.Min(uiSizeY, uiSizeX);
-        var normalSquareSize = minSize / SquaresNeededNormal;
-        var tightSquareSize  = (int)(minSize / SquaresNeededTight);
-        if (Math.Abs(diff) < normalSquareSize * PortraitFlipFactor)
-        {
-            return tightSquareSize;
-        }
-        else
-        {
-            return (int)normalSquareSize;
-        }
+        return (int)(minSize / SquaresNeededTight);
     }
 
     public Game Game { get; }
