@@ -8,6 +8,11 @@ namespace Chess.Console;
 internal readonly record struct MouseEvent(int Button, int X, int Y, bool IsRelease);
 
 /// <summary>
+/// Represents a console input event: either a mouse event, a key press, or both with modifier state.
+/// </summary>
+internal readonly record struct ConsoleInputEvent(MouseEvent? Mouse, ConsoleKey Key, ConsoleModifiers Modifiers);
+
+/// <summary>
 /// Manages terminal lifecycle (alternate buffer, cursor, mouse tracking)
 /// and provides platform-aware mouse input reading.
 /// </summary>
@@ -117,7 +122,7 @@ internal sealed class ConsoleTerminal : IDisposable
     /// Returns a mouse event if mouse input was received, or a raw key character if keyboard input was received.
     /// Mouse input takes precedence; both may be null if the consumed input was neither.
     /// </summary>
-    public (MouseEvent? Mouse, ConsoleKey Key) TryReadInput()
+    public ConsoleInputEvent TryReadInput()
     {
         if (_alternateScreen)
         {
@@ -126,17 +131,17 @@ internal sealed class ConsoleTerminal : IDisposable
                 return ParseDecLocatorInput();
             }
 
-            var (rawMouse, key) = OperatingSystem.IsWindows()
+            var result = OperatingSystem.IsWindows()
                 ? WindowsConsoleInput.TryReadInputEvent()
                 : ParseSgrInput();
 
-            if (rawMouse is not { } r || !_cellWidth.HasValue || !_cellHeight.HasValue)
+            if (result.Mouse is not { } r || !_cellWidth.HasValue || !_cellHeight.HasValue)
             {
-                return (null, key);
+                return result;
             }
 
             // Normalize cell coordinates to pixels
-            return (new MouseEvent(r.Button, r.X * (int)_cellWidth.Value, r.Y * (int)_cellHeight.Value, r.IsRelease), ConsoleKey.None);
+            return new(new MouseEvent(r.Button, r.X * (int)_cellWidth.Value, r.Y * (int)_cellHeight.Value, r.IsRelease), ConsoleKey.None, result.Modifiers);
         }
         else
         {
@@ -144,15 +149,15 @@ internal sealed class ConsoleTerminal : IDisposable
 
             if (first.Key == ConsoleKey.F1)
             {
-                return (null, ConsoleKey.None);
+                return new(null, ConsoleKey.None, first.Modifiers);
             }
             else if (first.Key != ConsoleKey.Escape)
             {
-                return (null, first.Key);
+                return new(null, first.Key, first.Modifiers);
             }
             else
             {
-                return (null, ConsoleKey.None);
+                return new(null, ConsoleKey.None, first.Modifiers);
             }
         }
     }
@@ -226,13 +231,13 @@ internal sealed class ConsoleTerminal : IDisposable
     /// Parses a DECLRP response (CSI Pe;Pb;Pr;Pc;Pp &amp; w) into a mouse event with pixel coordinates,
     /// or returns the raw key character if the input was not an escape sequence.
     /// </summary>
-    private static (MouseEvent? Mouse, ConsoleKey Key) ParseDecLocatorInput()
+    private static ConsoleInputEvent ParseDecLocatorInput()
     {
         var first = System.Console.ReadKey(intercept: true);
         if (first.Key != ConsoleKey.Escape)
         {
             // Map F1 to '?'
-            return (null, first.Key);
+            return new(null, first.Key, first.Modifiers);
         }
 
         var sb = new StringBuilder();
@@ -240,7 +245,7 @@ internal sealed class ConsoleTerminal : IDisposable
         {
             if (!System.Console.KeyAvailable)
             {
-                return (null, ConsoleKey.None);
+                return default;
             }
 
             var ch = System.Console.ReadKey(intercept: true);
@@ -248,13 +253,13 @@ internal sealed class ConsoleTerminal : IDisposable
             {
                 if (!System.Console.KeyAvailable)
                 {
-                    return (null, ConsoleKey.None);
+                    return default;
                 }
 
                 var next = System.Console.ReadKey(intercept: true);
                 if (next.KeyChar != 'w')
                 {
-                    return (null, ConsoleKey.None);
+                    return default;
                 }
 
                 var parts = sb.ToString().TrimStart('[').Split(';');
@@ -273,15 +278,15 @@ internal sealed class ConsoleTerminal : IDisposable
                     };
                     if (button < 0)
                     {
-                        return (null, ConsoleKey.None);
+                        return default;
                     }
 
                     var isRelease = pe is 3 or 5 or 7;
                     // DECLRP pixel coordinates are 1-based
-                    return (new MouseEvent(button, pc - 1, pr - 1, isRelease), ConsoleKey.None);
+                    return new(new MouseEvent(button, pc - 1, pr - 1, isRelease), ConsoleKey.None, ConsoleModifiers.None);
                 }
 
-                return (null, ConsoleKey.None);
+                return default;
             }
 
             sb.Append(ch.KeyChar);
@@ -292,7 +297,7 @@ internal sealed class ConsoleTerminal : IDisposable
     /// Parses an SGR mouse event (CSI &lt; Pb;Px;Py M/m), or returns the raw key character
     /// if the input was not an escape sequence.
     /// </summary>
-    private static ((int Button, int X, int Y, bool IsRelease)? Mouse, ConsoleKey Key) ParseSgrInput()
+    private static ConsoleInputEvent ParseSgrInput()
     {
         var sb = new StringBuilder();
 
@@ -300,14 +305,14 @@ internal sealed class ConsoleTerminal : IDisposable
         if (first.Key != ConsoleKey.Escape)
         {
             // Map F1 to '?'
-            return (null, first.Key);
+            return new(null, first.Key, first.Modifiers);
         }
 
         while (true)
         {
             if (!System.Console.KeyAvailable)
             {
-                return (null, ConsoleKey.None);
+                return default;
             }
 
             var ch = System.Console.ReadKey(intercept: true);
@@ -316,14 +321,20 @@ internal sealed class ConsoleTerminal : IDisposable
                 var isRelease = ch.KeyChar == 'm';
                 var parts = sb.ToString().TrimStart('[', '<').Split(';');
                 if (parts.Length == 3 &&
-                    int.TryParse(parts[0], out var button) &&
+                    int.TryParse(parts[0], out var pb) &&
                     int.TryParse(parts[1], out var x) &&
                     int.TryParse(parts[2], out var y))
                 {
+                    // Pb encodes button in bits 0-1, modifiers in bits 2-4
+                    var button = pb & 0x03;
+                    var modifiers = (ConsoleModifiers)0;
+                    if ((pb & 0x04) != 0) modifiers |= ConsoleModifiers.Shift;
+                    if ((pb & 0x08) != 0) modifiers |= ConsoleModifiers.Alt;
+                    if ((pb & 0x10) != 0) modifiers |= ConsoleModifiers.Control;
                     // SGR coordinates are 1-based
-                    return ((button, x - 1, y - 1, isRelease), ConsoleKey.None);
+                    return new(new MouseEvent(button, x - 1, y - 1, isRelease), ConsoleKey.None, modifiers);
                 }
-                return (null, ConsoleKey.None);
+                return default;
             }
 
             sb.Append(ch);

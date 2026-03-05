@@ -231,6 +231,33 @@ internal static class WindowsConsoleInput
     }
 
     [Flags]
+    private enum ControlKeyState : uint
+    {
+        None = 0,
+        RightAltPressed = 0x0001,
+        LeftAltPressed = 0x0002,
+        RightCtrlPressed = 0x0004,
+        LeftCtrlPressed = 0x0008,
+        ShiftPressed = 0x0010,
+        NumLockOn = 0x0020,
+        ScrollLockOn = 0x0040,
+        CapsLockOn = 0x0080,
+        EnhancedKey = 0x0100,
+    }
+
+    private static ConsoleModifiers ToConsoleModifiers(this ControlKeyState state)
+    {
+        var modifiers = (ConsoleModifiers)0;
+        if ((state & (ControlKeyState.LeftAltPressed | ControlKeyState.RightAltPressed)) != 0)
+            modifiers |= ConsoleModifiers.Alt;
+        if ((state & (ControlKeyState.LeftCtrlPressed | ControlKeyState.RightCtrlPressed)) != 0)
+            modifiers |= ConsoleModifiers.Control;
+        if ((state & ControlKeyState.ShiftPressed) != 0)
+            modifiers |= ConsoleModifiers.Shift;
+        return modifiers;
+    }
+
+    [Flags]
     private enum MouseButtonState : uint
     {
         None = 0,
@@ -300,7 +327,7 @@ internal static class WindowsConsoleInput
         public VirtualKey wVirtualKeyCode;
         public short wVirtualScanCode;
         public char UnicodeChar;
-        public int dwControlKeyState;
+        public ControlKeyState dwControlKeyState;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -308,7 +335,7 @@ internal static class WindowsConsoleInput
     {
         public COORD dwMousePosition;
         public MouseButtonState dwButtonState;
-        public int dwControlKeyState;
+        public ControlKeyState dwControlKeyState;
         public MouseEventFlags dwEventFlags;
     };
 
@@ -411,21 +438,21 @@ internal static class WindowsConsoleInput
     /// Tries to read an input event from the console.
     /// Returns a mouse event or a key character, depending on the input type.
     /// </summary>
-    public static ((int Button, int X, int Y, bool IsRelease)? Mouse, ConsoleKey Key) TryReadInputEvent()
+    public static ConsoleInputEvent TryReadInputEvent()
     {
         if (_inputHandle == nint.Zero
-            || _inputHandle == new nint(-1) 
+            || _inputHandle == new nint(-1)
             || !GetNumberOfConsoleInputEvents(_inputHandle, out var eventCount)
             || eventCount <= 0
         )
         {
-            return (null, ConsoleKey.None);
+            return default;
         }
 
         var buffer = new INPUT_RECORD[1];
         if (!ReadConsoleInput(_inputHandle, buffer, (uint)buffer.Length, out uint eventsRead) || eventsRead == 0)
         {
-            return (null, ConsoleKey.None);
+            return default;
         }
 
         var record = buffer[0];
@@ -435,14 +462,14 @@ internal static class WindowsConsoleInput
             var keyEvent = record.KeyEvent;
             if (keyEvent.bKeyDown != 0)
             {
-                return (null, (ConsoleKey)keyEvent.wVirtualKeyCode);
+                return new(null, (ConsoleKey)keyEvent.wVirtualKeyCode, keyEvent.dwControlKeyState.ToConsoleModifiers());
             }
-            return (null, ConsoleKey.None);
+            return default;
         }
 
         if (record.EventType != InputEventType.Mouse)
         {
-            return (null, ConsoleKey.None);
+            return default;
         }
 
         var mouseEvent = record.MouseEvent;
@@ -450,16 +477,18 @@ internal static class WindowsConsoleInput
         // We're interested in button press/release (None)
         if (mouseEvent.dwEventFlags != MouseEventFlags.None)
         {
-            return (null, ConsoleKey.None);
+            return default;
         }
+
+        var modifiers = mouseEvent.dwControlKeyState.ToConsoleModifiers();
 
         // Check if left button is involved in this press/release event
         if (mouseEvent.dwButtonState.HasFlag(MouseButtonState.FromLeft1stButtonPressed))
         {
-            return ((0, mouseEvent.dwMousePosition.X, mouseEvent.dwMousePosition.Y, false), ConsoleKey.None);
+            return new(new MouseEvent(0, mouseEvent.dwMousePosition.X, mouseEvent.dwMousePosition.Y, false), ConsoleKey.None, modifiers);
         }
 
         // Left button not pressed — this is a release (or another button we don't handle)
-        return ((0, mouseEvent.dwMousePosition.X, mouseEvent.dwMousePosition.Y, true), ConsoleKey.None);
+        return new(new MouseEvent(0, mouseEvent.dwMousePosition.X, mouseEvent.dwMousePosition.Y, true), ConsoleKey.None, modifiers);
     }
 }
