@@ -298,16 +298,26 @@ public class GameUI
             var offX = box.UpperLeft.X;
             var offY = box.UpperLeft.Y;
 
-            for (var i = 0; i < 6; i++)
+            for (var i = 0; i < 7; i++)
             {
                 var squareRect = new RectInt((offX + _squareSize * (i + 1), offY + _squareSize), (offX + _squareSize * i, offY));
                 renderer.FillRectangle(surface, squareRect, i % 2 == 0 ? WhiteSquareFill : BlackSquareFill);
 
-                DrawPiece(renderer, surface, new Piece((PieceType)(i + (int)PieceType.Pawn), PlacementSide), squareRect, _pieceFontSize);
-
-                if (Game[placementPos] is { } existingPiece && existingPiece.Side == PlacementSide && existingPiece.PieceType == (PieceType)(i + (int)PieceType.Pawn))
+                if (i < 6)
                 {
-                    renderer.DrawText(surface, "\u2715", _labelFont, _pieceFontSize, RedCrossFill, squareRect, vertAlignment: TextAlign.Center);
+                    DrawPiece(renderer, surface, new Piece((PieceType)(i + (int)PieceType.Pawn), PlacementSide), squareRect, _pieceFontSize);
+
+                    if (Game[placementPos] is { } existingPiece && existingPiece.Side == PlacementSide && existingPiece.PieceType == (PieceType)(i + (int)PieceType.Pawn))
+                    {
+                        renderer.DrawText(surface, "\u2715", _labelFont, _pieceFontSize, RedCrossFill, squareRect, vertAlignment: TextAlign.Center);
+                    }
+                }
+                else
+                {
+                    // Toggle-side button: show ⇄ symbol with half-and-half pieces
+                    var oppositeSide = PlacementSide.ToOpposite();
+                    DrawPiece(renderer, surface, new Piece(PieceType.Pawn, oppositeSide), squareRect, _capturedFontSize);
+                    renderer.DrawText(surface, "\u21C4", _labelFont, _labelFontSize, LastMoveBorderColor, squareRect, vertAlignment: TextAlign.Center);
                 }
             }
         }
@@ -506,9 +516,9 @@ public class GameUI
 
     public RectInt PieceTypeSelectionBox(Position position)
     {
-        // Center the 6-square-wide popup on the selected file, clamped to the board
+        // Center the 7-square-wide popup on the selected file, clamped to the board
         var fileIdx = (int)position.File;
-        var startFile = Math.Clamp(fileIdx - 2, 0, 2); // 6 squares wide, max start index is 2
+        var startFile = Math.Clamp(fileIdx - 3, 0, 1); // 7 squares wide, max start index is 1
         var offX = startFile * _squareSize + _margin;
 
         // Place above the selected square
@@ -526,7 +536,22 @@ public class GameUI
             offY = AlignDown(offY, alignY);
         }
 
-        return new RectInt((offX + _squareSize * 6, offY + _squareSize), (offX, offY));
+        return new RectInt((offX + _squareSize * 7, offY + _squareSize), (offX, offY));
+    }
+
+    /// <summary>
+    /// Checks if the given pixel coordinates fall on the toggle-side button in the placement popup.
+    /// </summary>
+    public bool IsPlacementSideToggle(int x, int y)
+    {
+        if (PendingPlacement is not { } pos)
+            return false;
+
+        var box = PieceTypeSelectionBox(pos);
+        // The toggle button is the 7th (last) square in the popup
+        var toggleX = box.UpperLeft.X + _squareSize * 6;
+        var toggleRect = new RectInt((toggleX + _squareSize, box.LowerRight.Y), (toggleX, box.UpperLeft.Y));
+        return toggleRect.Contains(x, y);
     }
 
     public PieceType FindPlacementPieceType(int x, int y)
@@ -538,7 +563,10 @@ public class GameUI
         if (box.Contains(x, y))
         {
             var transX = x - box.UpperLeft.X;
-            return (PieceType)(transX / _squareSize + (int)PieceType.Pawn);
+            var idx = transX / _squareSize;
+            // First 6 squares are piece types; the 7th is the toggle-side button
+            if (idx < 6)
+                return (PieceType)(idx + (int)PieceType.Pawn);
         }
 
         return PieceType.None;
@@ -611,6 +639,10 @@ public class GameUI
         {
             if (PendingPlacement is { } pendingPos)
             {
+                if (IsPlacementSideToggle(x, y))
+                {
+                    return TogglePlacementSide();
+                }
                 if (FindPlacementPieceType(x, y) is { } pieceType and not PieceType.None)
                 {
                     if (Game[pendingPos] is { } existing && existing.PieceType == pieceType && existing.Side == PlacementSide)
