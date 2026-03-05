@@ -8,6 +8,7 @@
     <PackageVersion Include="BenchmarkDotNet" Version="0.15.2" />
     <PackageVersion Include="coverlet.collector" Version="8.0.0" />
     <PackageVersion Include="Magick.NET-Q8-AnyCPU" Version="14.10.3" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.5.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
     <PackageVersion Include="Microsoft.VisualStudio.DiagnosticsHub.BenchmarkDotNetDiagnosers" Version="18.3.36812.1" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />

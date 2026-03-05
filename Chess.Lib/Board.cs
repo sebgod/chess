@@ -289,8 +289,14 @@ public record struct Board()
             }
         }
 
-        var filesToCheck = isKingSideCastling ? CastlingKingSideFiles : CastlingQueenSideFiles;
         var homeRank = side.HomeRank();
+        var rookFile = isKingSideCastling ? File.H : File.A;
+        if (this[new Position(rookFile, homeRank)] is not { PieceType: PieceType.Rook } rook || rook.Side != side)
+        {
+            return false;
+        }
+
+        var filesToCheck = isKingSideCastling ? CastlingKingSideFiles : CastlingQueenSideFiles;
         var oppositeSide = side.ToOpposite();
         var oppositeSidePieces = AllPiecesOfSide(oppositeSide).ToList();
 
@@ -305,7 +311,7 @@ public record struct Board()
             foreach (var (piecePosition, _) in oppositeSidePieces)
             {
                 var ((result, _), _, _) = EvaluateAction(plies, new Action(piecePosition, kingMovePosition, IsMove: false), skipGameResultCheck: true);
-                if (result is ActionResult.Control)
+                if (result is ActionResult.Control or ActionResult.Attack)
                 {
                     return false;
                 }
