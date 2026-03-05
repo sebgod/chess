@@ -50,7 +50,7 @@ internal sealed class SixelGameDisplay : IGameDisplay
 
     public void RenderInitial(Game game)
     {
-        _display.RenderFrame(UI, _imageRenderer, _image, default, _cellHeight);
+        _display.RenderFrame(UI, _imageRenderer, _image, [], _cellHeight);
         _chrome.RenderStatusBar(game, _display.Stats, placementSide: SetupPlacementSide);
         _chrome.RenderHistory(game);
     }
@@ -89,7 +89,7 @@ internal sealed class SixelGameDisplay : IGameDisplay
 
         _chrome.Resize(newConsoleWidth, newConsoleHeight);
 
-        _display.RenderFrame(UI, _imageRenderer, _image, default, _cellHeight);
+        _display.RenderFrame(UI, _imageRenderer, _image, [], _cellHeight);
         _chrome.RenderStatusBar(game, _display.Stats);
         _chrome.RenderHistory(game);
     }

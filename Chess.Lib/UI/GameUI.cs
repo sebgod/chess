@@ -16,6 +16,7 @@ public class GameUI
     private static readonly RGBAColor32 SelectedSquareFill  = new RGBAColor32(0xCD, 0x5C, 0x5C, 0xff);
     private static readonly RGBAColor32 CheckSquareFill     = new RGBAColor32(0xE9, 0xD5, 0x02, 0xff);
     private static readonly RGBAColor32 LastMoveBorderColor = new RGBAColor32(0x48, 0xA0, 0x48, 0xff);
+    private static readonly RGBAColor32 RedCrossFill        = new RGBAColor32(0xDD, 0x00, 0x00, 0xFF);
 
     private readonly int _margin;
     private readonly int _squareSize;
@@ -262,6 +263,11 @@ public class GameUI
                 renderer.FillRectangle(surface, squareRect, i % 2 == 0 ? WhiteSquareFill : BlackSquareFill);
 
                 DrawPiece(renderer, surface, new Piece((PieceType)(i + (int)PieceType.Pawn), PlacementSide), squareRect, _pieceFontSize);
+
+                if (Game[placementPos] is { } existingPiece && existingPiece.Side == PlacementSide && existingPiece.PieceType == (PieceType)(i + (int)PieceType.Pawn))
+                {
+                    renderer.DrawText(surface, "\u2715", _labelFont, _pieceFontSize, RedCrossFill, squareRect, vertAlignment: TextAlign.Center);
+                }
             }
         }
         // promote piece type selection box
@@ -563,7 +569,14 @@ public class GameUI
             {
                 if (FindPlacementPieceType(x, y) is { } pieceType and not PieceType.None)
                 {
-                    return TryPlacePiece(pendingPos, pieceType, PlacementSide);
+                    if (Game[pendingPos] is { } existing && existing.PieceType == pieceType && existing.Side == PlacementSide)
+                    {
+                        return ClearSquare(pendingPos);
+                    }
+                    else
+                    {
+                        return TryPlacePiece(pendingPos, pieceType, PlacementSide);
+                    }
                 }
             }
             else if (FindSelected(x, y) is { } selected)

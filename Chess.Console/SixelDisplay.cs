@@ -1,5 +1,7 @@
 using Chess.Lib.UI;
 using ImageMagick;
+using System.Collections.Immutable;
+
 #if DEBUG
 using System.Diagnostics;
 #endif
@@ -40,7 +42,7 @@ internal sealed class SixelDisplay : IDisposable
     /// Renders the UI scene to the terminal, optionally restricted to the given clip rectangles.
     /// </summary>
     public void RenderFrame(GameUI ui, MagickImageRenderer renderer, MagickImage image,
-        IReadOnlyList<RectInt>? clipRects, uint cellHeight)
+        ImmutableArray<RectInt> clipRects, uint cellHeight)
     {
 #if DEBUG
         _stopwatch.Restart();
@@ -48,11 +50,11 @@ internal sealed class SixelDisplay : IDisposable
 
         RectInt clip;
         bool isFullRender;
-        if (clipRects is { Count: > 0 })
+        if (!clipRects.IsDefault && clipRects.Length > 0)
         {
             isFullRender = false;
             clip = clipRects[0];
-            for (var i = 1; i < clipRects.Count; i++)
+            for (var i = 1; i < clipRects.Length; i++)
             {
                 clip = clip.Union(clipRects[i]);
             }

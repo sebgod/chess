@@ -183,7 +183,10 @@ internal sealed class HumanPlayer(ConsoleTerminal terminal) : IGamePlayer
         return Result(UIResponse.None);
     }
 
-    private PlayerMoveResult Result(UIResponse response, ImmutableArray<RectInt> clipRects = default)
+    private PlayerMoveResult Result(UIResponse response)
+        => new(response, [], _pendingFile);
+
+    private PlayerMoveResult Result(UIResponse response, ImmutableArray<RectInt> clipRects)
         => new(response, clipRects, _pendingFile);
 
     private PlayerMoveResult Result((UIResponse Response, ImmutableArray<RectInt> ClipRects) uiResult)
