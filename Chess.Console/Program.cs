@@ -94,127 +94,13 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
         ? await terminal.QueryCellSizeAsync() ?? (10u, 20u)
         : (10u, 20u);
 
-    await RunGameLoopAsync(
-        gameMode,
-        computerSide,
+    var gameLoop = new GameLoop(
         game => hasSixel  ? new SixelGameDisplay(game, cellWidth, cellHeight) : new AsciiDisplay(game),
         () => new HumanPlayer(terminal),
-        computerSide => new UciPlayer(Path.Combine(AppContext.BaseDirectory, "chess-engine" + (OperatingSystem.IsWindows() ? ".exe" : "")), computerSide),
-        cancellationToken
+        computerSide => new UciPlayer(Path.Combine(AppContext.BaseDirectory, "chess-engine" + (OperatingSystem.IsWindows() ? ".exe" : "")), computerSide)
     );
+
+    await gameLoop.RunAsync(gameMode, computerSide, cancellationToken);
 });
 
 return await rootCommand.Parse(args).InvokeAsync();
-
-static async Task RunGameLoopAsync(
-    GameMode gameMode,
-    Side computerSide,
-    Func<Game, IGameDisplay> displayFactory,
-    Func<IGamePlayer> playerFactory,
-    Func<Side, IEngineBasedPlayer> engineBasedPlayerFactory,
-    CancellationToken cancellationToken
-)
-{
-
-    var game = gameMode is GameMode.CustomGameEmpty
-        ? new Game(new Board(), Side.White, [])
-        : new Game();
-
-    using var gameDisplay = displayFactory(game);
-
-    // Custom game setup phase
-    if (gameMode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard)
-    {
-        var setupPlayer = playerFactory();
-
-        gameDisplay.UI.IsSetupMode = true;
-        gameDisplay.RenderInitial(game);
-
-        try
-        {
-            while (!cancellationToken.IsCancellationRequested && gameDisplay.UI.IsSetupMode)
-            {
-                var result = setupPlayer.TryMakeMove(gameDisplay.UI);
-
-                if (result is { } setupResult)
-                {
-                    gameDisplay.RenderMove(game, setupResult.Response, setupResult.ClipRects, setupResult.PendingFile);
-                }
-                else
-                {
-                    await Task.Delay(16, cancellationToken);
-                }
-
-                gameDisplay.HandleResize(game);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-
-        // Transition from setup to gameplay: create a fresh game from the setup board
-        var setupBoard = game.Board;
-        game = new Game(setupBoard, Side.White, []);
-        gameDisplay.ResetGame(game);
-    }
-
-    IGamePlayer whitePlayer, blackPlayer;
-    IEngineBasedPlayer? uciPlayer;
-
-    var humanPlayer = playerFactory();
-    if (gameMode is GameMode.PlayerVsComputer or GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard)
-    {
-        uciPlayer = engineBasedPlayerFactory(computerSide);
-
-        await uciPlayer.InitAsync(gameMode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard
-            ? game.Board.ToFEN() + " w - - 0 1"
-            : null,
-            cancellationToken
-        );
-
-        if (computerSide is Side.White)
-        {
-            (whitePlayer, blackPlayer) = (uciPlayer, humanPlayer);
-        }
-        else
-        {
-            (whitePlayer, blackPlayer) = (humanPlayer, uciPlayer);
-        }
-    }
-    else
-    {
-        uciPlayer = null;
-        (whitePlayer, blackPlayer) = (humanPlayer, humanPlayer);
-    }
-
-    gameDisplay.RenderInitial(game);
-
-    try
-    {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            var currentPlayer = game.CurrentSide == Side.White ? whitePlayer : blackPlayer;
-            var result = currentPlayer.TryMakeMove(gameDisplay.UI);
-
-            if (result is { } moveResult)
-            {
-                gameDisplay.RenderMove(game, moveResult.Response, moveResult.ClipRects, moveResult.PendingFile);
-            }
-            else
-            {
-                await Task.Delay(16, cancellationToken);
-            }
-
-            gameDisplay.HandleResize(game);
-        }
-    }
-    catch (OperationCanceledException)
-    {
-        // Expected on Ctrl+C
-    }
-    finally
-    {
-        if (uciPlayer is not null) await uciPlayer.DisposeAsync();
-    }
-}
