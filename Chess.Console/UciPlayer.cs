@@ -25,6 +25,13 @@ internal sealed class UciPlayer(string enginePath, Side side, TimeProvider timeP
         await _client.NewGameAsync(ct);
     }
 
+    public async Task NewGameAsync(string? initialFen, CancellationToken ct = default)
+    {
+        _initialFen = initialFen;
+        _pendingMove = null;
+        await _client.NewGameAsync(ct);
+    }
+
     public PlayerMoveResult? TryMakeMove(GameUI ui)
     {
         var game = ui.Game;

@@ -56,6 +56,11 @@ public class GameLoop(
             gameDisplay.ResetGame(game);
         }
 
+        var initialBoard = game.Board;
+        var initialFen = gameMode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard
+            ? initialBoard.ToFEN() + " w - - 0 1"
+            : null;
+
         IGamePlayer whitePlayer, blackPlayer;
         IEngineBasedPlayer? uciPlayer;
 
@@ -64,11 +69,7 @@ public class GameLoop(
         {
             uciPlayer = engineBasedPlayerFactory(computerSide, timeProvider);
 
-            await uciPlayer.InitAsync(gameMode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard
-                ? game.Board.ToFEN() + " w - - 0 1"
-                : null,
-                cancellationToken
-            );
+            await uciPlayer.InitAsync(initialFen, cancellationToken);
 
             if (computerSide is Side.White)
             {
@@ -98,6 +99,20 @@ public class GameLoop(
 
                 if (result is { } moveResult)
                 {
+                    if (moveResult.Response.HasFlag(UIResponse.NeedsReset))
+                    {
+                        game = initialFen is null
+                            ? new Game()
+                            : new Game(initialBoard, Side.White, []);
+                        gameDisplay.ResetGame(game);
+                        gameDisplay.RenderInitial(game);
+                        if (uciPlayer is not null)
+                        {
+                            await uciPlayer.NewGameAsync(initialFen, cancellationToken);
+                        }
+                        continue;
+                    }
+
                     gameDisplay.RenderMove(game, moveResult.Response, moveResult.ClipRects, moveResult.PendingFile);
                 }
                 else

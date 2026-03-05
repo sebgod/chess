@@ -22,6 +22,7 @@ public class Game
         _plies = plies;
         _board = board;
         _currentSide = side;
+        _gameStatus = board.DetermineGameResult(plies, side);
         _boardHistory.Add(_board);
     }
 

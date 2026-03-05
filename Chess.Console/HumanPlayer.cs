@@ -64,6 +64,12 @@ internal sealed class HumanPlayer(IVirtualTerminal terminal) : IGamePlayer
             return Result(ui.ToggleKeymap());
         }
 
+        if (key is ConsoleKey.F9)
+        {
+            _pendingFile = null;
+            return Result(UIResponse.NeedsReset);
+        }
+
         // Playback navigation: Ctrl+Arrow
         if (modifiers.HasFlag(ConsoleModifiers.Control))
         {

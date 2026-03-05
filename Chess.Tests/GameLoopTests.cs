@@ -68,6 +68,12 @@ public class GameLoopTests
             return Task.CompletedTask;
         }
 
+        public Task NewGameAsync(string? initialFen, CancellationToken ct = default)
+        {
+            InitialFen = initialFen;
+            return Task.CompletedTask;
+        }
+
         public PlayerMoveResult? TryMakeMove(GameUI ui)
         {
             if (ui.Game.IsFinished || moves.Count == 0)

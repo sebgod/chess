@@ -55,7 +55,8 @@ public class GameUI
         "  Del    Clear square\n" +
         "  s      Start game\n" +
         "\n" +
-        "F1       Toggle this help";
+        "F1       Toggle this help\n" +
+        "F9       New game";
 
     private const int PieceTypeStride = 7;
     private const int PortraitFlipFactor = 3;
@@ -245,12 +246,12 @@ public class GameUI
 
         var currentSide = Game.CurrentSide;
 
-        // captured pieces
-        var plies = Game.Plies;
-        var plyCount = Mode == GameUIMode.Playback ? PlaybackPlyIndex + 1 : plies.Count;
-
-        if (plyCount > 0)
+        // captured pieces (skip during setup mode)
+        if (Mode != GameUIMode.Setup)
         {
+            var plies = Game.Plies;
+            var plyCount = Mode == GameUIMode.Playback ? PlaybackPlyIndex + 1 : plies.Count;
+
 #if DEBUG
             Span<byte> capturedPieceCounts = new byte[2 * PieceTypeStride];
 #else
