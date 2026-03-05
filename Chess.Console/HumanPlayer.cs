@@ -95,15 +95,18 @@ internal sealed class HumanPlayer(IVirtualTerminal terminal) : IGamePlayer
             }
         }
 
-        // During playback, only Escape (to exit) is allowed
+        // During playback, allow arrow keys and Escape
         if (ui.Mode == GameUIMode.Playback)
         {
-            if (key is ConsoleKey.Escape)
+            return key switch
             {
-                _pendingFile = null;
-                return Result(ui.ExitPlayback());
-            }
-            return Result(UIResponse.None);
+                ConsoleKey.Escape => Result(ui.ExitPlayback()),
+                ConsoleKey.LeftArrow => Result(ui.NavigateBack()),
+                ConsoleKey.RightArrow => Result(ui.NavigateForward()),
+                ConsoleKey.UpArrow => Result(ui.NavigateBack(2)),
+                ConsoleKey.DownArrow => Result(ui.NavigateForward(2)),
+                _ => Result(UIResponse.None),
+            };
         }
 
         if (ui.IsSetupMode)
