@@ -28,6 +28,11 @@ internal sealed class HumanPlayer(IVirtualTerminal terminal) : IGamePlayer
         }
 
         var (mouseEvent, key, modifiers) = terminal.TryReadInput();
+        if (mouseEvent is { Button: 64 or 65 } wheel)
+        {
+            var delta = wheel.Button == 64 ? -3 : 3;
+            return Result(ui.ScrollHistory(delta));
+        }
         if (mouseEvent is { Button: 0, IsRelease: true } mouse)
         {
             var hadPendingFile = _pendingFile is not null;
@@ -96,6 +101,18 @@ internal sealed class HumanPlayer(IVirtualTerminal terminal) : IGamePlayer
         }
 
         // During playback, allow arrow keys and Escape
+        // PageUp/PageDown scroll the history panel (works in any mode)
+        if (key is ConsoleKey.PageUp)
+        {
+            _pendingFile = null;
+            return Result(ui.ScrollHistory(-(ui.HistoryViewportRows - 1)));
+        }
+        if (key is ConsoleKey.PageDown)
+        {
+            _pendingFile = null;
+            return Result(ui.ScrollHistory(ui.HistoryViewportRows - 1));
+        }
+
         if (ui.Mode == GameUIMode.Playback)
         {
             return key switch

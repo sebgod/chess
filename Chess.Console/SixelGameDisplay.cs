@@ -52,16 +52,17 @@ internal sealed class SixelGameDisplay : IGameDisplay
             backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff),
             alignment: (cellWidth, cellHeight),
             resolveHistoryClick: ResolveHistoryClick);
+        UI.HistoryViewportRows = consoleHeight - 2;
     }
 
     private int? ResolveHistoryClick(int px, int py) =>
-        _chrome.PlyIndexFromPixel(px, py, _cellWidth, _cellHeight, UI.Game.PlyCount);
+        _chrome.PlyIndexFromPixel(px, py, _cellWidth, _cellHeight, UI.Game.PlyCount, UI.HistoryScrollStart);
 
     public void RenderInitial(Game game)
     {
         _display.RenderFrame(UI, _imageRenderer, _image, [], _cellHeight);
         _chrome.RenderStatusBar(game, _display.Stats, placementSide: SetupPlacementSide, playbackInfo: PlaybackInfo);
-        _chrome.RenderHistory(game, HighlightPlyIndex);
+        _chrome.RenderHistory(game, HighlightPlyIndex, UI.HistoryScrollStart);
     }
 
     public void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects, File? pendingFile)
@@ -73,7 +74,7 @@ internal sealed class SixelGameDisplay : IGameDisplay
         if (response.HasFlag(UIResponse.IsUpdate) || response.HasFlag(UIResponse.NeedsPiecePlacement))
         {
             _chrome.RenderStatusBar(game, _display.Stats, pendingFile, placementSide: SetupPlacementSide, playbackInfo: PlaybackInfo);
-            _chrome.RenderHistory(game, HighlightPlyIndex);
+            _chrome.RenderHistory(game, HighlightPlyIndex, UI.HistoryScrollStart);
         }
     }
 
@@ -100,12 +101,13 @@ internal sealed class SixelGameDisplay : IGameDisplay
         _image.Read(MagickColors.Black, width, height);
 
         UI = UI.Resize(_image.Width, _image.Height);
+        UI.HistoryViewportRows = newConsoleHeight - 2;
 
         _chrome.Resize(newConsoleWidth, newConsoleHeight);
 
         _display.RenderFrame(UI, _imageRenderer, _image, [], _cellHeight);
         _chrome.RenderStatusBar(game, _display.Stats, playbackInfo: PlaybackInfo);
-        _chrome.RenderHistory(game, HighlightPlyIndex);
+        _chrome.RenderHistory(game, HighlightPlyIndex, UI.HistoryScrollStart);
     }
 
     public void ResetGame(Game game)

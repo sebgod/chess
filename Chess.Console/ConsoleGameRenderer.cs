@@ -94,14 +94,14 @@ internal sealed class ConsoleGameRenderer
     /// <summary>
     /// Renders the move history panel on the right side of the screen.
     /// </summary>
-    public void RenderHistory(Game game, int? highlightPlyIndex = null)
+    public void RenderHistory(Game game, int? highlightPlyIndex = null, int? scrollStart = null)
     {
         if (_historyStartColumn < 0)
             return;
 
         var plies = game.Plies;
         var moveCount = (plies.Count + 1) / 2;
-        var startMove = Math.Max(0, moveCount - _historyRowCount);
+        var startMove = scrollStart ?? Math.Max(0, moveCount - (_historyRowCount - 1));
 
         // Render header
         if (!TrySetCursorPosition(_historyStartColumn, 0))
@@ -154,7 +154,7 @@ internal sealed class ConsoleGameRenderer
     /// Converts pixel coordinates to a ply index in the history panel.
     /// Returns null if the click is outside the history area.
     /// </summary>
-    public int? PlyIndexFromPixel(int pixelX, int pixelY, uint cellWidth, uint cellHeight, int plyCount)
+    public int? PlyIndexFromPixel(int pixelX, int pixelY, uint cellWidth, uint cellHeight, int plyCount, int? scrollStart = null)
     {
         var cellCol = pixelX / (int)cellWidth;
         var cellRow = pixelY / (int)cellHeight;
@@ -163,7 +163,7 @@ internal sealed class ConsoleGameRenderer
             return null;
 
         var moveCount = (plyCount + 1) / 2;
-        var startMove = Math.Max(0, moveCount - _historyRowCount);
+        var startMove = scrollStart ?? Math.Max(0, moveCount - (_historyRowCount - 1));
         var moveIdx = startMove + cellRow - 1;
         var whitePlyIdx = moveIdx * 2;
 

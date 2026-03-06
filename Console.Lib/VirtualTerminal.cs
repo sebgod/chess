@@ -251,8 +251,8 @@ public sealed class VirtualTerminal : IVirtualTerminal
                     int.TryParse(parts[1], out var x) &&
                     int.TryParse(parts[2], out var y))
                 {
-                    // Pb encodes button in bits 0-1, modifiers in bits 2-4
-                    var button = pb & 0x03;
+                    // Pb encodes button in bits 0-1, modifiers in bits 2-4, bit 6 = scroll wheel
+                    var button = pb & 0x43;
                     var modifiers = (ConsoleModifiers)0;
                     if ((pb & 0x04) != 0) modifiers |= ConsoleModifiers.Shift;
                     if ((pb & 0x08) != 0) modifiers |= ConsoleModifiers.Alt;

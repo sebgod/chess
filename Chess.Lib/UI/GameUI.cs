@@ -133,6 +133,16 @@ public class GameUI
     public int PlaybackPlyIndex { get; private set; }
 
     /// <summary>
+    /// Number of visible data rows in the history panel (set by the display on init/resize).
+    /// </summary>
+    public int HistoryViewportRows { get; set; }
+
+    /// <summary>
+    /// First move index shown in the history panel. <c>null</c> means auto (pinned to latest).
+    /// </summary>
+    public int? HistoryScrollStart { get; private set; }
+
+    /// <summary>
     /// Optional delegate set by the display to resolve pixel coordinates to a ply index in the history panel.
     /// Returns null if the click is outside the history area.
     /// </summary>
@@ -193,6 +203,8 @@ public class GameUI
         resized.PlacementSide = PlacementSide;
         resized.PendingPlacement = PendingPlacement;
         resized.ShowingKeymap = ShowingKeymap;
+        resized.HistoryViewportRows = HistoryViewportRows;
+        resized.HistoryScrollStart = HistoryScrollStart;
         return resized;
     }
 
@@ -878,6 +890,7 @@ public class GameUI
 
         // Clamp to valid range (-1 = initial board)
         PlaybackPlyIndex = Math.Max(-1, PlaybackPlyIndex);
+        EnsurePlyVisible(PlaybackPlyIndex);
 
         return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
     }
@@ -900,6 +913,7 @@ public class GameUI
             return ExitPlayback();
         }
 
+        EnsurePlyVisible(PlaybackPlyIndex);
         return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
     }
 
@@ -912,7 +926,39 @@ public class GameUI
         PlaybackPlyIndex = 0;
         Selected = default;
         PendingPromotion = default;
+        HistoryScrollStart = null;
         return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
+    }
+
+    /// <summary>
+    /// Scrolls the history panel by the given number of move rows (positive = down, negative = up).
+    /// Does not change the selected playback ply.
+    /// </summary>
+    public UIResponse ScrollHistory(int moveDelta)
+    {
+        var moveCount = (Game.PlyCount + 1) / 2;
+        var maxStart = Math.Max(0, moveCount - HistoryViewportRows);
+        var current = HistoryScrollStart ?? maxStart;
+        var newStart = Math.Clamp(current + moveDelta, 0, maxStart);
+        HistoryScrollStart = newStart >= maxStart ? null : newStart;
+        return UIResponse.IsUpdate;
+    }
+
+    /// <summary>
+    /// Ensures the move row containing the given ply index is visible in the history panel.
+    /// </summary>
+    private void EnsurePlyVisible(int plyIndex)
+    {
+        var moveRow = Math.Max(0, plyIndex) / 2;
+        var moveCount = (Game.PlyCount + 1) / 2;
+        var maxStart = Math.Max(0, moveCount - HistoryViewportRows);
+        var current = HistoryScrollStart ?? maxStart;
+
+        if (moveRow < current)
+            HistoryScrollStart = moveRow;
+        else if (moveRow >= current + HistoryViewportRows)
+            HistoryScrollStart = Math.Min(moveRow - HistoryViewportRows + 1, maxStart);
+        // else already visible — leave as-is
     }
 
     /// <summary>
@@ -927,6 +973,7 @@ public class GameUI
         PendingPromotion = default;
         Mode = GameUIMode.Playback;
         PlaybackPlyIndex = plyIndex;
+        EnsurePlyVisible(plyIndex);
         return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
     }
 
