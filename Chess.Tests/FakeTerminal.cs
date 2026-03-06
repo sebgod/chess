@@ -37,7 +37,7 @@ internal sealed class FakeTerminal : IVirtualTerminal
     public ConsoleInputEvent TryReadInput() => _inputs.Dequeue();
     public Task InitAsync() => Task.CompletedTask;
     public bool HasSixelSupport => false;
-    public (uint Width, uint Height) CellSize => (10, 20);
+    public TermCell CellSize => new(10, 20);
 
     public ValueTask EnterAlternateScreenAsync()
     {

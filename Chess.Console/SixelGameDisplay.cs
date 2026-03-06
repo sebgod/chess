@@ -17,8 +17,8 @@ internal sealed class SixelGameDisplay : IGameDisplay
     private const int StatusBarRows = 1;
 
     private readonly IVirtualTerminal _terminal;
-    private readonly uint _cellWidth;
-    private readonly uint _cellHeight;
+    private readonly byte _cellWidth;
+    private readonly byte _cellHeight;
     private readonly MagickImage _image;
     private readonly MagickImageRenderer _imageRenderer;
     private readonly SixelDisplay _display;
@@ -34,10 +34,10 @@ internal sealed class SixelGameDisplay : IGameDisplay
     {
         _terminal = terminal;
 
-        var (cellWidth, cellHeight) = terminal.CellSize;
+        var cell = terminal.CellSize;
 
-        _cellWidth = cellWidth;
-        _cellHeight = cellHeight;
+        _cellWidth = cell.Width;
+        _cellHeight = cell.Height;
 
         _layout = new TerminalLayout(terminal);
         _statusBarViewport = _layout.Dock(Dock.Bottom, StatusBarRows);
@@ -45,8 +45,8 @@ internal sealed class SixelGameDisplay : IGameDisplay
         _boardViewport = _layout.Dock(Dock.Fill);
 
         var (boardCols, boardRows) = _boardViewport.Size;
-        var width = (uint)boardCols * cellWidth;
-        var height = (uint)boardRows * cellHeight;
+        var width = (uint)boardCols * cell.Width;
+        var height = (uint)boardRows * cell.Height;
 
         _image = new MagickImage(MagickColors.Black, width, height);
         _imageRenderer = new MagickImageRenderer();
@@ -56,7 +56,7 @@ internal sealed class SixelGameDisplay : IGameDisplay
         UI = new GameUI(game, _image.Width, _image.Height,
             mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
             backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff),
-            alignment: (cellWidth, cellHeight),
+            alignment: (cell.Width, cell.Height),
             resolveHistoryClick: ResolveHistoryClick)
         {
             HistoryViewportRows = _historyViewport.Size.Height - 1
@@ -72,7 +72,7 @@ internal sealed class SixelGameDisplay : IGameDisplay
 
     public void RenderInitial(Game game)
     {
-        _display.RenderFrame(UI, _imageRenderer, _image, [], _cellHeight);
+        _display.RenderFrame(UI, _imageRenderer, _image, []);
         _chrome.RenderStatusBar(game, _display.Stats, placementSide: SetupPlacementSide, playbackInfo: PlaybackInfo);
         _chrome.RenderHistory(game, HighlightPlyIndex, UI.HistoryScrollStart);
     }
@@ -81,7 +81,7 @@ internal sealed class SixelGameDisplay : IGameDisplay
     {
         if (response.HasFlag(UIResponse.NeedsRefresh))
         {
-            _display.RenderFrame(UI, _imageRenderer, _image, clipRects, _cellHeight);
+            _display.RenderFrame(UI, _imageRenderer, _image, clipRects);
         }
         if (response.HasFlag(UIResponse.IsUpdate) || response.HasFlag(UIResponse.NeedsPiecePlacement))
         {
@@ -112,7 +112,7 @@ internal sealed class SixelGameDisplay : IGameDisplay
         UI = UI.Resize(_image.Width, _image.Height);
         UI.HistoryViewportRows = _historyViewport.Size.Height - 1;
 
-        _display.RenderFrame(UI, _imageRenderer, _image, [], _cellHeight);
+        _display.RenderFrame(UI, _imageRenderer, _image, []);
         _chrome.RenderStatusBar(game, _display.Stats, playbackInfo: PlaybackInfo);
         _chrome.RenderHistory(game, HighlightPlyIndex, UI.HistoryScrollStart);
     }

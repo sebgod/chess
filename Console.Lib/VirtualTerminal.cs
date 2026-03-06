@@ -10,7 +10,7 @@ public sealed class VirtualTerminal : IVirtualTerminal
 {
     private bool _initialized;
     private HashSet<TerminalCapability> _deviceCapabilities = [];
-    private (uint Width, uint Height)? _cellSize;
+    private TermCell? _cellSize;
     private bool _alternateScreen;
     private Stream? _stdIn;
 
@@ -29,7 +29,7 @@ public sealed class VirtualTerminal : IVirtualTerminal
                 .Select((s) => (TerminalCapability) int.Parse(s))
         ];
 
-        _cellSize = (10u, 20u);
+        _cellSize = new TermCell(10, 20);
         var csResponse = await GetControlSequenceResponseAsync("\e[16t", 't');
         var tIndex = csResponse.IndexOf('t');
         if (tIndex >= 0)
@@ -40,7 +40,7 @@ public sealed class VirtualTerminal : IVirtualTerminal
                 uint.TryParse(parts[1], out var height) &&
                 uint.TryParse(parts[2], out var width))
             {
-                _cellSize = (width, height);
+                _cellSize = new TermCell((byte)width, (byte)height);
             }
         }
 
@@ -56,7 +56,7 @@ public sealed class VirtualTerminal : IVirtualTerminal
         }
     }
 
-    public (uint Width, uint Height) CellSize =>
+    public TermCell CellSize =>
         _cellSize ?? throw new InvalidOperationException("Call InitAsync() first.");
 
     /// <summary>
@@ -129,7 +129,7 @@ public sealed class VirtualTerminal : IVirtualTerminal
         {
             var result = ParseSgrInput();
 
-            if (result.Mouse is not { } r || _cellSize is not (var cw, var ch))
+            if (result.Mouse is not { } r || _cellSize is not { Width: var cw, Height: var ch })
             {
                 return result;
             }

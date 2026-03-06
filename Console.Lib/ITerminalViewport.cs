@@ -9,6 +9,7 @@ public interface ITerminalViewport
     ConsoleColor ForegroundColor { get; set; }
     ConsoleColor BackgroundColor { get; set; }
     void ResetColor();
+    TermCell CellSize { get; }
     void Flush();
     Stream OutputStream { get; }
 }

@@ -64,6 +64,8 @@ public sealed class TerminalViewport : ITerminalViewport
         BackgroundColor = _parent.BackgroundColor;
     }
 
+    public TermCell CellSize => _parent.CellSize;
+
     public void Flush() => _parent.Flush();
 
     public Stream OutputStream => _parent.OutputStream;

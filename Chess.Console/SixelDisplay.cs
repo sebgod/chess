@@ -26,6 +26,7 @@ internal sealed class SixelDisplay(ITerminalViewport viewport)
     private long _fullRenders;
     private long _partialRenders;
 #endif
+    private readonly byte _cellHeight = viewport.CellSize.Height;
 
     /// <summary>
     /// Returns the latest rendering performance counters, or null in Release builds.
@@ -41,7 +42,7 @@ internal sealed class SixelDisplay(ITerminalViewport viewport)
     /// Renders the UI scene to the terminal, optionally restricted to the given clip rectangles.
     /// </summary>
     public void RenderFrame(GameUI ui, MagickImageRenderer renderer, MagickImage image,
-        ImmutableArray<RectInt> clipRects, uint cellHeight)
+        ImmutableArray<RectInt> clipRects)
     {
 #if DEBUG
         _stopwatch.Restart();
@@ -74,11 +75,11 @@ internal sealed class SixelDisplay(ITerminalViewport viewport)
         else
         {
             // Align to cell boundaries for proper cursor positioning
-            var startRow = (int)(clip.UpperLeft.Y / cellHeight);
-            var endRow = (int)((clip.LowerRight.Y + cellHeight - 1) / cellHeight);
+            var startRow = (int)(clip.UpperLeft.Y / _cellHeight);
+            var endRow = (int)((clip.LowerRight.Y + _cellHeight - 1) / _cellHeight);
 
-            var pixelStartY = (int)(startRow * cellHeight);
-            var pixelEndY = Math.Min((int)image.Height, (int)(endRow * cellHeight));
+            var pixelStartY = (int)(startRow * _cellHeight);
+            var pixelEndY = Math.Min((int)image.Height, (int)(endRow * _cellHeight));
             var cropHeight = pixelEndY - pixelStartY;
 
             if (cropHeight > 0)

@@ -108,7 +108,7 @@ public class MagickImageRenderer() : Renderer<MagickImage>(), IDisposable
             _captionCache[cacheKey] = overlayImage;
         }
 
-        surface.Composite(overlayImage, Gravity.Northwest, (int)x, (int)y, CompositeOperator.Over);
+        surface.Composite(overlayImage, Gravity.Northwest, x, y, CompositeOperator.Over);
     }
 
     private static Gravity GetGravity(TextAlign horizAlignment, TextAlign vertAlignment)

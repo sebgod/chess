@@ -8,13 +8,12 @@ public abstract class MenuBase<T>(IVirtualTerminal terminal, TimeProvider timePr
 {
     private int? _lastWindowWidth;
     private int? _lastWindowHeight;
-    private uint? _cellHeight;
+    private readonly byte _cellHeight = terminal.CellSize.Height;
 
     protected IVirtualTerminal Terminal => terminal;
 
     public async Task<T> ShowAsync(CancellationToken cancellationToken)
     {
-        _cellHeight = terminal.CellSize.Height;
         return await ShowAsyncCore(cancellationToken);
     }
 
@@ -85,7 +84,7 @@ public abstract class MenuBase<T>(IVirtualTerminal terminal, TimeProvider timePr
 
             if (input.Mouse is { IsRelease: true } mouse)
             {
-                var row = _cellHeight is > 0 ? mouse.Y / (int)_cellHeight.Value : mouse.Y;
+                var row = _cellHeight is > 0 ? mouse.Y / _cellHeight : mouse.Y;
                 var clickedItem = row - menuStartRow;
                 if (clickedItem >= 0 && clickedItem < items.Length)
                 {

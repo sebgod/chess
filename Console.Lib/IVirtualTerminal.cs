@@ -5,7 +5,6 @@ public interface IVirtualTerminal
 {
     Task InitAsync();
     bool HasSixelSupport { get; }
-    (uint Width, uint Height) CellSize { get; }
     ValueTask EnterAlternateScreenAsync();
     bool IsAlternateScreen { get; }
     void Clear();
