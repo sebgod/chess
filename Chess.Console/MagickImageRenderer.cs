@@ -1,23 +1,26 @@
-﻿using Chess.Lib.UI;
+using Chess.Lib.UI;
 using ImageMagick;
 using ImageMagick.Drawing;
 
 namespace Chess.Console;
 
-public class MagickImageRenderer() : Renderer<MagickImage>(), IDisposable
+public class MagickImageRenderer(MagickImage surface) : Renderer<MagickImage>(surface), IDisposable
 {
     private readonly Dictionary<CaptionCacheKey, MagickImage> _captionCache = [];
     private Density? _cachedDensity;
     private double _cachedFactor;
 
-    public override void FillRectangle(MagickImage surface, in RectInt rect, RGBAColor32 fillColor)
-        => surface.Draw(GetDrawableRect(rect), new DrawableFillColor(GetColor(fillColor)), new DrawableFillOpacity(new Percentage(fillColor.Alpha / 255.0 * 100.0)));
+    public override int Width => (int)Surface.Width;
+    public override int Height => (int)Surface.Height;
 
-    public override void FillEllipse(MagickImage surface, in RectInt rect, RGBAColor32 fillColor)
-        => surface.Draw(GetDrawableEllipse(rect), new DrawableFillColor(GetColor(fillColor)), new DrawableFillOpacity(new Percentage(100)));
+    public override void FillRectangle(in RectInt rect, RGBAColor32 fillColor)
+        => Surface.Draw(GetDrawableRect(rect), new DrawableFillColor(GetColor(fillColor)), new DrawableFillOpacity(new Percentage(fillColor.Alpha / 255.0 * 100.0)));
 
-    public override void DrawRectangle(MagickImage surface, in RectInt rect, RGBAColor32 strokeColor, int strokeWidth)
-        => surface.Draw(GetDrawableRect(rect), new DrawableFillColor(MagickColors.Transparent), new DrawableStrokeColor(GetColor(strokeColor)), new DrawableStrokeWidth(strokeWidth));
+    public override void FillEllipse(in RectInt rect, RGBAColor32 fillColor)
+        => Surface.Draw(GetDrawableEllipse(rect), new DrawableFillColor(GetColor(fillColor)), new DrawableFillOpacity(new Percentage(100)));
+
+    public override void DrawRectangle(in RectInt rect, RGBAColor32 strokeColor, int strokeWidth)
+        => Surface.Draw(GetDrawableRect(rect), new DrawableFillColor(MagickColors.Transparent), new DrawableStrokeColor(GetColor(strokeColor)), new DrawableStrokeWidth(strokeWidth));
 
     public static MagickColor GetColor(RGBAColor32 fillColor) => MagickColor.FromRgba(fillColor.Red, fillColor.Green, fillColor.Blue, fillColor.Alpha);
 
@@ -38,7 +41,7 @@ public class MagickImageRenderer() : Renderer<MagickImage>(), IDisposable
     /// Fills multiple rectangles in a single batched Draw call, reducing P/Invoke overhead.
     /// Uses Drawables collection for efficient batching.
     /// </summary>
-    public override void FillRectangles(MagickImage surface, ReadOnlySpan<(RectInt Rect, RGBAColor32 Color)> rectangles)
+    public override void FillRectangles(ReadOnlySpan<(RectInt Rect, RGBAColor32 Color)> rectangles)
     {
         if (rectangles.IsEmpty)
         {
@@ -55,10 +58,10 @@ public class MagickImageRenderer() : Renderer<MagickImage>(), IDisposable
                 .Rectangle(rect.UpperLeft.X, rect.UpperLeft.Y, rect.LowerRight.X, rect.LowerRight.Y);
         }
 
-        surface.Draw(drawables);
+        Surface.Draw(drawables);
     }
 
-    public override void DrawText(MagickImage surface, ReadOnlySpan<char> text, string fontFamily, float fontSize, RGBAColor32 fontColor, in RectInt layout,
+    public override void DrawText(ReadOnlySpan<char> text, string fontFamily, float fontSize, RGBAColor32 fontColor, in RectInt layout,
         TextAlign horizAlignment = TextAlign.Center, TextAlign vertAlignment = TextAlign.Near)
     {
         var x = layout.UpperLeft.X;
@@ -68,7 +71,7 @@ public class MagickImageRenderer() : Renderer<MagickImage>(), IDisposable
 
         if (_cachedDensity is null)
         {
-            var origDensity = surface.Density.ChangeUnits(DensityUnit.PixelsPerInch);
+            var origDensity = Surface.Density.ChangeUnits(DensityUnit.PixelsPerInch);
             _cachedDensity = origDensity.X == 0 || origDensity.Y == 0 ? new Density(72, DensityUnit.PixelsPerInch) : origDensity;
             _cachedFactor = _cachedDensity.Y / 72.0;
         }
@@ -108,7 +111,7 @@ public class MagickImageRenderer() : Renderer<MagickImage>(), IDisposable
             _captionCache[cacheKey] = overlayImage;
         }
 
-        surface.Composite(overlayImage, Gravity.Northwest, x, y, CompositeOperator.Over);
+        Surface.Composite(overlayImage, Gravity.Northwest, x, y, CompositeOperator.Over);
     }
 
     private static Gravity GetGravity(TextAlign horizAlignment, TextAlign vertAlignment)

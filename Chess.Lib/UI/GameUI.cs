@@ -208,11 +208,11 @@ public class GameUI
         return resized;
     }
 
-    public void Render<TSurface, TRenderer>(TRenderer renderer, TSurface surface, in RectInt clip)
+    public void Render<TSurface, TRenderer>(TRenderer renderer, in RectInt clip)
         where TRenderer : Renderer<TSurface>
     {
         // board
-        RenderBoard(renderer, surface, clip);
+        RenderBoard<TRenderer, TSurface>(renderer, clip);
 
         var boardRect = new RectInt((_boardEnd, _topMargin + _boardEnd), (_margin, _topMargin + _margin));
 
@@ -238,10 +238,10 @@ public class GameUI
             var left = new RectInt((_margin, x_y + _topMargin + _squareSize), (0, x_y + _topMargin));
             var right = new RectInt((left.LowerRight.X + _boardEnd, left.LowerRight.Y), (left.UpperLeft.X + _boardEnd, left.UpperLeft.Y));
 
-            renderer.DrawText(surface, fileText, _labelFont, _labelFontSize, _mainFontColor, top, vertAlignment: TextAlign.Center);
-            renderer.DrawText(surface, fileText, _labelFont, _labelFontSize, _mainFontColor, bottom, vertAlignment: TextAlign.Center);
-            renderer.DrawText(surface, rankText, _labelFont, _labelFontSize, _mainFontColor, left, TextAlign.Center, vertAlignment: TextAlign.Center);
-            renderer.DrawText(surface, rankText, _labelFont, _labelFontSize, _mainFontColor, right, TextAlign.Center, vertAlignment: TextAlign.Center);
+            renderer.DrawText(fileText, _labelFont, _labelFontSize, _mainFontColor, top, vertAlignment: TextAlign.Center);
+            renderer.DrawText(fileText, _labelFont, _labelFontSize, _mainFontColor, bottom, vertAlignment: TextAlign.Center);
+            renderer.DrawText(rankText, _labelFont, _labelFontSize, _mainFontColor, left, TextAlign.Center, vertAlignment: TextAlign.Center);
+            renderer.DrawText(rankText, _labelFont, _labelFontSize, _mainFontColor, right, TextAlign.Center, vertAlignment: TextAlign.Center);
         }
 
         var currentSide = Game.CurrentSide;
@@ -271,29 +271,29 @@ public class GameUI
             var whiteCapturedTextY = _topMargin + _boardEnd + _margin;
             if (clip.Contains(_margin, whiteCapturedTextY))
             {
-                DrawCapturedText(renderer, surface, capturedPieceCounts, Side.White, _margin, whiteCapturedTextY);
+                DrawCapturedText<TRenderer, TSurface>(renderer, capturedPieceCounts, Side.White, _margin, whiteCapturedTextY);
             }
 
             var capturedCellHeight = (int)MathF.Round(_capturedFontSize * 1.4f);
             var blackCapturedTextY = _topMargin - capturedCellHeight;
             if (clip.Contains(_margin, blackCapturedTextY))
             {
-                DrawCapturedText(renderer, surface, capturedPieceCounts, Side.Black, _margin, blackCapturedTextY);
+                DrawCapturedText<TRenderer, TSurface>(renderer, capturedPieceCounts, Side.Black, _margin, blackCapturedTextY);
             }
         }
 
         // keymap overlay (F1)
         if (ShowingKeymap)
         {
-            renderer.FillRectangle(surface, boardRect, OverlayFill);
+            renderer.FillRectangle(boardRect, OverlayFill);
 
-            renderer.DrawText(surface, KeymapText, _labelFont, _labelFontSize, FontColorBlack, boardRect,
+            renderer.DrawText(KeymapText, _labelFont, _labelFontSize, FontColorBlack, boardRect,
                 horizAlignment: TextAlign.Near, vertAlignment: TextAlign.Far);
         }
         // piece placement selection box (setup mode)
         else if (PendingPlacement is { } placementPos)
         {
-            renderer.FillRectangle(surface, boardRect, OverlayFill);
+            renderer.FillRectangle(boardRect, OverlayFill);
 
             var box = PieceTypeSelectionBox(placementPos);
             var offX = box.UpperLeft.X;
@@ -302,30 +302,30 @@ public class GameUI
             for (var i = 0; i < 7; i++)
             {
                 var squareRect = new RectInt((offX + _squareSize * (i + 1), offY + _squareSize), (offX + _squareSize * i, offY));
-                renderer.FillRectangle(surface, squareRect, i % 2 == 0 ? WhiteSquareFill : BlackSquareFill);
+                renderer.FillRectangle(squareRect, i % 2 == 0 ? WhiteSquareFill : BlackSquareFill);
 
                 if (i < 6)
                 {
-                    DrawPiece(renderer, surface, new Piece((PieceType)(i + (int)PieceType.Pawn), PlacementSide), squareRect, _pieceFontSize);
+                    DrawPiece<TRenderer, TSurface>(renderer, new Piece((PieceType)(i + (int)PieceType.Pawn), PlacementSide), squareRect, _pieceFontSize);
 
                     if (Game[placementPos] is { } existingPiece && existingPiece.Side == PlacementSide && existingPiece.PieceType == (PieceType)(i + (int)PieceType.Pawn))
                     {
-                        renderer.DrawText(surface, "\u2715", _labelFont, _pieceFontSize, RedCrossFill, squareRect, vertAlignment: TextAlign.Center);
+                        renderer.DrawText("\u2715", _labelFont, _pieceFontSize, RedCrossFill, squareRect, vertAlignment: TextAlign.Center);
                     }
                 }
                 else
                 {
                     // Toggle-side button: show ⇄ symbol with half-and-half pieces
                     var oppositeSide = PlacementSide.ToOpposite();
-                    DrawPiece(renderer, surface, new Piece(PieceType.Pawn, oppositeSide), squareRect, _capturedFontSize);
-                    renderer.DrawText(surface, "\u21C4", _labelFont, _labelFontSize, LastMoveBorderColor, squareRect, vertAlignment: TextAlign.Center);
+                    DrawPiece<TRenderer, TSurface>(renderer, new Piece(PieceType.Pawn, oppositeSide), squareRect, _capturedFontSize);
+                    renderer.DrawText("\u21C4", _labelFont, _labelFontSize, LastMoveBorderColor, squareRect, vertAlignment: TextAlign.Center);
                 }
             }
         }
         // promote piece type selection box
         else if (PendingPromotion is { })
         {
-            renderer.FillRectangle(surface, boardRect, OverlayFill);
+            renderer.FillRectangle(boardRect, OverlayFill);
 
             var box = PromotePieceTypeSelectionBox(currentSide);
             var offX = box.UpperLeft.X;
@@ -334,28 +334,28 @@ public class GameUI
             for (var i = 0; i < 4; i++)
             {
                 var squareRect = new RectInt((offX + _squareSize * (i + 1), offY + _squareSize), (offX + _squareSize * i, offY));
-                renderer.FillRectangle(surface, squareRect, i % 2 == 0 ? WhiteSquareFill : BlackSquareFill);
+                renderer.FillRectangle(squareRect, i % 2 == 0 ? WhiteSquareFill : BlackSquareFill);
 
-                DrawPiece(renderer, surface, new Piece((PieceType)(i + (int)PieceType.Knight), currentSide), squareRect, _pieceFontSize);
+                DrawPiece<TRenderer, TSurface>(renderer, new Piece((PieceType)(i + (int)PieceType.Knight), currentSide), squareRect, _pieceFontSize);
             }
         }
         else if (Mode != GameUIMode.Playback && Game is { GameStatus: GameStatus.Checkmate or GameStatus.Checkmate })
         {
-            renderer.FillRectangle(surface, boardRect, OverlayFill);
+            renderer.FillRectangle(boardRect, OverlayFill);
 
             var message = Game.GameStatus.ToMessage(Game.IsFinished ? Game.Winner : Game.CurrentSide);
-            renderer.DrawText(surface, message, _labelFont, _capturedFontSize, _mainFontColor, boardRect, vertAlignment: TextAlign.Center);
+            renderer.DrawText(message, _labelFont, _capturedFontSize, _mainFontColor, boardRect, vertAlignment: TextAlign.Center);
         }
     }
 
-    private void DrawCapturedText<TRenderer, TSurface>(TRenderer renderer, TSurface surface, ReadOnlySpan<byte> capturedPieceCounts, Side side, int x, int y)
+    private void DrawCapturedText<TRenderer, TSurface>(TRenderer renderer, ReadOnlySpan<byte> capturedPieceCounts, Side side, int x, int y)
         where TRenderer : Renderer<TSurface>
     {
         // Calculate size and clear the area first
         var cellSize = (int)MathF.Round(_capturedFontSize * 1.4f);
         var maxWidth = _boardEnd - x;
         var clearRect = new RectInt((x + maxWidth, y + cellSize), (x, y));
-        renderer.FillRectangle(surface, clearRect, _capturedAreaColor);
+        renderer.FillRectangle(clearRect, _capturedAreaColor);
 
         var pieceX = x;
         var capturedSide = side.ToOpposite();
@@ -365,17 +365,17 @@ public class GameUI
             if (count > 0)
             {
                 var layoutCount = new RectInt((pieceX + cellSize, y + cellSize), (pieceX, y));
-                renderer.DrawText(surface, Convert.ToString(count), _labelFont, _capturedFontSize, _mainFontColor, layoutCount, vertAlignment: TextAlign.Center);
+                renderer.DrawText(Convert.ToString(count), _labelFont, _capturedFontSize, _mainFontColor, layoutCount, vertAlignment: TextAlign.Center);
                 pieceX += count <= 9 ? cellSize : 2 * cellSize;
 
                 var layoutPiece = new RectInt((pieceX + cellSize, y + cellSize), (pieceX, y));
-                DrawPiece(renderer, surface, new Piece((PieceType)pieceIdx, capturedSide), layoutPiece, _capturedFontSize);
+                DrawPiece<TRenderer, TSurface>(renderer, new Piece((PieceType)pieceIdx, capturedSide), layoutPiece, _capturedFontSize);
                 pieceX += (int)(1.5 * cellSize);
             }
         }
     }
 
-    private void RenderBoard<TRenderer, TSurface>(TRenderer renderer, TSurface surface, in RectInt clip)
+    private void RenderBoard<TRenderer, TSurface>(TRenderer renderer, in RectInt clip)
         where TRenderer : Renderer<TSurface>
     {
         // Collect squares to draw and pieces to render
@@ -431,38 +431,38 @@ public class GameUI
         }
 
         // Batch draw all squares in a single call
-        renderer.FillRectangles(surface, squaresToDraw[..squareCount]);
+        renderer.FillRectangles(squaresToDraw[..squareCount]);
 
         // Draw pieces after squares (pieces must be on top)
         for (var i = 0; i < pieceCount; i++)
         {
             var (position, piece, rect) = piecesToDraw[i];
-            DrawPiece(renderer, surface, piece, rect, _pieceFontSize);
+            DrawPiece<TRenderer, TSurface>(renderer, piece, rect, _pieceFontSize);
         }
 
         // Draw last-move highlight border on the destination square
         if (LastMove is (var lastMoveTo, var lastMoveIsCapture))
         {
             var borderColor = lastMoveIsCapture ? SelectedSquareFill : LastMoveBorderColor;
-            DrawLastMoveBorder(renderer, surface, lastMoveTo, borderColor);
+            DrawLastMoveBorder<TRenderer, TSurface>(renderer, lastMoveTo, borderColor);
         }
     }
 
-    private void DrawLastMoveBorder<TRenderer, TSurface>(TRenderer renderer, TSurface surface, Position position, RGBAColor32 color)
+    private void DrawLastMoveBorder<TRenderer, TSurface>(TRenderer renderer, Position position, RGBAColor32 color)
         where TRenderer : Renderer<TSurface>
     {
         var inset = SquareRect(position).Inflate(-LastMoveBorderWidth);
-        renderer.DrawRectangle(surface, inset, color, LastMoveBorderWidth);
+        renderer.DrawRectangle(inset, color, LastMoveBorderWidth);
     }
 
-    private void DrawPiece<TRenderer, TSurface>(TRenderer renderer, TSurface surface, Piece piece, RectInt rect, float fontSize)
+    private void DrawPiece<TRenderer, TSurface>(TRenderer renderer, Piece piece, RectInt rect, float fontSize)
         where TRenderer : Renderer<TSurface>
     {
         var whiteText = char.ToString(piece.PieceType.ToUnicode(Side.White));
         var blackText = char.ToString(piece.PieceType.ToUnicode(Side.Black));
 
-        renderer.DrawText(surface, blackText, _pieceFont, fontSize, piece.Side is Side.White ? FontColorWhite : FontColorBlack, rect, vertAlignment: TextAlign.Center);
-        renderer.DrawText(surface, whiteText, _pieceFont, fontSize, piece.Side is Side.White ? FontColorBlack : FontColorGrey,  rect, vertAlignment: TextAlign.Center);
+        renderer.DrawText(blackText, _pieceFont, fontSize, piece.Side is Side.White ? FontColorWhite : FontColorBlack, rect, vertAlignment: TextAlign.Center);
+        renderer.DrawText(whiteText, _pieceFont, fontSize, piece.Side is Side.White ? FontColorBlack : FontColorGrey,  rect, vertAlignment: TextAlign.Center);
     }
 
     public Position? FindSelected(int x, int y)

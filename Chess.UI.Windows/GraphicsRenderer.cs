@@ -1,28 +1,31 @@
-﻿using Chess.Lib.UI;
+using Chess.Lib.UI;
 
 namespace Chess.UI.Windows;
 
-public sealed class GraphicsRenderer(FontCache fontCache) : Renderer<Graphics>
+public sealed class GraphicsRenderer(FontCache fontCache, Graphics surface) : Renderer<Graphics>(surface)
 {
-    public override void DrawRectangle(Graphics surface, in RectInt rect, RGBAColor32 strokeColor, int strokeWidth)
+    public override int Width => (int)Surface.VisibleClipBounds.Width;
+    public override int Height => (int)Surface.VisibleClipBounds.Height;
+
+    public override void DrawRectangle(in RectInt rect, RGBAColor32 strokeColor, int strokeWidth)
     {
         using var pen = new Pen(strokeColor.ToColor(), strokeWidth);
-        surface.DrawRectangle(pen, rect.ToRectF());
+        Surface.DrawRectangle(pen, rect.ToRectF());
     }
 
-    public override void FillRectangle(Graphics surface, in RectInt rect, RGBAColor32 fillColor)
+    public override void FillRectangle(in RectInt rect, RGBAColor32 fillColor)
     {
         using var brush = new SolidBrush(fillColor.ToColor());
-        surface.FillRectangle(brush, rect.ToRectF());
+        Surface.FillRectangle(brush, rect.ToRectF());
     }
 
-    public override void FillEllipse(Graphics surface, in RectInt rect, RGBAColor32 fillColor)
+    public override void FillEllipse(in RectInt rect, RGBAColor32 fillColor)
     {
         using var brush = new SolidBrush(fillColor.ToColor());
-        surface.FillEllipse(brush, rect.ToRectF());
+        Surface.FillEllipse(brush, rect.ToRectF());
     }
 
-    public override void DrawText(Graphics surface, ReadOnlySpan<char> text, string fontFileOrFamily, float fontSize, RGBAColor32 fontColor, in RectInt rect,
+    public override void DrawText(ReadOnlySpan<char> text, string fontFileOrFamily, float fontSize, RGBAColor32 fontColor, in RectInt rect,
         TextAlign horizAlignment = TextAlign.Near, TextAlign vertAlignment = TextAlign.Center)
     {
         var fontFamily = fontCache.GetFontFamily(fontFileOrFamily);
@@ -30,6 +33,6 @@ public sealed class GraphicsRenderer(FontCache fontCache) : Renderer<Graphics>
 
         var textFormatFlags = horizAlignment.ToHorizontalFlag() | vertAlignment.ToVerticalFlag();
 
-        TextRenderer.DrawText(surface, text, font, rect.ToRectInt(), fontColor.ToColor(), textFormatFlags);
+        TextRenderer.DrawText(Surface, text, font, rect.ToRectInt(), fontColor.ToColor(), textFormatFlags);
     }
 }

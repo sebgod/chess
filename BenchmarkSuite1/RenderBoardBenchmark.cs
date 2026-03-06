@@ -15,8 +15,8 @@ public class RenderBoardBenchmark
     [GlobalSetup]
     public void Setup()
     {
-        _renderer = new MagickImageRenderer();
         _surface = new MagickImage(MagickColors.White, 800, 800);
+        _renderer = new MagickImageRenderer(_surface);
         var game = new Game();
         _gameUI = new GameUI(game, 800, 800);
         var squareSize = _gameUI.SquareSize;
@@ -33,6 +33,6 @@ public class RenderBoardBenchmark
     [Benchmark]
     public void RenderFullBoard()
     {
-        _gameUI.Render(_renderer, _surface, _fullClip);
+        _gameUI.Render<MagickImage, MagickImageRenderer>(_renderer, _fullClip);
     }
 }

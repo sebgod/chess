@@ -22,15 +22,15 @@ public class SixelEncoderBenchmark
     [GlobalSetup]
     public void Setup()
     {
-        _renderer = new MagickImageRenderer();
         _surface = new MagickImage(MagickColors.Black, 800, 800);
+        _renderer = new MagickImageRenderer(_surface);
         var game = new Game();
         _gameUI = new GameUI(game, 800, 800);
         var squareSize = _gameUI.SquareSize;
         _fullClip = new RectInt((squareSize * 10, squareSize * 10), PointInt.Origin);
 
         // Render once so the surface has realistic chess board content
-        _gameUI.Render(_renderer, _surface, _fullClip);
+        _gameUI.Render<MagickImage, MagickImageRenderer>(_renderer, _fullClip);
 
         // Partial render: middle third of the image (simulates a clip region)
         _partialStartY = (int)(_surface.Height / 3);
