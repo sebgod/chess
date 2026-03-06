@@ -96,7 +96,11 @@ public sealed class VirtualTerminal : IVirtualTerminal
 
     public void Clear() => System.Console.Clear();
 
-    public void SetCursorPosition(int left, int top) => System.Console.SetCursorPosition(left, top);
+    public void SetCursorPosition(int left, int top)
+    {
+        var (width, height) = Size;
+        System.Console.SetCursorPosition(Math.Clamp(left, 0, width - 1), Math.Clamp(top, 0, height - 1));
+    }
 
     public void Write(string text) => System.Console.Write(text);
 

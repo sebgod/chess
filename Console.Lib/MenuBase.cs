@@ -70,6 +70,13 @@ public abstract class MenuBase<T>(IVirtualTerminal terminal, TimeProvider timePr
         {
             if (!terminal.HasInput())
             {
+                // Check for resize while idle
+                var (w, h) = terminal.Size;
+                if (w != _lastWindowWidth || h != _lastWindowHeight)
+                {
+                    menuStartRow = DrawMenuAlternateScreen(title, prompt, items, selected);
+                }
+
                 await Task.Delay(TimeSpan.FromMilliseconds(25), timeProvider, cancellationToken);
                 continue;
             }
