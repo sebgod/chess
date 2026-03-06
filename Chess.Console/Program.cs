@@ -1,12 +1,9 @@
-using System.Text;
 using Chess.Console;
 using Chess.Lib;
-using Console.Lib;
 using Chess.Lib.UI;
+using Chess.UCI;
+using Console.Lib;
 using System.CommandLine;
-
-System.Console.InputEncoding = Encoding.UTF8;
-System.Console.OutputEncoding = Encoding.UTF8;
 
 var noColorOption = new Option<bool>("--no-color")
 {
@@ -60,7 +57,8 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
 
     var timeProvider = TimeProvider.System;
     await using var terminal = new VirtualTerminal();
-    var hasSixel = !forceAscii && await terminal.HasSixelSupportAsync();
+    await terminal.InitAsync();
+    var hasSixel = !forceAscii && terminal.HasSixelSupport;
 
     if (hasSixel)
     {
@@ -96,13 +94,9 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
 
     }
 
-    var (cellWidth, cellHeight) = hasSixel
-        ? await terminal.QueryCellSizeAsync() ?? (10u, 20u)
-        : (10u, 20u);
-
     var gameLoop = new GameLoop(
         timeProvider,
-        game => hasSixel  ? new SixelGameDisplay(terminal, game, cellWidth, cellHeight) : new AsciiDisplay(terminal, game),
+        game => hasSixel  ? new SixelGameDisplay(terminal, game) : new AsciiDisplay(terminal, game),
         () => new HumanPlayer(terminal),
         (computerSide, tp) => new UciPlayer(Path.Combine(AppContext.BaseDirectory, "chess-engine" + (OperatingSystem.IsWindows() ? ".exe" : "")), computerSide, tp)
     );

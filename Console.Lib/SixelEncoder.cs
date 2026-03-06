@@ -4,6 +4,29 @@ using System.Runtime.InteropServices;
 
 namespace Console.Lib;
 
+public static class MagickExtensions
+{
+    extension(MagickImage image)
+    {
+        /// <summary>
+        /// Writes the full image as a Sixel stream.
+        /// </summary>
+        public void EncodeSixel(Stream output)
+            => EncodeSixel(image, 0, image.Height, output);
+
+
+        public void EncodeSixel(int startY, uint height, Stream output)
+        {
+            var channels = (int)image.ChannelCount;
+
+            using var pixels = image.GetPixelsUnsafe();
+            var rawPixels = pixels.GetArea(0, startY, image.Width, height) ?? throw new InvalidOperationException("Failed to get pixel data");
+
+            SixelEncoder.Encode(rawPixels, startY, (int)image.Width, (int)height, channels, output);
+        }
+    }
+}
+
 /// <summary>
 /// Encodes a <see cref="MagickImage"/> (Q8) to Sixel terminal graphics format,
 /// replacing the built-in <see cref="MagickFormat.Sixel"/> writer with a custom
@@ -33,28 +56,34 @@ public static class SixelEncoder
     private const int MaxColors = 256;
 
     /// <summary>
-    /// Writes the full image as a Sixel stream.
-    /// </summary>
-    public static void Encode(MagickImage image, Stream output)
-        => Encode(image, 0, image.Height, output);
-
-    /// <summary>
     /// Writes a vertical slice of the image as a Sixel stream,
     /// avoiding the need to clone and crop for partial renders.
     /// </summary>
-    public static void Encode(MagickImage image, int startY, uint height, Stream output)
+    /// <remarks>
+    /// Only vertical clipping is supported — the full image width is always emitted.
+    /// Sixel is a band-based format: each 6-pixel-tall band is encoded as a sequence
+    /// of color runs spanning the full width, terminated by <c>$</c> (carriage return,
+    /// overlays the next color in the same band) and <c>-</c> (line feed, advances to
+    /// the next band). There is no horizontal positioning within a band — characters
+    /// are emitted left to right with no way to skip columns. Horizontal clipping
+    /// would require emitting a separate DCS sequence per band with cursor
+    /// repositioning between them, adding significant complexity and overhead.
+    ///
+    /// <para>
+    /// References:
+    /// <list type="bullet">
+    /// <item><see href="https://vt100.net/docs/vt3xx-gp/chapter14.html">
+    /// DEC VT330/VT340 Programmer Reference Manual, Chapter 14 — Sixel Graphics</see></item>
+    /// <item><see href="https://saitoha.github.io/libsixel/">
+    /// libsixel — Sixel format description and reference implementation</see></item>
+    /// </list>
+    /// </para>
+    /// </remarks>
+    public static void Encode(byte[] rawPixels, int startY, int width, int height, int channels, Stream output)
     {
-        var w = (int)image.Width;
-        var h = (int)height;
-        var channels = (int)image.ChannelCount;
-
-        var pixels = image.GetPixelsUnsafe();
-        var rawPixels = pixels.GetArea(0, startY, image.Width, height);
-        ArgumentNullException.ThrowIfNull(rawPixels);
-
-        var pixelCount = w * h;
+        var pixelCount = width * height;
         var indexMap = ArrayPool<byte>.Shared.Rent(pixelCount);
-        var sixelGrid = ArrayPool<byte>.Shared.Rent(MaxColors * w);
+        var sixelGrid = ArrayPool<byte>.Shared.Rent(MaxColors * width);
         var paletteArr = ArrayPool<int>.Shared.Rent(MaxColors);
         var outputBuf = ArrayPool<byte>.Shared.Rent(65_536);
 
@@ -63,9 +92,9 @@ public static class SixelEncoder
             var paletteSize = BuildPaletteAndIndexMap(rawPixels, pixelCount, channels, indexMap, paletteArr);
 
             var writer = new BufferedWriter(output, outputBuf);
-            WriteHeader(ref writer, w, h);
+            WriteHeader(ref writer, width, height);
             WritePalette(ref writer, paletteArr, paletteSize);
-            WriteSixelData(ref writer, indexMap, sixelGrid, w, h, paletteSize);
+            WriteSixelData(ref writer, indexMap, sixelGrid, width, height, paletteSize);
             WriteTerminator(ref writer);
             writer.Flush();
         }

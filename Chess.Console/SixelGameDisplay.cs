@@ -23,40 +23,52 @@ internal sealed class SixelGameDisplay : IGameDisplay
     private readonly MagickImageRenderer _imageRenderer;
     private readonly SixelDisplay _display;
     private readonly ConsoleGameRenderer _chrome;
-
-    private int _imageColumns;
-    private int _imageRows;
+    private readonly TerminalLayout _layout;
+    private readonly TerminalViewport _boardViewport;
+    private readonly TerminalViewport _historyViewport;
+    private readonly TerminalViewport _statusBarViewport;
 
     public GameUI UI { get; private set; }
 
-    public SixelGameDisplay(IVirtualTerminal terminal, Game game, uint cellWidth, uint cellHeight)
+    public SixelGameDisplay(IVirtualTerminal terminal, Game game)
     {
         _terminal = terminal;
+
+        var (cellWidth, cellHeight) = terminal.CellSize;
+
         _cellWidth = cellWidth;
         _cellHeight = cellHeight;
 
-        var (consoleWidth, consoleHeight) = terminal.Size;
-        _imageColumns = consoleWidth - HistoryColumns;
-        _imageRows = consoleHeight - StatusBarRows;
+        _layout = new TerminalLayout(terminal);
+        _statusBarViewport = _layout.Dock(Dock.Bottom, StatusBarRows);
+        _historyViewport = _layout.Dock(Dock.Right, HistoryColumns);
+        _boardViewport = _layout.Dock(Dock.Fill);
 
-        var width = (uint)_imageColumns * cellWidth;
-        var height = (uint)_imageRows * cellHeight;
+        var (boardCols, boardRows) = _boardViewport.Size;
+        var width = (uint)boardCols * cellWidth;
+        var height = (uint)boardRows * cellHeight;
 
         _image = new MagickImage(MagickColors.Black, width, height);
         _imageRenderer = new MagickImageRenderer();
-        _display = new SixelDisplay(terminal);
-        _chrome = new ConsoleGameRenderer(terminal, HistoryColumns, consoleWidth, consoleHeight);
+        _display = new SixelDisplay(_boardViewport);
+        _chrome = new ConsoleGameRenderer(_historyViewport, _statusBarViewport);
 
         UI = new GameUI(game, _image.Width, _image.Height,
             mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
             backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff),
             alignment: (cellWidth, cellHeight),
-            resolveHistoryClick: ResolveHistoryClick);
-        UI.HistoryViewportRows = consoleHeight - 2;
+            resolveHistoryClick: ResolveHistoryClick)
+        {
+            HistoryViewportRows = _historyViewport.Size.Height - 1
+        };
     }
 
-    private int? ResolveHistoryClick(int px, int py) =>
-        _chrome.PlyIndexFromPixel(px, py, _cellWidth, _cellHeight, UI.Game.PlyCount, UI.HistoryScrollStart);
+    private int? ResolveHistoryClick(int px, int py)
+    {
+        var cellCol = px / (int)_cellWidth - (_terminal.Size.Width - HistoryColumns);
+        var cellRow = py / (int)_cellHeight;
+        return _chrome.PlyIndexFromCell(cellCol, cellRow, UI.Game.PlyCount, UI.HistoryScrollStart);
+    }
 
     public void RenderInitial(Game game)
     {
@@ -88,22 +100,17 @@ internal sealed class SixelGameDisplay : IGameDisplay
 
     public void HandleResize(Game game)
     {
-        var (newConsoleWidth, newConsoleHeight) = _terminal.Size;
-
-        if (!_chrome.NeedsResize(newConsoleWidth, newConsoleHeight))
+        if (!_layout.Recompute())
             return;
 
-        _imageColumns = newConsoleWidth - HistoryColumns;
-        _imageRows = newConsoleHeight - StatusBarRows;
-        var width = (uint)_imageColumns * _cellWidth;
-        var height = (uint)_imageRows * _cellHeight;
+        var (boardCols, boardRows) = _boardViewport.Size;
+        var width = (uint)boardCols * _cellWidth;
+        var height = (uint)boardRows * _cellHeight;
 
         _image.Read(MagickColors.Black, width, height);
 
         UI = UI.Resize(_image.Width, _image.Height);
-        UI.HistoryViewportRows = newConsoleHeight - 2;
-
-        _chrome.Resize(newConsoleWidth, newConsoleHeight);
+        UI.HistoryViewportRows = _historyViewport.Size.Height - 1;
 
         _display.RenderFrame(UI, _imageRenderer, _image, [], _cellHeight);
         _chrome.RenderStatusBar(game, _display.Stats, playbackInfo: PlaybackInfo);

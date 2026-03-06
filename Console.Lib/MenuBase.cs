@@ -14,7 +14,7 @@ public abstract class MenuBase<T>(IVirtualTerminal terminal, TimeProvider timePr
 
     public async Task<T> ShowAsync(CancellationToken cancellationToken)
     {
-        _cellHeight = (await terminal.QueryCellSizeAsync())?.Height;
+        _cellHeight = terminal.CellSize.Height;
         return await ShowAsyncCore(cancellationToken);
     }
 

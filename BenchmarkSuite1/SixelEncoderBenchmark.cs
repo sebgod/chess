@@ -53,7 +53,7 @@ public class SixelEncoderBenchmark
     [Benchmark]
     public void CustomSixel_Full()
     {
-        SixelEncoder.Encode(_surface, Stream.Null);
+        _surface.EncodeSixel(Stream.Null);
     }
 
     [Benchmark]
@@ -68,6 +68,6 @@ public class SixelEncoderBenchmark
     [Benchmark]
     public void CustomSixel_Partial()
     {
-        SixelEncoder.Encode(_surface, _partialStartY, _partialHeight, Stream.Null);
+        _surface.EncodeSixel(_partialStartY, _partialHeight, Stream.Null);
     }
 }

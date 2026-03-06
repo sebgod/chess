@@ -18,7 +18,7 @@ internal readonly record struct RenderStats(double LastFrameMs, long FullRenders
 /// Renders a <see cref="GameUI"/> scene to the terminal using Sixel graphics,
 /// supporting both full and partial (clip-region) output.
 /// </summary>
-internal sealed class SixelDisplay(IVirtualTerminal terminal)
+internal sealed class SixelDisplay(ITerminalViewport viewport)
 {
 #if DEBUG
     private readonly Stopwatch _stopwatch = new();
@@ -68,9 +68,8 @@ internal sealed class SixelDisplay(IVirtualTerminal terminal)
 
         if (isFullRender)
         {
-            terminal.SetCursorPosition(0, 0);
-            terminal.Flush();
-            SixelEncoder.Encode(image, terminal.OutputStream);
+            viewport.SetCursorPosition(0, 0);
+            image.EncodeSixel(viewport.OutputStream);
         }
         else
         {
@@ -84,9 +83,8 @@ internal sealed class SixelDisplay(IVirtualTerminal terminal)
 
             if (cropHeight > 0)
             {
-                terminal.SetCursorPosition(0, startRow);
-                terminal.Flush();
-                SixelEncoder.Encode(image, pixelStartY, (uint)cropHeight, terminal.OutputStream);
+                viewport.SetCursorPosition(0, startRow);
+                image.EncodeSixel(pixelStartY, (uint)cropHeight, viewport.OutputStream);
             }
         }
 

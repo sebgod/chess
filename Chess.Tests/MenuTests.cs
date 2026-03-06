@@ -105,12 +105,14 @@ public class MenuTests
     ];
 
     // Mouse click on first menu item row selects index 0
+    // FakeTerminal.CellSize is (10, 20), so mouse events use pixel coordinates
     private static object[] MouseClickOnItem()
     {
+        const int cellHeight = 20;
         var menuStartRow = ComputeMenuStartRow(3);
         return
         [
-            new Queue<ConsoleInputEvent>([Mouse(menuStartRow)]),
+            new Queue<ConsoleInputEvent>([Mouse(menuStartRow * cellHeight)]),
             0,
         ];
     }

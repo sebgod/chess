@@ -10,36 +10,22 @@ namespace Chess.Console;
 /// </summary>
 internal sealed class ConsoleGameRenderer
 {
-    private readonly IVirtualTerminal _terminal;
-    private readonly int _historyColumnWidth;
-    private int _historyStartColumn;
-    private int _historyRowCount;
-    private int _statusBarRow;
-    private int _totalWidth;
+    private readonly ITerminalViewport _historyViewport;
+    private readonly ITerminalViewport _statusBarViewport;
 
-    internal ConsoleGameRenderer(IVirtualTerminal terminal, int historyColumnWidth, int consoleWidth, int consoleHeight)
+    internal ConsoleGameRenderer(
+        ITerminalViewport historyViewport,
+        ITerminalViewport statusBarViewport)
     {
-        _terminal = terminal;
-        _historyColumnWidth = historyColumnWidth;
-        Resize(consoleWidth, consoleHeight);
+        _historyViewport = historyViewport;
+        _statusBarViewport = statusBarViewport;
     }
 
-    /// <summary>
-    /// Recalculates layout positions after a console resize.
-    /// </summary>
-    public void Resize(int consoleWidth, int consoleHeight)
-    {
-        _historyStartColumn = consoleWidth - _historyColumnWidth;
-        _historyRowCount = consoleHeight - 1;
-        _statusBarRow = consoleHeight - 1;
-        _totalWidth = consoleWidth;
-    }
-
-    private bool TrySetCursorPosition(int left, int top)
+    private static bool TrySetCursorPosition(ITerminalViewport viewport, int left, int top)
     {
         try
         {
-            _terminal.SetCursorPosition(left, top);
+            viewport.SetCursorPosition(left, top);
             return true;
         }
         catch (ArgumentOutOfRangeException)
@@ -48,17 +34,16 @@ internal sealed class ConsoleGameRenderer
         }
     }
 
-    public bool NeedsResize(int newConsoleWidth, int newConsoleHeight) => _totalWidth != newConsoleWidth || _statusBarRow + 1 != newConsoleHeight;
-
     /// <summary>
     /// Renders the status bar showing the current game state.
     /// </summary>
     public void RenderStatusBar(Game game, RenderStats? stats = null, File? pendingFile = null, Side? placementSide = null, (int PlyIndex, int PlyCount)? playbackInfo = null)
     {
-        if (_statusBarRow < 0 || _totalWidth <= 0)
+        var totalWidth = _statusBarViewport.Size.Width;
+        if (totalWidth <= 0)
             return;
 
-        if (!TrySetCursorPosition(0, _statusBarRow))
+        if (!TrySetCursorPosition(_statusBarViewport, 0, 0))
             return;
 
         var fileInfo = pendingFile is { } f ? $" [{f.ToLabel()}]" : "";
@@ -87,8 +72,8 @@ internal sealed class ConsoleGameRenderer
             }
         }
 
-        var padWidth = _totalWidth - debugInfo.Length;
-        _terminal.Write($"\e[97;100m{status.PadRight(padWidth)}{debugInfo}\e[0m");
+        var padWidth = totalWidth - debugInfo.Length;
+        _statusBarViewport.Write($"\e[97;100m{status.PadRight(padWidth)}{debugInfo}\e[0m");
     }
 
     /// <summary>
@@ -96,21 +81,20 @@ internal sealed class ConsoleGameRenderer
     /// </summary>
     public void RenderHistory(Game game, int? highlightPlyIndex = null, int? scrollStart = null)
     {
-        if (_historyStartColumn < 0)
+        var historyRowCount = _historyViewport.Size.Height;
+
+        // Render header
+        if (!TrySetCursorPosition(_historyViewport, 0, 0))
             return;
+        _historyViewport.Write($"\e[97;100m{" Move History".PadRight(_historyViewport.Size.Width)}\e[0m");
 
         var plies = game.Plies;
         var moveCount = (plies.Count + 1) / 2;
-        var startMove = scrollStart ?? Math.Max(0, moveCount - (_historyRowCount - 1));
+        var startMove = scrollStart ?? Math.Max(0, moveCount - (historyRowCount - 1));
 
-        // Render header
-        if (!TrySetCursorPosition(_historyStartColumn, 0))
-            return;
-        _terminal.Write($"\e[97;100m{" Move History".PadRight(_historyColumnWidth)}\e[0m");
-
-        for (var row = 1; row < _historyRowCount; row++)
+        for (var row = 1; row < historyRowCount; row++)
         {
-            if (!TrySetCursorPosition(_historyStartColumn, row))
+            if (!TrySetCursorPosition(_historyViewport, 0, row))
                 return;
 
             var moveIdx = startMove + row - 1;
@@ -130,48 +114,47 @@ internal sealed class ConsoleGameRenderer
                     var prefix = $" {idxStr} ";
                     var whiteText = $"{whitePly,-8}";
                     var blackText = $" {blackPlyStr,-8}";
-                    var remaining = _historyColumnWidth - prefix.Length - whiteText.Length - blackText.Length;
+                    var remaining = _historyViewport.Size.Width - prefix.Length - whiteText.Length - blackText.Length;
 
                     var whiteColor = isHighlightedWhite ? "\e[97;44m" : "\e[37;40m";
                     var blackColor = isHighlightedBlack ? "\e[97;44m" : "\e[37;40m";
 
-                    _terminal.Write($"\e[37;40m{prefix}{whiteColor}{whiteText}\e[37;40m{blackColor}{blackText}\e[37;40m{new string(' ', Math.Max(0, remaining))}\e[0m");
+                    _historyViewport.Write($"\e[37;40m{prefix}{whiteColor}{whiteText}\e[37;40m{blackColor}{blackText}\e[37;40m{new string(' ', Math.Max(0, remaining))}\e[0m");
                 }
                 else
                 {
                     var line = $" {idxStr} {whitePly,-8} {blackPlyStr,-8}";
-                    _terminal.Write($"\e[37;40m{line.PadRight(_historyColumnWidth)}\e[0m");
+                    _historyViewport.Write($"\e[37;40m{line.PadRight(_historyViewport.Size.Width)}\e[0m");
                 }
             }
             else
             {
-                _terminal.Write($"\e[37;40m{new string(' ', _historyColumnWidth)}\e[0m");
+                _historyViewport.Write($"\e[37;40m{new string(' ', _historyViewport.Size.Width)}\e[0m");
             }
         }
     }
 
     /// <summary>
-    /// Converts pixel coordinates to a ply index in the history panel.
-    /// Returns null if the click is outside the history area.
+    /// Converts viewport-local cell coordinates to a ply index in the history panel.
+    /// Returns null if the cell is outside the history data area.
     /// </summary>
-    public int? PlyIndexFromPixel(int pixelX, int pixelY, uint cellWidth, uint cellHeight, int plyCount, int? scrollStart = null)
+    public int? PlyIndexFromCell(int cellCol, int cellRow, int plyCount, int? scrollStart = null)
     {
-        var cellCol = pixelX / (int)cellWidth;
-        var cellRow = pixelY / (int)cellHeight;
+        var historyRowCount = _historyViewport.Size.Height;
 
-        if (cellCol < _historyStartColumn || cellRow < 1 || cellRow >= _historyRowCount)
+        if (cellCol < 0 || cellRow < 1 || cellRow >= historyRowCount)
             return null;
 
         var moveCount = (plyCount + 1) / 2;
-        var startMove = scrollStart ?? Math.Max(0, moveCount - (_historyRowCount - 1));
+        var startMove = scrollStart ?? Math.Max(0, moveCount - (historyRowCount - 1));
         var moveIdx = startMove + cellRow - 1;
         var whitePlyIdx = moveIdx * 2;
 
         if (whitePlyIdx >= plyCount)
             return null;
 
-        // Right half of the row → black ply if it exists
-        var midCol = _historyStartColumn + _historyColumnWidth / 2;
+        // Right half of the row -> black ply if it exists
+        var midCol = _historyViewport.Size.Width / 2;
         if (cellCol >= midCol && whitePlyIdx + 1 < plyCount)
             return whitePlyIdx + 1;
 

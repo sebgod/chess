@@ -8,73 +8,62 @@ namespace Console.Lib;
 /// </summary>
 public sealed class VirtualTerminal : IVirtualTerminal
 {
-    private HashSet<TerminalCapability>? _deviceCapabilities;
-    private uint? _cellWidth;
-    private uint? _cellHeight;
+    private bool _initialized;
+    private HashSet<TerminalCapability> _deviceCapabilities = [];
+    private (uint Width, uint Height)? _cellSize;
     private bool _alternateScreen;
     private Stream? _stdIn;
 
-    public async Task<bool> HasSixelSupportAsync()
+    public async Task InitAsync()
     {
-        if (_deviceCapabilities is null)
-        {
-            var response = await GetControlSequenceResponseAsync("\e[0c");
+        if (_initialized) return;
 
-            _deviceCapabilities = [.. response
-                    .TrimStart('\e', '[', '?')
-                    .TrimEnd('c')
-                    .Split(';')
-                    .Select((s) => (TerminalCapability) int.Parse(s))
-            ];
+        System.Console.InputEncoding = Encoding.UTF8;
+        System.Console.OutputEncoding = Encoding.UTF8;
+
+        var daResponse = await GetControlSequenceResponseAsync("\e[0c", 'c');
+        _deviceCapabilities = [.. daResponse
+                .TrimStart('\e', '[', '?')
+                .TrimEnd('c')
+                .Split(';')
+                .Select((s) => (TerminalCapability) int.Parse(s))
+        ];
+
+        _cellSize = (10u, 20u);
+        var csResponse = await GetControlSequenceResponseAsync("\e[16t", 't');
+        var tIndex = csResponse.IndexOf('t');
+        if (tIndex >= 0)
+        {
+            var parts = csResponse[..tIndex].TrimStart('\e', '[').Split(';');
+            if (parts.Length == 3 &&
+                parts[0] == "6" &&
+                uint.TryParse(parts[1], out var height) &&
+                uint.TryParse(parts[2], out var width))
+            {
+                _cellSize = (width, height);
+            }
         }
 
-        return _deviceCapabilities.Contains(TerminalCapability.Sixel);
+        _initialized = true;
     }
 
-    /// <summary>
-    /// Queries the terminal cell size in pixels using XTWINOPS (CSI 16 t).
-    /// Must be called before entering the alternate buffer to keep the response invisible.
-    /// </summary>
-    public async Task<(uint Width, uint Height)?> QueryCellSizeAsync()
+    public bool HasSixelSupport
     {
-        if (_cellWidth.HasValue && _cellHeight.HasValue)
+        get
         {
-            return (_cellWidth.Value, _cellHeight.Value);
+            if (!_initialized) throw new InvalidOperationException("Call InitAsync() first.");
+            return _deviceCapabilities.Contains(TerminalCapability.Sixel);
         }
-
-        var response = await GetControlSequenceResponseAsync("\e[16t");
-
-        var tIndex = response.IndexOf('t');
-        if (tIndex < 0)
-        {
-            return null;
-        }
-
-        var content = response[..tIndex];
-        var parts = content.TrimStart('\e', '[').Split(';');
-        if (parts.Length == 3 &&
-            parts[0] == "6" &&
-            uint.TryParse(parts[1], out var height) &&
-            uint.TryParse(parts[2], out var width))
-        {
-            _cellWidth = width;
-            _cellHeight = height;
-            return (width, height);
-        }
-
-        return null;
     }
+
+    public (uint Width, uint Height) CellSize =>
+        _cellSize ?? throw new InvalidOperationException("Call InitAsync() first.");
 
     /// <summary>
     /// Enters the alternate screen buffer, hides the cursor, and enables mouse tracking.
-    /// Prefers DEC Locator in pixel mode when available, falling back to
-    /// Win32 mouse input (Windows) or SGR mouse tracking (other platforms).
     /// </summary>
-    public async ValueTask EnterAlternateScreenAsync()
+    public ValueTask EnterAlternateScreenAsync()
     {
-        // cache cell size
-        _ = await QueryCellSizeAsync();
-
         if (OperatingSystem.IsWindows())
         {
             WindowsConsoleInput.EnableVirtualTerminalIO();
@@ -82,12 +71,14 @@ public sealed class VirtualTerminal : IVirtualTerminal
 
         System.Console.Write("\e[?1049h"); // Enter alternate buffer
         System.Console.Write("\e[?25l");   // Hide cursor
-        System.Console.Write("\e[?1000h"); // SGR Mouse press/release tracking
+        System.Console.Write("\e[?1000h"); // VT200 mouse tracking (basic button press/release and wheel)
         System.Console.Write("\e[?1006h"); // SGR extended tracking
-        System.Console.Out.Flush(); // Ensure all control sequences are sent before we start reading input
+        Flush();
 
         _stdIn = System.Console.OpenStandardInput();
         _alternateScreen = true;
+
+        return ValueTask.CompletedTask;
     }
 
     public bool IsAlternateScreen => _alternateScreen;
@@ -138,13 +129,13 @@ public sealed class VirtualTerminal : IVirtualTerminal
         {
             var result = ParseSgrInput();
 
-            if (result.Mouse is not { } r || !_cellWidth.HasValue || !_cellHeight.HasValue)
+            if (result.Mouse is not { } r || _cellSize is not (var cw, var ch))
             {
                 return result;
             }
 
             // Normalize cell coordinates to pixels
-            return new(new MouseEvent(r.Button, r.X * (int)_cellWidth.Value, r.Y * (int)_cellHeight.Value, r.IsRelease), ConsoleKey.None, result.Modifiers);
+            return new(new MouseEvent(r.Button, r.X * (int)cw, r.Y * (int)ch, r.IsRelease), ConsoleKey.None, result.Modifiers);
         }
         else
         {
@@ -169,7 +160,7 @@ public sealed class VirtualTerminal : IVirtualTerminal
     {
         if (_alternateScreen)
         {
-            System.Console.Write("\e[?1000l"); // Disable SGR Mouse press/release tracking
+            System.Console.Write("\e[?1000l"); // Disable VT200 mouse tracking
             System.Console.Write("\e[?1006l"); // Disable SGR extended tracking
 
             if (OperatingSystem.IsWindows())
@@ -190,23 +181,29 @@ public sealed class VirtualTerminal : IVirtualTerminal
         return ValueTask.CompletedTask;
     }
 
-    private static async ValueTask<string> GetControlSequenceResponseAsync(string sequence)
+    private static async Task<string> GetControlSequenceResponseAsync(string sequence, char terminator)
     {
-        const int maxTries = 10;
-
-        var response = new StringBuilder();
         System.Console.Write(sequence);
+        System.Console.Out.Flush();
 
-        var tries = 0;
-        while (!System.Console.KeyAvailable && tries++ < maxTries)
+        var stdin = System.Console.OpenStandardInput();
+        var buffer = new byte[1];
+        var response = new StringBuilder();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
+        try
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(10));
+            int bytesRead;
+            do
+            {
+                bytesRead = await stdin.ReadAsync(buffer, cts.Token);
+                if (bytesRead > 0) response.Append((char)buffer[0]);
+            }
+            while (bytesRead > 0 && (response.Length == 0 || response[^1] != terminator));
         }
-
-        while (System.Console.KeyAvailable)
+        catch (OperationCanceledException)
         {
-            var key = System.Console.ReadKey(true);
-            response.Append(key.KeyChar);
+            // Terminal did not respond in time
         }
 
         return response.ToString();

@@ -1,17 +1,15 @@
 using System.Collections.Immutable;
 using Chess.Lib;
 using Chess.Lib.UI;
-using Chess.UCI;
-
 using Action = Chess.Lib.Action;
 using File = Chess.Lib.File;
 
-namespace Chess.Console;
+namespace Chess.UCI;
 
 /// <summary>
 /// An AI player that communicates with a UCI engine process to make moves.
 /// </summary>
-internal sealed class UciPlayer(string enginePath, Side side, TimeProvider timeProvider) : IEngineBasedPlayer
+public sealed class UciPlayer(string enginePath, Side side, TimeProvider timeProvider) : IEngineBasedPlayer
 {
     private readonly UciClient _client = new UciClient(enginePath, timeProvider);
     private Task<UciResponse.BestMove>? _pendingMove;
