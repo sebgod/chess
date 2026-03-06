@@ -1,8 +1,12 @@
+using System.Text;
 using Chess.Console;
 using Chess.Lib;
 using Console.Lib;
 using Chess.Lib.UI;
 using System.CommandLine;
+
+System.Console.InputEncoding = Encoding.UTF8;
+System.Console.OutputEncoding = Encoding.UTF8;
 
 var noColorOption = new Option<bool>("--no-color")
 {
