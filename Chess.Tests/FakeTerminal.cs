@@ -15,6 +15,7 @@ internal sealed class FakeTerminal : IVirtualTerminal
     }
 
     public bool IsAlternateScreen { get; private set; }
+    public (int Column, int Row) Offset => (0, 0);
     public (int Width, int Height) Size => (_width, _height);
     public (int Left, int Top)? LastCursorPosition { get; private set; }
 

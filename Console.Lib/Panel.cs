@@ -2,7 +2,6 @@ namespace Console.Lib;
 
 /// <summary>
 /// Container that arranges widgets using dock-based layout.
-/// Widgets are created first, configured via fluent API, then placed into the panel.
 /// </summary>
 public class Panel
 {
@@ -15,23 +14,28 @@ public class Panel
     }
 
     /// <summary>
-    /// Docks a widget to an edge of the panel.
+    /// Creates a viewport docked to an edge and returns it for widget construction.
     /// </summary>
-    public Panel Dock(DockStyle dock, int size, Widget widget)
+    public ITerminalViewport Dock(DockStyle dock, int size)
     {
         var vp = _layout.Dock(dock, size);
-        widget.Viewport = vp;
-        _children.Add(widget);
-        return this;
+        return vp;
     }
 
     /// <summary>
-    /// Places a widget in the remaining fill area.
+    /// Creates a fill viewport and returns it for widget construction.
     /// </summary>
-    public Panel Fill(Widget widget)
+    public ITerminalViewport Fill()
     {
         var vp = _layout.Dock(DockStyle.Fill);
-        widget.Viewport = vp;
+        return vp;
+    }
+
+    /// <summary>
+    /// Registers a widget for rendering.
+    /// </summary>
+    public Panel Add(Widget widget)
+    {
         _children.Add(widget);
         return this;
     }

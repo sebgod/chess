@@ -16,6 +16,7 @@ public sealed class TerminalViewport : ITerminalViewport
         BackgroundColor = parent.BackgroundColor;
     }
 
+    public (int Column, int Row) Offset => (_columnOffset, _rowOffset);
     public (int Width, int Height) Size => (_width, _height);
 
     internal void UpdateGeometry(int columnOffset, int rowOffset, int width, int height)

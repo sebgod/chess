@@ -13,23 +13,20 @@ using File = Chess.Lib.File;
 namespace Chess.Console;
 
 /// <summary>
-/// Snapshot of rendering performance counters.
-/// </summary>
-internal readonly record struct RenderStats(double LastFrameMs, long FullRenders, long PartialRenders);
-
-/// <summary>
 /// Base class for graphical game displays that render via a <see cref="Renderer{TSurface}"/>
 /// and output Sixel to the terminal.
 /// Handles layout, chrome (status bar + move history), GameUI management, and resize logic.
 /// </summary>
 internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 {
+    /// <summary>
+    /// Snapshot of rendering performance counters.
+    /// </summary>
+    private readonly record struct RenderStats(double LastFrameMs, long FullRenders, long PartialRenders);
+
     private const int HistoryColumns = 24;
     private const int StatusBarRows = 1;
 
-    private readonly IVirtualTerminal _terminal;
-    private readonly byte _cellWidth;
-    private readonly byte _cellHeight;
     private readonly Panel _panel;
     private readonly Canvas _boardCanvas;
     private readonly TextBar _statusBar;
@@ -49,28 +46,19 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
     protected ConsoleGameDisplayBase(IVirtualTerminal terminal)
     {
-        _terminal = terminal;
+        _panel = new Panel(terminal);
 
-        var cell = terminal.CellSize;
-        _cellWidth = cell.Width;
-        _cellHeight = cell.Height;
-
-        _statusBar = new TextBar().Style("\e[97;100m");
-        _historyList = new ScrollableList<HistoryMoveRow>()
+        _statusBar = new TextBar(_panel.Dock(DockStyle.Bottom, StatusBarRows))
+            .Style("\e[97;100m");
+        _historyList = new ScrollableList<HistoryMoveRow>(_panel.Dock(DockStyle.Right, HistoryColumns))
             .Header(" Move History")
             .HeaderStyle("\e[97;100m")
             .EmptyStyle("\e[37;40m");
-        _boardCanvas = new Canvas();
+        _boardCanvas = new Canvas(_panel.Fill());
 
-        _panel = new Panel(terminal)
-            .Dock(DockStyle.Bottom, StatusBarRows, _statusBar)
-            .Dock(DockStyle.Right, HistoryColumns, _historyList)
-            .Fill(_boardCanvas);
+        _panel.Add(_statusBar).Add(_historyList).Add(_boardCanvas);
 
-        var (boardCols, boardRows) = _boardCanvas.Size;
-        var width = (uint)boardCols * cell.Width;
-        var height = (uint)boardRows * cell.Height;
-
+        var (width, height) = _boardCanvas.PixelSize;
         _renderer = CreateRenderer(width, height);
     }
 
@@ -87,20 +75,17 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
     private int? ResolveHistoryClick(int px, int py)
     {
-        var cellCol = px / _cellWidth - (_terminal.Size.Width - HistoryColumns);
-        var cellRow = py / _cellHeight;
-        return PlyIndexFromCell(cellCol, cellRow, UI.Game.PlyCount, UI.HistoryScrollStart);
-    }
-
-    private int? PlyIndexFromCell(int cellCol, int cellRow, int plyCount, int? scrollStart)
-    {
-        var historyRowCount = _historyList.Viewport.Size.Height;
-
-        if (cellCol < 0 || cellRow < 1 || cellRow >= historyRowCount)
+        if (_historyList.HitTest(px, py) is not (var cellCol, var cellRow))
             return null;
 
+        // Row 0 is the header
+        if (cellRow < 1)
+            return null;
+
+        var plyCount = UI.Game.PlyCount;
         var moveCount = (plyCount + 1) / 2;
-        var startMove = scrollStart ?? Math.Max(0, moveCount - (historyRowCount - 1));
+        var visibleRows = _historyList.VisibleRows;
+        var startMove = UI.HistoryScrollStart ?? Math.Max(0, moveCount - visibleRows);
         var moveIdx = startMove + cellRow - 1;
         var whitePlyIdx = moveIdx * 2;
 
@@ -196,10 +181,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         if (!_panel.Recompute())
             return;
 
-        var (boardCols, boardRows) = _boardCanvas.Size;
-        var width = (uint)boardCols * _cellWidth;
-        var height = (uint)boardRows * _cellHeight;
-
+        var (width, height) = _boardCanvas.PixelSize;
         _renderer.Resize(width, height);
         _gameUI = UI.Resize(width, height);
 
@@ -212,10 +194,11 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
     public void ResetGame(Game game)
     {
+        var cell = _boardCanvas.Viewport.CellSize;
         _gameUI = new GameUI(game, _renderer.Width, _renderer.Height,
             mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
             backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff),
-            alignment: (_cellWidth, _cellHeight),
+            alignment: (cell.Width, cell.Height),
             resolveHistoryClick: ResolveHistoryClick);
     }
 
@@ -252,11 +235,12 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         }
         else
         {
-            var startRow = clip.UpperLeft.Y / _cellHeight;
-            var endRow = (clip.LowerRight.Y + _cellHeight - 1) / _cellHeight;
+            var cellHeight = _boardCanvas.Viewport.CellSize.Height;
+            var startRow = clip.UpperLeft.Y / cellHeight;
+            var endRow = (clip.LowerRight.Y + cellHeight - 1) / cellHeight;
 
-            var pixelStartY = startRow * _cellHeight;
-            var pixelEndY = Math.Min(_renderer.Height, endRow * _cellHeight);
+            var pixelStartY = startRow * cellHeight;
+            var pixelEndY = Math.Min(_renderer.Height, endRow * cellHeight);
             var cropHeight = pixelEndY - pixelStartY;
 
             if (cropHeight > 0)

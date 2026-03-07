@@ -83,6 +83,8 @@ public sealed class VirtualTerminal : IVirtualTerminal
 
     public bool IsAlternateScreen => _alternateScreen;
 
+    public (int Column, int Row) Offset => (0, 0);
+
     public (int Width, int Height) Size => (System.Console.WindowWidth, System.Console.WindowHeight);
 
     public void Clear() => System.Console.Clear();

@@ -4,7 +4,7 @@ namespace Console.Lib;
 /// Multi-row scrollable list with a header row.
 /// Each item implements <see cref="IRowFormatter"/> for its own row styling.
 /// </summary>
-public class ScrollableList<TItem> : Widget where TItem : IRowFormatter
+public class ScrollableList<TItem>(ITerminalViewport viewport) : Widget(viewport) where TItem : IRowFormatter
 {
     private IReadOnlyList<TItem> _items = [];
     private int _scrollOffset;

@@ -3,7 +3,7 @@ namespace Console.Lib;
 /// <summary>
 /// Single-line widget with left-aligned text and optional right-aligned text.
 /// </summary>
-public class TextBar : Widget
+public class TextBar(ITerminalViewport viewport) : Widget(viewport)
 {
     private string _text = "";
     private string _rightText = "";

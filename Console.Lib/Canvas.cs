@@ -4,13 +4,10 @@ namespace Console.Lib;
 /// A viewport-only widget for custom rendering (e.g., Sixel graphics).
 /// The consumer drives rendering via <see cref="OutputStream"/> and <see cref="SetCursorPosition"/>.
 /// </summary>
-public class Canvas : Widget
+public class Canvas(ITerminalViewport viewport) : Widget(viewport)
 {
-    /// <summary>Viewport size in terminal cells (columns, rows).</summary>
-    public (int Columns, int Rows) Size => Viewport.Size;
-
-    /// <summary>Cell size in pixels, for computing pixel dimensions.</summary>
-    public TermCell CellSize => Viewport.CellSize;
+    /// <summary>Viewport size in pixels.</summary>
+    public (uint Width, uint Height) PixelSize => Viewport.PixelSize;
 
     /// <summary>Raw output stream for writing binary data (e.g., Sixel).</summary>
     public Stream OutputStream => Viewport.OutputStream;
