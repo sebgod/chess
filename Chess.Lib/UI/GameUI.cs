@@ -61,7 +61,10 @@ public class GameUI
 
     private const int PieceTypeStride = 7;
     private const int LastMoveBorderWidth = 3;
-    private const float SquaresNeededTight  = 11.5f;
+    // Horizontal: margin(0.5) + 8 board squares + margin(0.5) = 9, plus padding
+    private const float SquaresNeededX = 9.5f;
+    // Vertical: topMargin(~0.6) + margin(0.5) + 8 board squares + margin(0.5) + capturedHeight(~0.6) = ~10.2, plus padding
+    private const float SquaresNeededY = 10.5f;
     
     public GameUI(
         Game game,
@@ -113,8 +116,7 @@ public class GameUI
 
     public static int CalculateSquareSize(uint uiSizeX, uint uiSizeY)
     {
-        var minSize = MathF.Min(uiSizeY, uiSizeX);
-        return (int)(minSize / SquaresNeededTight);
+        return (int)MathF.Min(uiSizeX / SquaresNeededX, uiSizeY / SquaresNeededY);
     }
 
     public Game Game { get; }

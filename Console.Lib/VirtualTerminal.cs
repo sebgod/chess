@@ -18,11 +18,6 @@ public sealed class VirtualTerminal : IVirtualTerminal
     {
         if (_initialized) return;
 
-        if (OperatingSystem.IsWindows())
-        {
-            WindowsConsoleInput.EnableVirtualTerminalIO();
-        }
-
         System.Console.InputEncoding = Encoding.UTF8;
         System.Console.OutputEncoding = Encoding.UTF8;
 
@@ -31,7 +26,9 @@ public sealed class VirtualTerminal : IVirtualTerminal
                 .TrimStart('\e', '[', '?')
                 .TrimEnd('c')
                 .Split(';')
-                .Select(Enum.Parse<TerminalCapability>)
+                .Select(s => Enum.TryParse<TerminalCapability>(s, out var cap) ? cap : (TerminalCapability?)null)
+                .Where(cap => cap.HasValue)
+                .Select(cap => cap!.Value)
         ];
 
         _cellSize = new TermCell(10, 20);
@@ -47,6 +44,11 @@ public sealed class VirtualTerminal : IVirtualTerminal
             {
                 _cellSize = new TermCell((byte)width, (byte)height);
             }
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            WindowsConsoleInput.EnableVirtualTerminalIO();
         }
 
         _initialized = true;

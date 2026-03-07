@@ -87,8 +87,8 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
     private int? ResolveHistoryClick(int px, int py)
     {
-        var cellCol = px / (int)_cellWidth - (_terminal.Size.Width - HistoryColumns);
-        var cellRow = py / (int)_cellHeight;
+        var cellCol = px / _cellWidth - (_terminal.Size.Width - HistoryColumns);
+        var cellRow = py / _cellHeight;
         return PlyIndexFromCell(cellCol, cellRow, UI.Game.PlyCount, UI.HistoryScrollStart);
     }
 
