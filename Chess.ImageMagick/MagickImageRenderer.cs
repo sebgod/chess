@@ -1,10 +1,11 @@
+using Console.Lib;
 using DIR.Lib;
 using ImageMagick;
 using ImageMagick.Drawing;
 
 namespace Chess.ImageMagick;
 
-public class MagickImageRenderer(MagickImage surface) : Renderer<MagickImage>(surface), IDisposable
+public class MagickImageRenderer(MagickImage surface) : SixelRenderer<MagickImage>(surface), IDisposable
 {
     public MagickImageRenderer(uint width, uint height) : this(new MagickImage(MagickColors.Black, width, height)) { }
 
@@ -134,6 +135,12 @@ public class MagickImageRenderer(MagickImage surface) : Renderer<MagickImage>(su
             _ => Gravity.Undefined
         };
     }
+
+    public override void EncodeSixel(Stream output)
+        => Surface.EncodeSixel(output);
+
+    public override void EncodeSixel(int startY, uint height, Stream output)
+        => Surface.EncodeSixel(startY, height, output);
 
     public override void Dispose()
     {

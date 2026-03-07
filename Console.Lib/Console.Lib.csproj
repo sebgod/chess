@@ -8,6 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\DIR.Lib\DIR.Lib.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="BenchmarkSuite1" />
     <InternalsVisibleTo Include="Chess.Tests" />
   </ItemGroup>

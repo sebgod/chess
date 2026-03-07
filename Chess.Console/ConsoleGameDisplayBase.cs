@@ -31,7 +31,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
     private readonly Canvas _boardCanvas;
     private readonly TextBar _statusBar;
     private readonly ScrollableList<HistoryMoveRow> _historyList;
-    private readonly Renderer<TSurface> _renderer;
+    private readonly SixelRenderer<TSurface> _renderer;
 
     private GameUI? _gameUI;
 
@@ -59,9 +59,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         _renderer = CreateRenderer(width, height);
     }
 
-    protected abstract Renderer<TSurface> CreateRenderer(uint width, uint height);
-    protected abstract void EncodeSixel(TSurface surface, Stream output);
-    protected abstract void EncodeSixel(TSurface surface, int startY, uint height, Stream output);
+    protected abstract SixelRenderer<TSurface> CreateRenderer(uint width, uint height);
 
     private RenderStats? Stats =>
 #if DEBUG
@@ -205,12 +203,9 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         _stopwatch.Restart();
 #endif
 
-        var surface = _renderer.Surface;
         RectInt clip;
-        bool isFullRender;
         if (!clipRects.IsDefault && clipRects.Length > 0)
         {
-            isFullRender = false;
             clip = clipRects[0];
             for (var i = 1; i < clipRects.Length; i++)
             {
@@ -219,37 +214,17 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         }
         else
         {
-            isFullRender = true;
             clip = new RectInt((_renderer.Width, _renderer.Height), PointInt.Origin);
         }
 
         ui.Render<TSurface, Renderer<TSurface>>(_renderer, clip);
 
-        if (isFullRender)
-        {
-            _boardCanvas.SetCursorPosition(0, 0);
-            EncodeSixel(surface, _boardCanvas.OutputStream);
-        }
-        else
-        {
-            var cellHeight = _boardCanvas.Viewport.CellSize.Height;
-            var startRow = clip.UpperLeft.Y / cellHeight;
-            var endRow = (clip.LowerRight.Y + cellHeight - 1) / cellHeight;
-
-            var pixelStartY = startRow * cellHeight;
-            var pixelEndY = Math.Min(_renderer.Height, endRow * cellHeight);
-            var cropHeight = pixelEndY - pixelStartY;
-
-            if (cropHeight > 0)
-            {
-                _boardCanvas.SetCursorPosition(0, startRow);
-                EncodeSixel(surface, pixelStartY, (uint)cropHeight, _boardCanvas.OutputStream);
-            }
-        }
+        _boardCanvas.BlitSixel(_renderer, clip.UpperLeft.Y, clip.LowerRight.Y);
 
 #if DEBUG
         _stopwatch.Stop();
         _lastFrameMs = _stopwatch.Elapsed.TotalMilliseconds;
+        var isFullRender = clip.UpperLeft.Y <= 0 && clip.LowerRight.Y >= (int)_renderer.Height;
         if (isFullRender) _fullRenders++; else _partialRenders++;
 #endif
     }

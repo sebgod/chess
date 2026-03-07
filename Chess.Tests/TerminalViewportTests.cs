@@ -1,4 +1,5 @@
 using Console.Lib;
+using DIR.Lib;
 using Shouldly;
 using Xunit;
 
@@ -199,5 +200,81 @@ public sealed class TerminalViewportTests
         statusBar.Size.ShouldBe((80, 1));
         history.Size.ShouldBe((24, 23));
         board.Size.ShouldBe((56, 23));
+    }
+
+    [Fact]
+    public void Canvas_BlitSixel_FullRender_CallsEncodeFull()
+    {
+        var terminal = new FakeTerminal(new Queue<ConsoleInputEvent>(), 80, 24);
+        var viewport = new TerminalViewport(terminal, 0, 0, 56, 23);
+        var canvas = new Canvas(viewport);
+        var renderer = new FakeSixelRenderer(460);
+
+        canvas.BlitSixel(renderer, 0, 460);
+
+        renderer.FullEncodes.ShouldBe(1);
+        renderer.PartialEncodes.ShouldBe(0);
+        terminal.LastCursorPosition.ShouldBe((0, 0));
+    }
+
+    [Fact]
+    public void Canvas_BlitSixel_PartialRender_AlignsToCell()
+    {
+        var terminal = new FakeTerminal(new Queue<ConsoleInputEvent>(), 80, 24);
+        // CellSize is (10, 20) from FakeTerminal
+        var viewport = new TerminalViewport(terminal, 0, 0, 56, 23);
+        var canvas = new Canvas(viewport);
+        var renderer = new FakeSixelRenderer(460);
+
+        // Clip from pixel 25 to 95 — should align to cell rows: startRow=1 (y=20), endRow=5 (y=100)
+        canvas.BlitSixel(renderer, 25, 95);
+
+        renderer.FullEncodes.ShouldBe(0);
+        renderer.PartialEncodes.ShouldBe(1);
+        renderer.LastStartY.ShouldBe(20);    // row 1 * cellHeight 20
+        renderer.LastHeight.ShouldBe(80u);   // rows 1-4 * 20 = 80
+        // Cursor should be at column 0, row 1 (startRow)
+        terminal.LastCursorPosition.ShouldBe((0, 1));
+    }
+
+    [Fact]
+    public void Canvas_BlitSixel_PartialRender_ClampsToRenderHeight()
+    {
+        var terminal = new FakeTerminal(new Queue<ConsoleInputEvent>(), 80, 24);
+        var viewport = new TerminalViewport(terminal, 0, 0, 56, 23);
+        var canvas = new Canvas(viewport);
+        var renderer = new FakeSixelRenderer(450);
+
+        // Clip near bottom: 440 to 460, renderHeight=450
+        // startRow = 440/20 = 22, endRow = (460+19)/20 = 23
+        // pixelStartY = 440, pixelEndY = min(450, 460) = 450, cropHeight = 10
+        canvas.BlitSixel(renderer, 440, 460);
+
+        renderer.LastHeight.ShouldBe(10u);
+    }
+
+    private sealed class FakeSixelRenderer(uint height) : SixelRenderer<object>(new())
+    {
+        public int FullEncodes { get; private set; }
+        public int PartialEncodes { get; private set; }
+        public int LastStartY { get; private set; }
+        public uint LastHeight { get; private set; }
+
+        public override uint Width => 560;
+        public override uint Height => height;
+        public override void Resize(uint width, uint height) { }
+        public override void DrawRectangle(in RectInt rect, RGBAColor32 strokeColor, int strokeWidth) { }
+        public override void FillRectangle(in RectInt rect, RGBAColor32 fillColor) { }
+        public override void FillEllipse(in RectInt rect, RGBAColor32 fillColor) { }
+        public override void DrawText(ReadOnlySpan<char> text, string fontFamily, float fontSize, RGBAColor32 fontColor, in RectInt layout, TextAlign horizAlignment = TextAlign.Center, TextAlign vertAlignment = TextAlign.Near) { }
+        public override void Dispose() { }
+
+        public override void EncodeSixel(Stream output) => FullEncodes++;
+        public override void EncodeSixel(int startY, uint height1, Stream output)
+        {
+            PartialEncodes++;
+            LastStartY = startY;
+            LastHeight = height1;
+        }
     }
 }
