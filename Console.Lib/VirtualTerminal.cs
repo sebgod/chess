@@ -31,7 +31,7 @@ public sealed class VirtualTerminal : IVirtualTerminal
                 .TrimStart('\e', '[', '?')
                 .TrimEnd('c')
                 .Split(';')
-                .Select((s) => (TerminalCapability) int.Parse(s))
+                .Select(Enum.Parse<TerminalCapability>)
         ];
 
         _cellSize = new TermCell(10, 20);
@@ -181,23 +181,31 @@ public sealed class VirtualTerminal : IVirtualTerminal
 
     private static async Task<string> GetControlSequenceResponseAsync(string sequence, char terminator)
     {
+        const int maxTries = 10;
+
         System.Console.Write(sequence);
         System.Console.Out.Flush();
 
-        var stdin = System.Console.OpenStandardInput();
-        var buffer = new byte[1];
         var response = new StringBuilder();
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
         try
         {
-            int bytesRead;
-            do
+            var tries = 0;
+            while (!System.Console.KeyAvailable && tries++ < maxTries)
             {
-                bytesRead = await stdin.ReadAsync(buffer, cts.Token);
-                if (bytesRead > 0) response.Append((char)buffer[0]);
+                await Task.Delay(TimeSpan.FromMilliseconds(10));
             }
-            while (bytesRead > 0 && (response.Length == 0 || response[^1] != terminator));
+
+            while (System.Console.KeyAvailable)
+            {
+                var key = System.Console.ReadKey(true);
+                response.Append(key.KeyChar);
+
+                if (key.KeyChar == terminator)
+                {
+                    break;
+                }
+            }
         }
         catch (OperationCanceledException)
         {

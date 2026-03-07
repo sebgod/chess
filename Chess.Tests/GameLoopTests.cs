@@ -293,6 +293,34 @@ public class GameLoopTests
         await gameLoop.RunAsync(GameMode.PlayerVsPlayer, Side.None, cts.Token);
     }
 
+    [Fact]
+    public void Castling_LastMove_HighlightsKingDestination()
+    {
+        // Set up a board where white can castle kingside
+        var board = new Board
+        {
+            [E1] = (Side.White, PieceType.King),
+            [H1] = (Side.White, PieceType.Rook),
+            [E8] = (Side.Black, PieceType.King),
+        };
+        var game = new Game(board, Side.White, []);
+        var ui = new GameUI(game, 800, 800);
+
+        // Select king
+        ui.TryPerformAction(E1);
+
+        // Move king to g1 (kingside castling)
+        var (response, clips) = ui.TryPerformAction(G1);
+
+        response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
+        ui.LastMove.ShouldNotBeNull();
+        ui.LastMove.Value.To.ShouldBe(G1);
+
+        // Clip rects should include the king's destination
+        var kingDestRect = ui.SquareRect(G1);
+        clips.ShouldContain(kingDestRect);
+    }
+
     /// <summary>
     /// A player that immediately ends setup mode on its first call.
     /// </summary>

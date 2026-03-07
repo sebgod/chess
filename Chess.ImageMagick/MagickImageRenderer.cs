@@ -24,7 +24,7 @@ public class MagickImageRenderer(MagickImage surface) : Renderer<MagickImage>(su
         => Surface.Draw(GetDrawableEllipse(rect), new DrawableFillColor(GetColor(fillColor)), new DrawableFillOpacity(new Percentage(100)));
 
     public override void DrawRectangle(in RectInt rect, RGBAColor32 strokeColor, int strokeWidth)
-        => Surface.Draw(GetDrawableRect(rect), new DrawableFillColor(MagickColors.Transparent), new DrawableStrokeColor(GetColor(strokeColor)), new DrawableStrokeWidth(strokeWidth));
+        => Surface.Draw(GetDrawableRect(rect), new DrawableFillOpacity(new Percentage(0)), new DrawableStrokeColor(GetColor(strokeColor)), new DrawableStrokeWidth(strokeWidth));
 
     public static MagickColor GetColor(RGBAColor32 fillColor) => MagickColor.FromRgba(fillColor.Red, fillColor.Green, fillColor.Blue, fillColor.Alpha);
 
@@ -135,7 +135,7 @@ public class MagickImageRenderer(MagickImage surface) : Renderer<MagickImage>(su
         };
     }
 
-    public void Dispose()
+    public override void Dispose()
     {
         Surface.Dispose();
 
