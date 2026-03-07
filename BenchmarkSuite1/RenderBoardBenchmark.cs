@@ -1,6 +1,7 @@
 using BenchmarkDotNet.Attributes;
 using Chess.Lib;
 using Chess.Lib.UI;
+using Chess.ImageMagick;
 using ImageMagick;
 using Microsoft.VSDiagnostics;
 

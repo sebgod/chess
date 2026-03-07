@@ -39,10 +39,9 @@ internal sealed class FakeTerminal : IVirtualTerminal
     public bool HasSixelSupport => false;
     public TermCell CellSize => new(10, 20);
 
-    public ValueTask EnterAlternateScreenAsync()
+    public void EnterAlternateScreen()
     {
         IsAlternateScreen = true;
-        return ValueTask.CompletedTask;
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;

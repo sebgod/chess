@@ -1,6 +1,6 @@
 namespace Chess.Lib.UI;
 
-public abstract class Renderer<TSurface>(TSurface surface)
+public abstract class Renderer<TSurface>(TSurface surface) : IDisposable
 {
     public TSurface Surface { get; } = surface;
 
@@ -26,4 +26,6 @@ public abstract class Renderer<TSurface>(TSurface surface)
             FillRectangle(rect, color);
         }
     }
+
+    public abstract void Dispose();
 }

@@ -2,10 +2,12 @@ using Chess.Lib.UI;
 using ImageMagick;
 using ImageMagick.Drawing;
 
-namespace Chess.Console;
+namespace Chess.ImageMagick;
 
-public class MagickImageRenderer(uint width, uint height) : Renderer<MagickImage>(new MagickImage(MagickColors.Black, width, height)), IDisposable
+public class MagickImageRenderer(MagickImage surface) : Renderer<MagickImage>(surface), IDisposable
 {
+    public MagickImageRenderer(uint width, uint height) : this(new MagickImage(MagickColors.Black, width, height)) { }
+
     private readonly Dictionary<CaptionCacheKey, MagickImage> _captionCache = [];
     private Density? _cachedDensity;
     private double _cachedFactor;

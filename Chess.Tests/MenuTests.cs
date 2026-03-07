@@ -50,7 +50,7 @@ public class MenuTests
         int expectedIndex)
     {
         var terminal = new FakeTerminal(inputs);
-        await terminal.EnterAlternateScreenAsync();
+        terminal.EnterAlternateScreen();
         var menu = new TestMenu(terminal, TimeProvider.System, "Title", "Pick one:", TestItems);
 
         var result = await menu.ShowAsync(CancellationToken.None);
