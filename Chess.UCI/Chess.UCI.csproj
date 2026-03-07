@@ -9,7 +9,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Chess.Lib\Chess.Lib.csproj" />
-    <ProjectReference Include="..\Console.Lib\Console.Lib.csproj" />
   </ItemGroup>
 
 </Project>
