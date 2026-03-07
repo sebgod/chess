@@ -26,11 +26,12 @@ public class ScrollableList<TItem>(ITerminalViewport viewport) : Widget(viewport
         var (width, height) = Viewport.Size;
         if (width <= 0 || height <= 0) return;
 
+        var colorMode = Viewport.ColorMode;
         var row = 0;
         if (_header.Length > 0)
         {
             if (!TrySetCursorPosition(Viewport, 0, row)) return;
-            Viewport.Write($"{_headerStyle}{_header.PadRight(width)}{VtStyle.Reset}");
+            Viewport.Write($"{_headerStyle.Apply(colorMode)}{_header.PadRight(width)}{VtStyle.Reset}");
             row++;
         }
 
@@ -41,11 +42,11 @@ public class ScrollableList<TItem>(ITerminalViewport viewport) : Widget(viewport
             var itemIdx = _scrollOffset + row - (_header.Length > 0 ? 1 : 0);
             if (itemIdx >= 0 && itemIdx < _items.Count)
             {
-                Viewport.Write(_items[itemIdx].FormatRow(width));
+                Viewport.Write(_items[itemIdx].FormatRow(width, colorMode));
             }
             else
             {
-                Viewport.Write($"{_emptyStyle}{new string(' ', width)}{VtStyle.Reset}");
+                Viewport.Write($"{_emptyStyle.Apply(colorMode)}{new string(' ', width)}{VtStyle.Reset}");
             }
         }
     }

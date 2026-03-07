@@ -21,6 +21,6 @@ public class TextBar(ITerminalViewport viewport) : Widget(viewport)
         if (!TrySetCursorPosition(Viewport, 0, 0)) return;
 
         var padWidth = Math.Max(0, width - _rightText.Length);
-        Viewport.Write($"{_style}{_text.PadRight(padWidth)}{_rightText}{VtStyle.Reset}");
+        Viewport.Write($"{_style.Apply(Viewport.ColorMode)}{_text.PadRight(padWidth)}{_rightText}{VtStyle.Reset}");
     }
 }

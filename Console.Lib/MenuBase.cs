@@ -166,7 +166,7 @@ public abstract class MenuBase<T>(IVirtualTerminal terminal, TimeProvider timePr
 
         if (style is { } s)
         {
-            terminal.Write($"{s}{text}{VtStyle.Reset}");
+            terminal.Write($"{s.Apply(terminal.ColorMode)}{text}{VtStyle.Reset}");
         }
         else
         {

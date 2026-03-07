@@ -63,6 +63,17 @@ public sealed class VirtualTerminal : IVirtualTerminal
         }
     }
 
+    public bool HasColorSupport
+    {
+        get
+        {
+            if (!_initialized) throw new InvalidOperationException("Call InitAsync() first.");
+            return _deviceCapabilities.Contains(TerminalCapability.Color);
+        }
+    }
+
+    public ColorMode ColorMode => HasColorSupport ? ColorMode.TrueColor : ColorMode.Sgr16;
+
     public TermCell CellSize =>
         _cellSize ?? throw new InvalidOperationException("Call InitAsync() first.");
 

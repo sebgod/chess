@@ -15,7 +15,7 @@ internal readonly record struct HistoryMoveRow(
     private static readonly VtStyle Normal = new(SgrColor.White, SgrColor.Black);
     private static readonly VtStyle Highlight = new(SgrColor.BrightWhite, SgrColor.Blue);
 
-    public string FormatRow(int width)
+    public string FormatRow(int width, ColorMode colorMode)
     {
         var plyIdx = MoveIndex * 2;
         var (idxStr, whitePly) = Plies.GetRecordAndPGNIdx(plyIdx);
@@ -24,6 +24,7 @@ internal readonly record struct HistoryMoveRow(
         var isHighlightedWhite = HighlightPlyIndex == plyIdx;
         var isHighlightedBlack = HighlightPlyIndex == plyIdx + 1;
 
+        var normal = Normal.Apply(colorMode);
         if (isHighlightedWhite || isHighlightedBlack)
         {
             var prefix = $" {idxStr} ";
@@ -31,15 +32,15 @@ internal readonly record struct HistoryMoveRow(
             var blackText = $" {blackPlyStr,-8}";
             var remaining = width - prefix.Length - whiteText.Length - blackText.Length;
 
-            var whiteStyle = isHighlightedWhite ? Highlight : Normal;
-            var blackStyle = isHighlightedBlack ? Highlight : Normal;
+            var whiteStyle = (isHighlightedWhite ? Highlight : Normal).Apply(colorMode);
+            var blackStyle = (isHighlightedBlack ? Highlight : Normal).Apply(colorMode);
 
-            return $"{Normal}{prefix}{whiteStyle}{whiteText}{Normal}{blackStyle}{blackText}{Normal}{new string(' ', Math.Max(0, remaining))}{VtStyle.Reset}";
+            return $"{normal}{prefix}{whiteStyle}{whiteText}{normal}{blackStyle}{blackText}{normal}{new string(' ', Math.Max(0, remaining))}{VtStyle.Reset}";
         }
         else
         {
             var line = $" {idxStr} {whitePly,-8} {blackPlyStr,-8}";
-            return $"{Normal}{line.PadRight(width)}{VtStyle.Reset}";
+            return $"{normal}{line.PadRight(width)}{VtStyle.Reset}";
         }
     }
 }

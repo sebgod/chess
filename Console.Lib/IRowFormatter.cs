@@ -9,5 +9,5 @@ public interface IRowFormatter
     /// Formats this item as a single row of the given <paramref name="width"/>.
     /// The returned string must include VT escape codes and pad to the full width.
     /// </summary>
-    string FormatRow(int width);
+    string FormatRow(int width, ColorMode colorMode);
 }

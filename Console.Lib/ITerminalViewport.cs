@@ -21,4 +21,7 @@ public interface ITerminalViewport
     }
     void Flush();
     Stream OutputStream { get; }
+
+    /// <summary>Color mode supported by this terminal. Defaults to SGR-16.</summary>
+    ColorMode ColorMode => ColorMode.Sgr16;
 }

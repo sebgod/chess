@@ -32,4 +32,6 @@ public sealed class TerminalViewport(ITerminalViewport parent, int columnOffset,
     public void Flush() => parent.Flush();
 
     public Stream OutputStream => parent.OutputStream;
+
+    public ColorMode ColorMode => parent.ColorMode;
 }

@@ -5,6 +5,7 @@ public interface IVirtualTerminal
 {
     Task InitAsync();
     bool HasSixelSupport { get; }
+    bool HasColorSupport { get; }
     void EnterAlternateScreen();
     bool IsAlternateScreen { get; }
     void Clear();
