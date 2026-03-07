@@ -28,10 +28,9 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
     private const int StatusBarRows = 1;
 
     private readonly Panel _panel;
-    private readonly Canvas _boardCanvas;
+    private readonly Canvas<TSurface> _boardCanvas;
     private readonly TextBar _statusBar;
     private readonly ScrollableList<HistoryMoveRow> _historyList;
-    private readonly SixelRenderer<TSurface> _renderer;
 
     private GameUI? _gameUI;
 
@@ -51,12 +50,13 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         _statusBar = new TextBar(_panel.Dock(DockStyle.Bottom, StatusBarRows));
         _historyList = new ScrollableList<HistoryMoveRow>(_panel.Dock(DockStyle.Right, HistoryColumns))
             .Header(" Move History");
-        _boardCanvas = new Canvas(_panel.Fill());
+
+        var boardViewport = _panel.Fill();
+        var (width, height) = boardViewport.PixelSize;
+        var renderer = CreateRenderer(width, height);
+        _boardCanvas = new Canvas<TSurface>(boardViewport, renderer);
 
         _panel.Add(_statusBar).Add(_historyList).Add(_boardCanvas);
-
-        var (width, height) = _boardCanvas.PixelSize;
-        _renderer = CreateRenderer(width, height);
     }
 
     protected abstract SixelRenderer<TSurface> CreateRenderer(uint width, uint height);
@@ -177,7 +177,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
             return;
 
         var (width, height) = _boardCanvas.PixelSize;
-        _renderer.Resize(width, height);
+        _boardCanvas.Renderer.Resize(width, height);
         _gameUI = UI.Resize(width, height);
 
         UI.HistoryViewportRows = _historyList.VisibleRows;
@@ -190,7 +190,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
     public void ResetGame(Game game)
     {
         var cell = _boardCanvas.Viewport.CellSize;
-        _gameUI = new GameUI(game, _renderer.Width, _renderer.Height,
+        _gameUI = new GameUI(game, _boardCanvas.Renderer.Width, _boardCanvas.Renderer.Height,
             mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
             backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff),
             alignment: (cell.Width, cell.Height),
@@ -203,9 +203,12 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         _stopwatch.Restart();
 #endif
 
+        var renderer = _boardCanvas.Renderer;
         RectInt clip;
+        bool isPartial;
         if (!clipRects.IsDefault && clipRects.Length > 0)
         {
+            isPartial = true;
             clip = clipRects[0];
             for (var i = 1; i < clipRects.Length; i++)
             {
@@ -214,23 +217,26 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         }
         else
         {
-            clip = new RectInt((_renderer.Width, _renderer.Height), PointInt.Origin);
+            isPartial = false;
+            clip = new RectInt((renderer.Width, renderer.Height), PointInt.Origin);
         }
 
-        ui.Render<TSurface, Renderer<TSurface>>(_renderer, clip);
+        ui.Render<TSurface, Renderer<TSurface>>(renderer, clip);
 
-        _boardCanvas.BlitSixel(_renderer, clip.UpperLeft.Y, clip.LowerRight.Y);
+        if (isPartial)
+            _boardCanvas.Render(clip);
+        else
+            _boardCanvas.Render();
 
 #if DEBUG
         _stopwatch.Stop();
         _lastFrameMs = _stopwatch.Elapsed.TotalMilliseconds;
-        var isFullRender = clip.UpperLeft.Y <= 0 && clip.LowerRight.Y >= (int)_renderer.Height;
-        if (isFullRender) _fullRenders++; else _partialRenders++;
+        if (isPartial) _partialRenders++; else _fullRenders++;
 #endif
     }
 
     public void Dispose()
     {
-        _renderer.Dispose();
+        _boardCanvas.Renderer.Dispose();
     }
 }

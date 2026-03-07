@@ -203,14 +203,14 @@ public sealed class TerminalViewportTests
     }
 
     [Fact]
-    public void Canvas_BlitSixel_FullRender_CallsEncodeFull()
+    public void Canvas_Render_PerformsFullBlit()
     {
         var terminal = new FakeTerminal(new Queue<ConsoleInputEvent>(), 80, 24);
         var viewport = new TerminalViewport(terminal, 0, 0, 56, 23);
-        var canvas = new Canvas(viewport);
         var renderer = new FakeSixelRenderer(460);
+        var canvas = new Canvas<object>(viewport, renderer);
 
-        canvas.BlitSixel(renderer, 0, 460);
+        canvas.Render();
 
         renderer.FullEncodes.ShouldBe(1);
         renderer.PartialEncodes.ShouldBe(0);
@@ -218,16 +218,16 @@ public sealed class TerminalViewportTests
     }
 
     [Fact]
-    public void Canvas_BlitSixel_PartialRender_AlignsToCell()
+    public void Canvas_Render_PartialClip_AlignsToCell()
     {
         var terminal = new FakeTerminal(new Queue<ConsoleInputEvent>(), 80, 24);
         // CellSize is (10, 20) from FakeTerminal
         var viewport = new TerminalViewport(terminal, 0, 0, 56, 23);
-        var canvas = new Canvas(viewport);
         var renderer = new FakeSixelRenderer(460);
+        var canvas = new Canvas<object>(viewport, renderer);
 
-        // Clip from pixel 25 to 95 — should align to cell rows: startRow=1 (y=20), endRow=5 (y=100)
-        canvas.BlitSixel(renderer, 25, 95);
+        // Clip from pixel (0,25) to (560,95) — Y bounds align to cell rows: startRow=1 (y=20), endRow=5 (y=100)
+        canvas.Render(new RectInt(new PointInt(560, 95), new PointInt(0, 25)));
 
         renderer.FullEncodes.ShouldBe(0);
         renderer.PartialEncodes.ShouldBe(1);
@@ -238,17 +238,17 @@ public sealed class TerminalViewportTests
     }
 
     [Fact]
-    public void Canvas_BlitSixel_PartialRender_ClampsToRenderHeight()
+    public void Canvas_Render_PartialClip_ClampsToRenderHeight()
     {
         var terminal = new FakeTerminal(new Queue<ConsoleInputEvent>(), 80, 24);
         var viewport = new TerminalViewport(terminal, 0, 0, 56, 23);
-        var canvas = new Canvas(viewport);
         var renderer = new FakeSixelRenderer(450);
+        var canvas = new Canvas<object>(viewport, renderer);
 
-        // Clip near bottom: 440 to 460, renderHeight=450
+        // Clip near bottom: Y 440 to 460, renderHeight=450
         // startRow = 440/20 = 22, endRow = (460+19)/20 = 23
         // pixelStartY = 440, pixelEndY = min(450, 460) = 450, cropHeight = 10
-        canvas.BlitSixel(renderer, 440, 460);
+        canvas.Render(new RectInt(new PointInt(560, 460), new PointInt(0, 440)));
 
         renderer.LastHeight.ShouldBe(10u);
     }
