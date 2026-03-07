@@ -2,6 +2,7 @@ using Chess.Console;
 using Chess.Lib;
 using Chess.Lib.UI;
 using Chess.UCI;
+using DIR.Lib;
 using Console.Lib;
 using System.CommandLine;
 

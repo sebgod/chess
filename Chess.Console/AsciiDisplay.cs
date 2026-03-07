@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using Chess.Lib;
 using Chess.Lib.UI;
 using Console.Lib;
+using DIR.Lib;
 
 using File = Chess.Lib.File;
 

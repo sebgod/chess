@@ -1,4 +1,4 @@
-﻿namespace Chess.Lib.UI;
+namespace DIR.Lib;
 
 public readonly record struct RectInt(PointInt LowerRight, PointInt UpperLeft)
 {
@@ -16,7 +16,7 @@ public readonly record struct RectInt(PointInt LowerRight, PointInt UpperLeft)
         );
 
     public readonly bool IsContainedWithin(in RectInt other)
-        => LowerRight.X <= other.LowerRight.X && LowerRight.Y <= other.LowerRight.Y && UpperLeft.X >= other.UpperLeft.X && UpperLeft.Y >= other.UpperLeft.Y; 
+        => LowerRight.X <= other.LowerRight.X && LowerRight.Y <= other.LowerRight.Y && UpperLeft.X >= other.UpperLeft.X && UpperLeft.Y >= other.UpperLeft.Y;
 
     public readonly RectInt Inflate(int inflate)
         => new RectInt((LowerRight.X + inflate, LowerRight.Y + inflate), (UpperLeft.X - inflate, UpperLeft.Y - inflate));

@@ -24,6 +24,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Console.Lib", "Console.Lib\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Chess.ImageMagick", "Chess.ImageMagick\Chess.ImageMagick.csproj", "{3E02FCA9-F90D-48B7-AB99-8C63F3E1F3D0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DIR.Lib", "DIR.Lib\DIR.Lib.csproj", "{BA09DA7C-D227-481A-BEFC-ABB88104E11F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -198,6 +200,26 @@ Global
 		{3E02FCA9-F90D-48B7-AB99-8C63F3E1F3D0}.Release|x64.Build.0 = Release|Any CPU
 		{3E02FCA9-F90D-48B7-AB99-8C63F3E1F3D0}.Release|x86.ActiveCfg = Release|Any CPU
 		{3E02FCA9-F90D-48B7-AB99-8C63F3E1F3D0}.Release|x86.Build.0 = Release|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Debug|ARM.ActiveCfg = Debug|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Debug|ARM.Build.0 = Debug|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Debug|ARM64.ActiveCfg = Debug|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Debug|ARM64.Build.0 = Debug|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Debug|x64.Build.0 = Debug|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Debug|x86.Build.0 = Debug|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Release|ARM.ActiveCfg = Release|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Release|ARM.Build.0 = Release|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Release|ARM64.ActiveCfg = Release|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Release|ARM64.Build.0 = Release|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Release|x64.ActiveCfg = Release|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Release|x64.Build.0 = Release|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Release|x86.ActiveCfg = Release|Any CPU
+		{BA09DA7C-D227-481A-BEFC-ABB88104E11F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

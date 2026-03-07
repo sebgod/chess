@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-Always use extended thinking when analyzing bugs or designing architecture or when refactoring.
+    Always use extended thinking when analyzing bugs or designing architecture or when refactoring.
 
 ## Build & Test Commands
 
@@ -18,12 +18,15 @@ CI runs `dotnet test --configuration Release` on ubuntu-latest with .NET 10.0.
 
 ## Architecture
 
-Terminal chess game with Sixel graphics rendering. Six projects in the solution:
+Terminal chess game with Sixel graphics rendering. Eight projects in the solution:
 
-- **Chess.Lib** — Core library: board representation, rules, move validation, AI engine. All chess logic lives here. AOT-compatible.
+- **DIR.Lib** — Device-independent rendering primitives: `PointInt`, `RectInt`, `RGBAColor32`, `TextAlign`, and abstract `Renderer<TSurface>`. No dependencies. AOT-compatible.
+- **Chess.Lib** — Core library: board representation, rules, move validation, AI engine. All chess logic lives here. References DIR.Lib. AOT-compatible.
 - **Chess.UCI** — Shared UCI (Universal Chess Interface) protocol library. Parsing, formatting, client/server helpers. Referenced by both Console and Engine.
 - **Chess.Engine** — Standalone UCI engine executable (`chess-engine`). Wraps `AiEngine` from Chess.Lib behind the UCI protocol. AOT-compatible.
-- **Chess.Console** — Terminal UI app. Renders the board via ImageMagick + Sixel. Communicates with Chess.Engine via UCI over stdin/stdout. Builds copy the engine executable to its output directory.
+- **Console.Lib** — Terminal I/O, virtual terminal abstraction, menus, and Sixel encoding. No chess or ImageMagick dependencies.
+- **Chess.ImageMagick** — Concrete `MagickImageRenderer` (implements `Renderer<MagickImage>`) and Sixel encoding extensions. References DIR.Lib, Chess.Lib, Console.Lib.
+- **Chess.Console** — Terminal UI app. Renders the board via Chess.ImageMagick + Sixel. Communicates with Chess.Engine via UCI over stdin/stdout. Builds copy the engine executable to its output directory.
 - **Chess.Tests** — xUnit v3 tests with Shouldly assertions. Uses `[MemberData]` with static `DataSource()` methods for parameterized tests.
 - **BenchmarkSuite1** — BenchmarkDotNet performance benchmarks for rendering.
 

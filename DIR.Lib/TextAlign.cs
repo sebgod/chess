@@ -1,4 +1,4 @@
-﻿namespace Chess.Lib.UI;
+namespace DIR.Lib;
 
 public enum TextAlign
 {

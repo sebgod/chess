@@ -1,4 +1,4 @@
-﻿namespace Chess.Lib.UI;
+namespace DIR.Lib;
 
 public readonly record struct PointInt(int X, int Y)
 {

@@ -1,5 +1,5 @@
 using Chess.ImageMagick;
-using Chess.Lib.UI;
+using DIR.Lib;
 using Console.Lib;
 using ImageMagick;
 

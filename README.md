@@ -113,9 +113,12 @@ In Custom Game mode, you place pieces on the board before playing. The popup app
 
 | Directory | Description |
 |---|---|
+| `DIR.Lib` | Device-independent rendering primitives (geometry, colour, abstract renderer) |
 | `Chess.Lib` | Core chess library: board, pieces, rules, AI engine |
 | `Chess.UCI` | Shared UCI protocol library (parsing, formatting, client/server) |
 | `Chess.Engine` | Standalone UCI engine executable (`chess-engine`) |
+| `Console.Lib` | Terminal I/O, menus, and Sixel encoding |
+| `Chess.ImageMagick` | ImageMagick-based renderer implementation |
 | `Chess.Console` | Console application with Sixel rendering |
 | `Chess.Tests` | xUnit v3 test suite |
 | `BenchmarkSuite1` | BenchmarkDotNet performance benchmarks |
@@ -124,24 +127,32 @@ In Custom Game mode, you place pieces on the board before playing. The popup app
 
 ```mermaid
 graph TD
-    Console["Chess.Console<br/><i>Terminal UI</i>"]
-    ConLib["Console.Lib<br/><i>Terminal I/O, menus + Sixel rendering</i>"]
-    Engine["Chess.Engine<br/><i>Standalone UCI engine</i>"]
-    UCI["Chess.UCI<br/><i>UCI protocol library</i>"]
+    DIR["DIR.Lib<br/><i>Geometry, colour, abstract Renderer</i>"]
     Lib["Chess.Lib<br/><i>Board, rules, AI engine</i>"]
+    ConLib["Console.Lib<br/><i>Terminal I/O, menus + Sixel encoding</i>"]
+    IM["Chess.ImageMagick<br/><i>ImageMagick renderer</i>"]
+    UCI["Chess.UCI<br/><i>UCI protocol library</i>"]
+    Engine["Chess.Engine<br/><i>Standalone UCI engine</i>"]
+    Console["Chess.Console<br/><i>Terminal UI</i>"]
     Tests["Chess.Tests<br/><i>xUnit v3 + Shouldly</i>"]
     Bench["BenchmarkSuite1<br/><i>Performance benchmarks</i>"]
 
+    Lib -- "project ref" --> DIR
+    IM -- "project ref" --> DIR
+    IM -- "project ref" --> Lib
+    IM -- "project ref" --> ConLib
+    UCI -- "project ref" --> Lib
+    Engine -- "project ref" --> Lib
+    Engine -- "project ref" --> UCI
+    Console -- "project ref" --> IM
     Console -- "project ref" --> ConLib
     Console -- "project ref" --> Lib
     Console -- "project ref" --> UCI
     Console -. "launches as<br/>child process" .-> Engine
-    Engine -- "project ref" --> Lib
-    Engine -- "project ref" --> UCI
-    UCI -- "project ref" --> Lib
-    Tests -- "project ref" --> ConLib
     Tests -- "project ref" --> Lib
     Tests -- "project ref" --> UCI
+    Tests -- "project ref" --> ConLib
+    Bench -- "project ref" --> IM
     Bench -- "project ref" --> ConLib
     Bench -- "project ref" --> Console
 

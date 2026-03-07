@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Chess.Lib;
 using Chess.Lib.UI;
+using DIR.Lib;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 using Xunit;

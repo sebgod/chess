@@ -1,4 +1,4 @@
-﻿namespace Chess.Lib.UI;
+namespace DIR.Lib;
 
 public readonly record struct RGBAColor32(byte Red, byte Green, byte Blue, byte Alpha)
 {
