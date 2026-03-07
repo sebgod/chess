@@ -7,9 +7,6 @@ public interface ITerminalViewport
     void SetCursorPosition(int left, int top);
     void Write(string text);
     void WriteLine(string? text = null);
-    ConsoleColor ForegroundColor { get; set; }
-    ConsoleColor BackgroundColor { get; set; }
-    void ResetColor();
     TermCell CellSize { get; }
 
     /// <summary>Viewport size in pixels (columns * cellWidth, rows * cellHeight).</summary>

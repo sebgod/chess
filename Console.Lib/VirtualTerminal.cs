@@ -99,20 +99,6 @@ public sealed class VirtualTerminal : IVirtualTerminal
 
     public void WriteLine(string? text = null) => System.Console.WriteLine(text);
 
-    public ConsoleColor ForegroundColor
-    {
-        get => System.Console.ForegroundColor;
-        set => System.Console.ForegroundColor = value;
-    }
-
-    public ConsoleColor BackgroundColor
-    {
-        get => System.Console.BackgroundColor;
-        set => System.Console.BackgroundColor = value;
-    }
-
-    public void ResetColor() => System.Console.ResetColor();
-
     public void Flush() => System.Console.Out.Flush();
 
     public Stream OutputStream { get; } = System.Console.OpenStandardOutput();

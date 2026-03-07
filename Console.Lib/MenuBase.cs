@@ -6,6 +6,8 @@ namespace Console.Lib;
 /// </summary>
 public abstract class MenuBase<T>(IVirtualTerminal terminal, TimeProvider timeProvider)
 {
+    private static readonly VtStyle SelectedStyle = new(SgrColor.BrightYellow, SgrColor.Blue);
+
     private int? _lastWindowWidth;
     private int? _lastWindowHeight;
     private readonly byte _cellHeight = terminal.CellSize.Height;
@@ -143,14 +145,7 @@ public abstract class MenuBase<T>(IVirtualTerminal terminal, TimeProvider timePr
             var label = $"{indicator}{items[i]}";
             var row = menuStartRow + i;
 
-            if (i == selected)
-            {
-                WriteCenterPadded(row, label, windowWidth, ConsoleColor.Yellow, ConsoleColor.DarkBlue);
-            }
-            else
-            {
-                WriteCenterPadded(row, label, windowWidth);
-            }
+            WriteCenterPadded(row, label, windowWidth, i == selected ? SelectedStyle : null);
         }
 
         _lastWindowWidth = windowWidth;
@@ -162,20 +157,16 @@ public abstract class MenuBase<T>(IVirtualTerminal terminal, TimeProvider timePr
     /// <summary>
     /// Writes centered text padded to the full window width, erasing any stale content without a full clear.
     /// </summary>
-    private void WriteCenterPadded(int row, string text, int windowWidth,
-        ConsoleColor? foreground = null, ConsoleColor? background = null)
+    private void WriteCenterPadded(int row, string text, int windowWidth, VtStyle? style = null)
     {
         var col = Math.Max(0, (windowWidth - text.Length) / 2);
         terminal.SetCursorPosition(0, row);
 
         terminal.Write(new string(' ', col));
 
-        if (foreground is { } fg && background is { } bg)
+        if (style is { } s)
         {
-            terminal.ForegroundColor = fg;
-            terminal.BackgroundColor = bg;
-            terminal.Write(text);
-            terminal.ResetColor();
+            terminal.Write($"{s}{text}{VtStyle.Reset}");
         }
         else
         {

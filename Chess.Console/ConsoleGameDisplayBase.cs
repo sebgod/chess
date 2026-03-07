@@ -48,12 +48,9 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
     {
         _panel = new Panel(terminal);
 
-        _statusBar = new TextBar(_panel.Dock(DockStyle.Bottom, StatusBarRows))
-            .Style("\e[97;100m");
+        _statusBar = new TextBar(_panel.Dock(DockStyle.Bottom, StatusBarRows));
         _historyList = new ScrollableList<HistoryMoveRow>(_panel.Dock(DockStyle.Right, HistoryColumns))
-            .Header(" Move History")
-            .HeaderStyle("\e[97;100m")
-            .EmptyStyle("\e[37;40m");
+            .Header(" Move History");
         _boardCanvas = new Canvas(_panel.Fill());
 
         _panel.Add(_statusBar).Add(_historyList).Add(_boardCanvas);

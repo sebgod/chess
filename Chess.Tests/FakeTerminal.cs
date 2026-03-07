@@ -29,9 +29,6 @@ internal sealed class FakeTerminal : IVirtualTerminal
     public void SetCursorPosition(int left, int top) => LastCursorPosition = (left, top);
     public void Write(string text) { }
     public void WriteLine(string? text = null) { }
-    public ConsoleColor ForegroundColor { get; set; }
-    public ConsoleColor BackgroundColor { get; set; }
-    public void ResetColor() { }
     public void Flush() { }
     public Stream OutputStream { get; } = Stream.Null;
     public bool HasInput() => _inputs.Count > 0;

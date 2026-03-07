@@ -85,45 +85,6 @@ public sealed class TerminalViewportTests
     }
 
     [Fact]
-    public void Colors_AppliedToParentOnWrite()
-    {
-        var terminal = new FakeTerminal(new Queue<ConsoleInputEvent>(), 80, 24);
-        var viewport = new TerminalViewport(terminal, 0, 0, 40, 12);
-
-        viewport.ForegroundColor = ConsoleColor.Red;
-        viewport.BackgroundColor = ConsoleColor.Blue;
-
-        // Colors are local until a write pushes them to the parent
-        terminal.ForegroundColor.ShouldNotBe(ConsoleColor.Red);
-
-        viewport.Write("test");
-        terminal.ForegroundColor.ShouldBe(ConsoleColor.Red);
-        terminal.BackgroundColor.ShouldBe(ConsoleColor.Blue);
-
-        viewport.ResetColor();
-    }
-
-    [Fact]
-    public void Colors_IsolatedBetweenViewports()
-    {
-        var terminal = new FakeTerminal(new Queue<ConsoleInputEvent>(), 80, 24);
-        var vp1 = new TerminalViewport(terminal, 0, 0, 40, 12);
-        var vp2 = new TerminalViewport(terminal, 40, 0, 40, 12);
-
-        vp1.ForegroundColor = ConsoleColor.Red;
-        vp2.ForegroundColor = ConsoleColor.Green;
-
-        vp1.Write("a");
-        terminal.ForegroundColor.ShouldBe(ConsoleColor.Red);
-
-        vp2.Write("b");
-        terminal.ForegroundColor.ShouldBe(ConsoleColor.Green);
-
-        // vp1's local state is unchanged
-        vp1.ForegroundColor.ShouldBe(ConsoleColor.Red);
-    }
-
-    [Fact]
     public void UpdateGeometry_ChangesSizeAndOffset()
     {
         var terminal = new FakeTerminal(new Queue<ConsoleInputEvent>(), 80, 24);

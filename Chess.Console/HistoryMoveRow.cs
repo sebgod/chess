@@ -12,6 +12,9 @@ internal readonly record struct HistoryMoveRow(
     int MoveIndex,
     int? HighlightPlyIndex) : IRowFormatter
 {
+    private static readonly VtStyle Normal = new(SgrColor.White, SgrColor.Black);
+    private static readonly VtStyle Highlight = new(SgrColor.BrightWhite, SgrColor.Blue);
+
     public string FormatRow(int width)
     {
         var plyIdx = MoveIndex * 2;
@@ -28,15 +31,15 @@ internal readonly record struct HistoryMoveRow(
             var blackText = $" {blackPlyStr,-8}";
             var remaining = width - prefix.Length - whiteText.Length - blackText.Length;
 
-            var whiteColor = isHighlightedWhite ? "\e[97;44m" : "\e[37;40m";
-            var blackColor = isHighlightedBlack ? "\e[97;44m" : "\e[37;40m";
+            var whiteStyle = isHighlightedWhite ? Highlight : Normal;
+            var blackStyle = isHighlightedBlack ? Highlight : Normal;
 
-            return $"\e[37;40m{prefix}{whiteColor}{whiteText}\e[37;40m{blackColor}{blackText}\e[37;40m{new string(' ', Math.Max(0, remaining))}\e[0m";
+            return $"{Normal}{prefix}{whiteStyle}{whiteText}{Normal}{blackStyle}{blackText}{Normal}{new string(' ', Math.Max(0, remaining))}{VtStyle.Reset}";
         }
         else
         {
             var line = $" {idxStr} {whitePly,-8} {blackPlyStr,-8}";
-            return $"\e[37;40m{line.PadRight(width)}\e[0m";
+            return $"{Normal}{line.PadRight(width)}{VtStyle.Reset}";
         }
     }
 }
