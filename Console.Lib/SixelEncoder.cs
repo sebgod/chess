@@ -55,7 +55,7 @@ public static class SixelEncoder
     /// </list>
     /// </para>
     /// </remarks>
-    public static void Encode(byte[] rawPixels, int startY, int width, int height, int channels, Stream output)
+    public static void Encode(byte[] rawPixels, int width, int height, int channels, Stream output)
     {
         var pixelCount = width * height;
         var indexMap = ArrayPool<byte>.Shared.Rent(pixelCount);

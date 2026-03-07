@@ -21,7 +21,7 @@ public static class MagickExtensions
             using var pixels = image.GetPixelsUnsafe();
             var rawPixels = pixels.GetArea(0, startY, image.Width, height) ?? throw new InvalidOperationException("Failed to get pixel data");
 
-            SixelEncoder.Encode(rawPixels, startY, (int)image.Width, (int)height, channels, output);
+            SixelEncoder.Encode(rawPixels, (int)image.Width, (int)height, channels, output);
         }
     }
 }
