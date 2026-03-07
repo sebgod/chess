@@ -3,7 +3,7 @@ using DIR.Lib;
 using ImageMagick;
 using ImageMagick.Drawing;
 
-namespace Chess.ImageMagick;
+namespace Chess.ImageMagickSixelRenderer;
 
 public class MagickImageRenderer(MagickImage surface) : SixelRenderer<MagickImage>(surface), IDisposable
 {

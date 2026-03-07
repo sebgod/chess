@@ -36,8 +36,9 @@ classDiagram
     }
     class TextBar
     class ScrollableList~TItem~
-    class Canvas {
-        +BlitSixel(renderer, clipUpperY, clipLowerY)
+    class Canvas~TSurface~ {
+        +Render()*
+        +Render(clip)
     }
     class IRowFormatter {
         <<interface>>
@@ -60,6 +61,10 @@ classDiagram
     }
     class VtStyle {
         <<record struct>>
+        +Apply(colorMode) string
+    }
+    class ColorMode {
+        <<enum>>
     }
     class ConsoleInputEvent {
         <<record struct>>
@@ -82,7 +87,8 @@ classDiagram
     Panel --> Widget : children
 
     SixelRenderer --|> Renderer
-    Canvas ..> SixelRenderer : BlitSixel
+    Canvas ..> SixelRenderer : Render
+    VtStyle --> ColorMode : Apply
 
     MenuBase --> IVirtualTerminal : terminal
     VirtualTerminal --> ConsoleInputEvent : produces
@@ -106,6 +112,7 @@ public interface ITerminalViewport
     (uint Width, uint Height) PixelSize { get; } // default: Size * CellSize
     void Flush();
     Stream OutputStream { get; }
+    ColorMode ColorMode => ColorMode.Sgr16; // default: 16-color SGR
 }
 ```
 
@@ -120,6 +127,7 @@ public interface IVirtualTerminal : ITerminalViewport, IAsyncDisposable
 {
     Task InitAsync();
     bool HasSixelSupport { get; }
+    bool HasColorSupport { get; }
     void EnterAlternateScreen();
     bool IsAlternateScreen { get; }
     void Clear();
@@ -219,7 +227,7 @@ Multi-row scrollable list with an optional header. Items must implement `IRowFor
 ```csharp
 public interface IRowFormatter
 {
-    string FormatRow(int width);
+    string FormatRow(int width, ColorMode colorMode);
 }
 ```
 
@@ -236,26 +244,19 @@ var list = new ScrollableList<MyRow>(viewport)
 int visibleRows = list.VisibleRows; // data rows (excludes header)
 ```
 
-### Canvas
+### Canvas\<TSurface\>
 
-A viewport widget for custom rendering, typically Sixel graphics. Exposes the viewport's pixel dimensions and output stream:
+A generic widget that owns a `SixelRenderer<TSurface>` and renders it to a viewport. Provides full and partial Sixel output:
 
 ```csharp
-var canvas = new Canvas(viewport);
+var canvas = new Canvas<MagickImage>(viewport, renderer);
 var (pixelW, pixelH) = canvas.PixelSize;
-canvas.SetCursorPosition(0, 0);
-// write directly to canvas.OutputStream
+
+canvas.Render();       // full Sixel blit
+canvas.Render(clip);   // partial blit for dirty region (pixel coordinates)
 ```
 
-#### BlitSixel
-
-`Canvas.BlitSixel` handles the complete Sixel output pipeline — cursor positioning, full vs partial rendering, and cell-height-aligned clipping:
-
-```csharp
-canvas.BlitSixel(renderer, clipUpperY, clipLowerY);
-```
-
-For a full blit (clip spans the entire render height), it positions the cursor at (0, 0) and calls `renderer.EncodeSixel(stream)`. For a partial blit, it aligns the clip region to cell-height boundaries (since Sixel output must start at a character row) and calls `renderer.EncodeSixel(startY, cropHeight, stream)`. This alignment avoids visual tearing from mid-cell Sixel writes.
+`Render()` positions the cursor at (0, 0) and calls `renderer.EncodeSixel(stream)`. `Render(RectInt clip)` aligns the clip region's Y bounds to cell-height boundaries (since Sixel output must start at a character row), then calls `renderer.EncodeSixel(startY, cropHeight, stream)`. Only vertical clipping is performed — the full image width is always emitted, since the Sixel protocol is a left-to-right band-based format with no horizontal skip.
 
 ## Sixel graphics
 
@@ -280,7 +281,7 @@ High-performance encoder that converts raw pixel arrays to the Sixel terminal gr
 - **Frequency-based palette**: When more than 256 unique colors exist, the most frequent colors get exact palette slots (preserving large solid areas like board tiles). Remaining colors map to their nearest palette entry.
 - **Precomputed sixel grid**: A single row-major pass builds sixel bits for all colors simultaneously, then each color encodes from a contiguous memory slice. This is cache-friendly and avoids the naive O(colors × rows × width) approach.
 - **ArrayPool allocation**: All large buffers (index map, sixel grid, palette, output buffer) are rented from `ArrayPool<byte>.Shared`, eliminating GC pressure from repeated allocations.
-- **Partial encoding**: Supports vertical slicing without image cloning — just pass a `startY` offset and height.
+- **Partial encoding**: Supports vertical slicing without image cloning — the caller extracts the pixel slice and passes the cropped dimensions.
 
 Performance vs ImageMagick's built-in Sixel writer:
 
@@ -291,32 +292,35 @@ Performance vs ImageMagick's built-in Sixel writer:
 
 ## Styling
 
-### VtStyle and SgrColor
+### VtStyle, SgrColor, and ColorMode
 
-Typed replacement for raw VT escape code strings:
+`VtStyle` stores foreground/background as `RGBAColor32` (from DIR.Lib) and produces escape sequences via `Apply(ColorMode)`:
 
 ```csharp
-public enum SgrColor : byte
-{
-    Black, Red, Green, Yellow, Blue, Magenta, Cyan, White,
-    BrightBlack, BrightRed, BrightGreen, BrightYellow,
-    BrightBlue, BrightMagenta, BrightCyan, BrightWhite,
-}
+public enum ColorMode : byte { Sgr16, TrueColor }
 
-public readonly record struct VtStyle(SgrColor Foreground, SgrColor Background)
+public readonly record struct VtStyle(RGBAColor32 Foreground, RGBAColor32 Background)
 {
     public const string Reset = "\e[0m";
-    public override string ToString() => $"\e[{FgCode};{BgCode}m";
+    public VtStyle(SgrColor foreground, SgrColor background); // convenience
+    public string Apply(ColorMode colorMode);
 }
 ```
 
-Use directly in string interpolation — the implicit `ToString()` emits the SGR escape sequence:
+`Apply(ColorMode.Sgr16)` emits standard 16-color SGR codes (`\e[97;40m`). `Apply(ColorMode.TrueColor)` emits 24-bit sequences (`\e[38;2;R;G;B;48;2;R;G;Bm`). `ToString()` defaults to `Sgr16` for safe fallback.
+
+The 16 standard `SgrColor` values have well-known RGB mappings via `SgrColor.ToRgba()`. Arbitrary `RGBAColor32` values are mapped back to the nearest `SgrColor` when using `Sgr16` mode.
 
 ```csharp
+// Construct with SgrColor (convenience) or RGBAColor32 (full control)
 var style = new VtStyle(SgrColor.BrightYellow, SgrColor.Blue);
-terminal.Write($"{style}Highlighted text{VtStyle.Reset}");
-// produces: \e[93;44mHighlighted text\e[0m
+var custom = new VtStyle(new RGBAColor32(0x1a, 0x1a, 0x2e, 0xff), new RGBAColor32(0xe0, 0xe0, 0xe0, 0xff));
+
+// Widgets use Apply with the viewport's color mode
+terminal.Write($"{style.Apply(terminal.ColorMode)}Highlighted text{VtStyle.Reset}");
 ```
+
+`ColorMode` flows through the viewport chain: `VirtualTerminal` returns `TrueColor` when `HasColorSupport` is true (DA capability code 22), `TerminalViewport` delegates to its parent, and `ITerminalViewport` defaults to `Sgr16`.
 
 ## Input handling
 
@@ -360,11 +364,11 @@ public class MyMenu(IVirtualTerminal terminal, TimeProvider timeProvider)
 
 During `InitAsync()`, `VirtualTerminal` sends a Primary Device Attributes request (`\e[0c`). The response contains capability codes parsed into the `TerminalCapability` enum:
 
-| Code | Capability |
-|------|-----------|
-| 4    | Sixel graphics |
-| 22   | Color |
-| 18   | Windowing |
-| 1    | 132 columns |
+| Code | Capability | Effect |
+|------|-----------|--------|
+| 4    | Sixel graphics | Enables `HasSixelSupport` |
+| 22   | Color | Enables `HasColorSupport`, sets `ColorMode` to `TrueColor` |
+| 18   | Windowing | — |
+| 1    | 132 columns | — |
 
 Unknown capability codes are silently ignored.

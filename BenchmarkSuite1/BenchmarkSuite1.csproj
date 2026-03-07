@@ -12,7 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Chess.ImageMagick\Chess.ImageMagick.csproj" />
+    <ProjectReference Include="..\Chess.ImageMagickSixelRenderer\Chess.ImageMagickSixelRenderer.csproj" />
     <ProjectReference Include="..\Console.Lib\Console.Lib.csproj" />
     <ProjectReference Include="..\Chess.Console\Chess.Console.csproj" />
   </ItemGroup>

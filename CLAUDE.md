@@ -18,15 +18,16 @@ CI runs `dotnet test --configuration Release` on ubuntu-latest with .NET 10.0.
 
 ## Architecture
 
-Terminal chess game with Sixel graphics rendering. Eight projects in the solution:
+Chess game with multiple rendering backends. Ten projects in the solution:
 
 - **DIR.Lib** — Device-independent rendering primitives: `PointInt`, `RectInt`, `RGBAColor32`, `TextAlign`, and abstract `Renderer<TSurface>`. No dependencies. AOT-compatible.
-- **Chess.Lib** — Core library: board representation, rules, move validation, AI engine. All chess logic lives here. References DIR.Lib. AOT-compatible.
+- **Chess.Lib** — Core library: board representation, rules, move validation, AI engine (negamax with alpha-beta pruning). All chess logic lives here. References DIR.Lib. AOT-compatible.
 - **Chess.UCI** — Shared UCI (Universal Chess Interface) protocol library. Parsing, formatting, client/server helpers. Referenced by both Console and Engine.
-- **Chess.Engine** — Standalone UCI engine executable (`chess-engine`). Wraps `AiEngine` from Chess.Lib behind the UCI protocol. AOT-compatible.
-- **Console.Lib** — Terminal I/O, virtual terminal abstraction, menus, and Sixel encoding. No chess or ImageMagick dependencies.
-- **Chess.ImageMagick** — Concrete `MagickImageRenderer` (implements `Renderer<MagickImage>`) and Sixel encoding extensions. References DIR.Lib, Chess.Lib, Console.Lib.
-- **Chess.Console** — Terminal UI app. Renders the board via Chess.ImageMagick + Sixel. Communicates with Chess.Engine via UCI over stdin/stdout. Builds copy the engine executable to its output directory.
+- **Chess.Engine** — Standalone UCI engine executable (`chess-engine`). Wraps `AiEngine` from Chess.Lib behind the UCI protocol. Supports `go depth N` and sends `info` lines during search. AOT-compatible.
+- **Console.Lib** — Terminal I/O, virtual terminal abstraction, dock-based layout, widgets (`Canvas`, `TextBar`, `ScrollableList`), `SixelRenderer<TSurface>`, Sixel encoding, and truecolor/SGR-16 styling via `VtStyle`. References DIR.Lib. No chess or ImageMagick dependencies.
+- **Chess.ImageMagickSixelRenderer** — Concrete `MagickImageRenderer` (extends `SixelRenderer<MagickImage>`) and Sixel encoding extensions for terminal display. References DIR.Lib, Chess.Lib, Console.Lib.
+- **Chess.OpenGL** — Standalone OpenGL chess executable (`WinExe`, no console window). Uses Silk.NET for windowing/input and Magick.NET for font atlas. Implements `Renderer<GL>`, `IGameDisplay`, and `IGamePlayer`. References DIR.Lib, Chess.Lib, Chess.UCI. AOT-compatible.
+- **Chess.Console** — Terminal chess application with Sixel and ASCII display backends. Communicates with Chess.Engine via UCI over stdin/stdout.
 - **Chess.Tests** — xUnit v3 tests with Shouldly assertions. Uses `[MemberData]` with static `DataSource()` methods for parameterized tests.
 - **BenchmarkSuite1** — BenchmarkDotNet performance benchmarks for rendering.
 

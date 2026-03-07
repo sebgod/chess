@@ -1,4 +1,4 @@
-using Chess.ImageMagick;
+using Chess.ImageMagickSixelRenderer;
 using Console.Lib;
 using ImageMagick;
 

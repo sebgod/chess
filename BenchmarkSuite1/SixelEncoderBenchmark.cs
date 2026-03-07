@@ -2,7 +2,7 @@ using System.IO;
 using BenchmarkDotNet.Attributes;
 using Chess.Lib;
 using Chess.Lib.UI;
-using Chess.ImageMagick;
+using Chess.ImageMagickSixelRenderer;
 using DIR.Lib;
 using Console.Lib;
 using ImageMagick;

@@ -114,12 +114,13 @@ In Custom Game mode, you place pieces on the board before playing. The popup app
 | Directory | Description |
 |---|---|
 | `DIR.Lib` | Device-independent rendering primitives (geometry, colour, abstract renderer) |
-| `Chess.Lib` | Core chess library: board, pieces, rules, AI engine |
+| `Chess.Lib` | Core chess library: board, pieces, rules, AI engine (negamax with alpha-beta pruning) |
 | `Chess.UCI` | Shared UCI protocol library (parsing, formatting, client/server) |
-| `Chess.Engine` | Standalone UCI engine executable (`chess-engine`) |
-| `Console.Lib` | Terminal I/O, menus, and Sixel encoding |
-| `Chess.ImageMagick` | ImageMagick-based renderer implementation |
-| `Chess.Console` | Console application with Sixel rendering |
+| `Chess.Engine` | Standalone UCI engine executable (`chess-engine`), supports `go depth N` |
+| `Console.Lib` | Terminal I/O, dock-based layout, widgets, Sixel encoding, truecolor/SGR-16 styling |
+| `Chess.ImageMagickSixelRenderer` | ImageMagick-based Sixel renderer for terminal display |
+| `Chess.OpenGL` | Standalone OpenGL chess executable (Silk.NET windowing/input, Magick.NET font atlas) |
+| `Chess.Console` | Terminal chess application with Sixel and ASCII display backends |
 | `Chess.Tests` | xUnit v3 test suite |
 | `BenchmarkSuite1` | BenchmarkDotNet performance benchmarks |
 
@@ -128,19 +129,25 @@ In Custom Game mode, you place pieces on the board before playing. The popup app
 ```mermaid
 graph TD
     DIR["DIR.Lib<br/><i>Geometry, colour, abstract Renderer</i>"]
-    Lib["Chess.Lib<br/><i>Board, rules, AI engine</i>"]
-    ConLib["Console.Lib<br/><i>Terminal I/O, menus + Sixel encoding</i>"]
-    IM["Chess.ImageMagick<br/><i>ImageMagick renderer</i>"]
+    Lib["Chess.Lib<br/><i>Board, rules, AI engine (negamax)</i>"]
+    ConLib["Console.Lib<br/><i>Terminal I/O, layout, widgets, Sixel + truecolor</i>"]
+    IM["Chess.ImageMagickSixelRenderer<br/><i>ImageMagick Sixel renderer</i>"]
+    GL["Chess.OpenGL<br/><i>OpenGL renderer (Silk.NET)</i>"]
     UCI["Chess.UCI<br/><i>UCI protocol library</i>"]
     Engine["Chess.Engine<br/><i>Standalone UCI engine</i>"]
-    Console["Chess.Console<br/><i>Terminal UI</i>"]
+    Console["Chess.Console<br/><i>Main application</i>"]
     Tests["Chess.Tests<br/><i>xUnit v3 + Shouldly</i>"]
     Bench["BenchmarkSuite1<br/><i>Performance benchmarks</i>"]
 
     Lib -- "project ref" --> DIR
+    ConLib -- "project ref" --> DIR
     IM -- "project ref" --> DIR
     IM -- "project ref" --> Lib
     IM -- "project ref" --> ConLib
+    GL -- "project ref" --> DIR
+    GL -- "project ref" --> Lib
+    GL -- "project ref" --> UCI
+    GL -. "launches as<br/>child process" .-> Engine
     UCI -- "project ref" --> Lib
     Engine -- "project ref" --> Lib
     Engine -- "project ref" --> UCI

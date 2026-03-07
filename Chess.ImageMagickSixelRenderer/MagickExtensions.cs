@@ -1,7 +1,7 @@
 using Console.Lib;
 using ImageMagick;
 
-namespace Chess.ImageMagick;
+namespace Chess.ImageMagickSixelRenderer;
 
 public static class MagickExtensions
 {
