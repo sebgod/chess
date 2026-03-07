@@ -30,11 +30,10 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
     private readonly IVirtualTerminal _terminal;
     private readonly byte _cellWidth;
     private readonly byte _cellHeight;
-    private readonly ConsoleGameRenderer _chrome;
-    private readonly TerminalLayout _layout;
-    private readonly TerminalViewport _boardViewport;
-    private readonly TerminalViewport _historyViewport;
-    private readonly TerminalViewport _statusBarViewport;
+    private readonly Panel _panel;
+    private readonly Canvas _boardCanvas;
+    private readonly TextBar _statusBar;
+    private readonly ScrollableList<HistoryMoveRow> _historyList;
     private readonly Renderer<TSurface> _renderer;
 
     private GameUI? _gameUI;
@@ -56,17 +55,23 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         _cellWidth = cell.Width;
         _cellHeight = cell.Height;
 
-        _layout = new TerminalLayout(terminal);
-        _statusBarViewport = _layout.Dock(Dock.Bottom, StatusBarRows);
-        _historyViewport = _layout.Dock(Dock.Right, HistoryColumns);
-        _boardViewport = _layout.Dock(Dock.Fill);
+        _statusBar = new TextBar().Style("\e[97;100m");
+        _historyList = new ScrollableList<HistoryMoveRow>()
+            .Header(" Move History")
+            .HeaderStyle("\e[97;100m")
+            .EmptyStyle("\e[37;40m");
+        _boardCanvas = new Canvas();
 
-        var (boardCols, boardRows) = _boardViewport.Size;
+        _panel = new Panel(terminal)
+            .Dock(DockStyle.Bottom, StatusBarRows, _statusBar)
+            .Dock(DockStyle.Right, HistoryColumns, _historyList)
+            .Fill(_boardCanvas);
+
+        var (boardCols, boardRows) = _boardCanvas.Size;
         var width = (uint)boardCols * cell.Width;
         var height = (uint)boardRows * cell.Height;
 
         _renderer = CreateRenderer(width, height);
-        _chrome = new ConsoleGameRenderer(_historyViewport, _statusBarViewport);
     }
 
     protected abstract Renderer<TSurface> CreateRenderer(uint width, uint height);
@@ -84,14 +89,36 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
     {
         var cellCol = px / (int)_cellWidth - (_terminal.Size.Width - HistoryColumns);
         var cellRow = py / (int)_cellHeight;
-        return _chrome.PlyIndexFromCell(cellCol, cellRow, UI.Game.PlyCount, UI.HistoryScrollStart);
+        return PlyIndexFromCell(cellCol, cellRow, UI.Game.PlyCount, UI.HistoryScrollStart);
+    }
+
+    private int? PlyIndexFromCell(int cellCol, int cellRow, int plyCount, int? scrollStart)
+    {
+        var historyRowCount = _historyList.Viewport.Size.Height;
+
+        if (cellCol < 0 || cellRow < 1 || cellRow >= historyRowCount)
+            return null;
+
+        var moveCount = (plyCount + 1) / 2;
+        var startMove = scrollStart ?? Math.Max(0, moveCount - (historyRowCount - 1));
+        var moveIdx = startMove + cellRow - 1;
+        var whitePlyIdx = moveIdx * 2;
+
+        if (whitePlyIdx >= plyCount)
+            return null;
+
+        var midCol = _historyList.Viewport.Size.Width / 2;
+        if (cellCol >= midCol && whitePlyIdx + 1 < plyCount)
+            return whitePlyIdx + 1;
+
+        return whitePlyIdx;
     }
 
     public void RenderInitial(Game game)
     {
         RenderFrame(UI, []);
-        _chrome.RenderStatusBar(game, Stats, placementSide: SetupPlacementSide, playbackInfo: PlaybackInfo);
-        _chrome.RenderHistory(game, HighlightPlyIndex, UI.HistoryScrollStart);
+        UpdateStatusBar(game);
+        UpdateHistory(game);
     }
 
     public void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects, File? pendingFile)
@@ -102,8 +129,8 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         }
         if (response.HasFlag(UIResponse.IsUpdate) || response.HasFlag(UIResponse.NeedsPiecePlacement))
         {
-            _chrome.RenderStatusBar(game, Stats, pendingFile, placementSide: SetupPlacementSide, playbackInfo: PlaybackInfo);
-            _chrome.RenderHistory(game, HighlightPlyIndex, UI.HistoryScrollStart);
+            UpdateStatusBar(game, pendingFile);
+            UpdateHistory(game);
         }
     }
 
@@ -115,23 +142,72 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
     private int? HighlightPlyIndex => UI.Mode == GameUIMode.Playback ? UI.PlaybackPlyIndex : null;
 
+    private void UpdateStatusBar(Game game, File? pendingFile = null)
+    {
+        var fileInfo = pendingFile is { } f ? $" [{f.ToLabel()}]" : "";
+        var setupInfo = SetupPlacementSide is { } side ? $" Setup: placing {side} pieces [Tab to toggle; s to start]" : "";
+        string status;
+        if (PlaybackInfo is (var plyIdx, var plyCount))
+        {
+            status = $" Playback: ply {plyIdx + 2}/{plyCount + 1} [Ctrl+Up/Down, Esc exit]";
+        }
+        else if (SetupPlacementSide is { })
+        {
+            status = $" {setupInfo}{fileInfo}";
+        }
+        else
+        {
+            status = $" {game.GameStatus.ToMessage(game.CurrentSide)}{fileInfo}";
+        }
+
+        var debugInfo = "";
+        if (Stats is { } s)
+        {
+            var total = s.FullRenders + s.PartialRenders;
+            if (total > 0)
+            {
+                debugInfo = $"{s.LastFrameMs,6:F1}ms  F:{s.FullRenders} P:{s.PartialRenders} ({100.0 * s.PartialRenders / total:F0}% partial) ";
+            }
+        }
+
+        _statusBar.Text(status).RightText(debugInfo).Render();
+    }
+
+    private void UpdateHistory(Game game)
+    {
+        var plies = game.Plies;
+        var moveCount = (plies.Count + 1) / 2;
+        var visibleRows = _historyList.VisibleRows;
+        var startMove = UI.HistoryScrollStart ?? Math.Max(0, moveCount - visibleRows);
+        var highlightPly = HighlightPlyIndex;
+
+        var rows = new HistoryMoveRow[moveCount];
+        for (var i = 0; i < moveCount; i++)
+            rows[i] = new HistoryMoveRow(plies, i, highlightPly);
+
+        _historyList
+            .Items(rows)
+            .ScrollTo(startMove)
+            .Render();
+    }
+
     public void HandleResize(Game game)
     {
-        if (!_layout.Recompute())
+        if (!_panel.Recompute())
             return;
 
-        var (boardCols, boardRows) = _boardViewport.Size;
+        var (boardCols, boardRows) = _boardCanvas.Size;
         var width = (uint)boardCols * _cellWidth;
         var height = (uint)boardRows * _cellHeight;
 
         _renderer.Resize(width, height);
         _gameUI = UI.Resize(width, height);
 
-        UI.HistoryViewportRows = _historyViewport.Size.Height - 1;
+        UI.HistoryViewportRows = _historyList.VisibleRows;
 
         RenderFrame(UI, []);
-        _chrome.RenderStatusBar(game, Stats, playbackInfo: PlaybackInfo);
-        _chrome.RenderHistory(game, HighlightPlyIndex, UI.HistoryScrollStart);
+        UpdateStatusBar(game);
+        UpdateHistory(game);
     }
 
     public void ResetGame(Game game)
@@ -171,8 +247,8 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
         if (isFullRender)
         {
-            _boardViewport.SetCursorPosition(0, 0);
-            EncodeSixel(surface, _boardViewport.OutputStream);
+            _boardCanvas.SetCursorPosition(0, 0);
+            EncodeSixel(surface, _boardCanvas.OutputStream);
         }
         else
         {
@@ -185,8 +261,8 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
             if (cropHeight > 0)
             {
-                _boardViewport.SetCursorPosition(0, startRow);
-                EncodeSixel(surface, pixelStartY, (uint)cropHeight, _boardViewport.OutputStream);
+                _boardCanvas.SetCursorPosition(0, startRow);
+                EncodeSixel(surface, pixelStartY, (uint)cropHeight, _boardCanvas.OutputStream);
             }
         }
 

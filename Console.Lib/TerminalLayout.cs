@@ -3,7 +3,7 @@ namespace Console.Lib;
 public sealed class TerminalLayout
 {
     private readonly ITerminalViewport _root;
-    private readonly List<(Dock Dock, int Size, TerminalViewport Viewport)> _edgeDocked = [];
+    private readonly List<(DockStyle Dock, int Size, TerminalViewport Viewport)> _edgeDocked = [];
     private TerminalViewport? _fillViewport;
     private int _lastWidth, _lastHeight;
 
@@ -15,10 +15,10 @@ public sealed class TerminalLayout
         _lastHeight = h;
     }
 
-    public TerminalViewport Dock(Dock dock, int size = 0)
+    public TerminalViewport Dock(DockStyle dock, int size = 0)
     {
         var viewport = new TerminalViewport(_root, 0, 0, 0, 0);
-        if (dock == Console.Lib.Dock.Fill)
+        if (dock == DockStyle.Fill)
             _fillViewport = viewport;
         else
             _edgeDocked.Add((dock, size, viewport));
@@ -49,7 +49,7 @@ public sealed class TerminalLayout
         {
             switch (dock)
             {
-                case Console.Lib.Dock.Top:
+                case DockStyle.Top:
                 {
                     var panelHeight = Math.Min(size, rh);
                     viewport.UpdateGeometry(rx, ry, rw, panelHeight);
@@ -57,14 +57,14 @@ public sealed class TerminalLayout
                     rh -= panelHeight;
                     break;
                 }
-                case Console.Lib.Dock.Bottom:
+                case DockStyle.Bottom:
                 {
                     var panelHeight = Math.Min(size, rh);
                     viewport.UpdateGeometry(rx, ry + rh - panelHeight, rw, panelHeight);
                     rh -= panelHeight;
                     break;
                 }
-                case Console.Lib.Dock.Left:
+                case DockStyle.Left:
                 {
                     var panelWidth = Math.Min(size, rw);
                     viewport.UpdateGeometry(rx, ry, panelWidth, rh);
@@ -72,7 +72,7 @@ public sealed class TerminalLayout
                     rw -= panelWidth;
                     break;
                 }
-                case Console.Lib.Dock.Right:
+                case DockStyle.Right:
                 {
                     var panelWidth = Math.Min(size, rw);
                     viewport.UpdateGeometry(rx + rw - panelWidth, ry, panelWidth, rh);

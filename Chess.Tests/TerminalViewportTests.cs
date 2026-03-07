@@ -142,9 +142,9 @@ public sealed class TerminalViewportTests
         var terminal = new FakeTerminal(new Queue<ConsoleInputEvent>(), 80, 24);
         var layout = new TerminalLayout(terminal);
 
-        var statusBar = layout.Dock(Dock.Bottom, 1);
-        var history = layout.Dock(Dock.Right, 24);
-        var board = layout.Dock(Dock.Fill);
+        var statusBar = layout.Dock(DockStyle.Bottom, 1);
+        var history = layout.Dock(DockStyle.Right, 24);
+        var board = layout.Dock(DockStyle.Fill);
 
         statusBar.Size.ShouldBe((80, 1));
         history.Size.ShouldBe((24, 23));
@@ -157,9 +157,9 @@ public sealed class TerminalViewportTests
         var terminal = new FakeTerminal(new Queue<ConsoleInputEvent>(), 80, 24);
         var layout = new TerminalLayout(terminal);
 
-        var statusBar = layout.Dock(Dock.Bottom, 1);
-        var history = layout.Dock(Dock.Right, 24);
-        var board = layout.Dock(Dock.Fill);
+        var statusBar = layout.Dock(DockStyle.Bottom, 1);
+        var history = layout.Dock(DockStyle.Right, 24);
+        var board = layout.Dock(DockStyle.Fill);
 
         // Status bar at row 23 (bottom), full width
         statusBar.SetCursorPosition(0, 0);
@@ -180,9 +180,9 @@ public sealed class TerminalViewportTests
         var terminal = new FakeTerminal(new Queue<ConsoleInputEvent>(), 80, 24);
         var layout = new TerminalLayout(terminal);
 
-        var statusBar = layout.Dock(Dock.Bottom, 1);
-        var history = layout.Dock(Dock.Right, 24);
-        var board = layout.Dock(Dock.Fill);
+        var statusBar = layout.Dock(DockStyle.Bottom, 1);
+        var history = layout.Dock(DockStyle.Right, 24);
+        var board = layout.Dock(DockStyle.Fill);
 
         // No change
         layout.Recompute().ShouldBeFalse();
@@ -213,9 +213,9 @@ public sealed class TerminalViewportTests
         var terminal = new FakeTerminal(new Queue<ConsoleInputEvent>(), 10, 3);
         var layout = new TerminalLayout(terminal);
 
-        var statusBar = layout.Dock(Dock.Bottom, 1);
-        var history = layout.Dock(Dock.Right, 24);
-        var board = layout.Dock(Dock.Fill);
+        var statusBar = layout.Dock(DockStyle.Bottom, 1);
+        var history = layout.Dock(DockStyle.Right, 24);
+        var board = layout.Dock(DockStyle.Fill);
 
         statusBar.Size.ShouldBe((10, 1));
         // Only 2 rows remain after status bar; history wants 24 cols but only 10 available
@@ -231,9 +231,9 @@ public sealed class TerminalViewportTests
         var layout = new TerminalLayout(terminal);
 
         // Fill registered first, edges after
-        var board = layout.Dock(Dock.Fill);
-        var statusBar = layout.Dock(Dock.Bottom, 1);
-        var history = layout.Dock(Dock.Right, 24);
+        var board = layout.Dock(DockStyle.Fill);
+        var statusBar = layout.Dock(DockStyle.Bottom, 1);
+        var history = layout.Dock(DockStyle.Right, 24);
 
         statusBar.Size.ShouldBe((80, 1));
         history.Size.ShouldBe((24, 23));
