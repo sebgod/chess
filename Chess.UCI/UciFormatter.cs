@@ -24,7 +24,7 @@ public static class UciFormatter
         UciResponse.UciOk => "uciok",
         UciResponse.ReadyOk => "readyok",
         UciResponse.BestMove bm => bm.Ponder is { } p ? $"bestmove {bm.Move} ponder {p}" : $"bestmove {bm.Move}",
-        UciResponse.Info info => $"info string {info.Message}",
+        UciResponse.Info info => $"info {info.Message}",
         _ => throw new ArgumentException($"Unknown response type: {response.GetType()}", nameof(response))
     };
 

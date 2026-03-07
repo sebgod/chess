@@ -1,0 +1,113 @@
+using Chess.Lib;
+using Shouldly;
+using Xunit;
+
+namespace Chess.Tests;
+
+public sealed class AiEngineTests
+{
+    [Fact]
+    public void Evaluate_StandardBoard_IsZero()
+    {
+        var board = Board.StandardBoard;
+        AiEngine.Evaluate(board, Side.White).ShouldBe(0);
+        AiEngine.Evaluate(board, Side.Black).ShouldBe(0);
+    }
+
+    [Fact]
+    public void Evaluate_MaterialAdvantage_PositiveForSideWithMore()
+    {
+        // Remove black's queen from D8
+        var board = Board.StandardBoard;
+        board -= Position.D8;
+
+        AiEngine.Evaluate(board, Side.White).ShouldBeGreaterThan(0);
+        AiEngine.Evaluate(board, Side.Black).ShouldBeLessThan(0);
+    }
+
+    [Fact]
+    public void Evaluate_Symmetric_NegatesForOpposite()
+    {
+        var board = Board.StandardBoard;
+        var whiteScore = AiEngine.Evaluate(board, Side.White);
+        var blackScore = AiEngine.Evaluate(board, Side.Black);
+        whiteScore.ShouldBe(-blackScore);
+    }
+
+    [Fact]
+    public void Search_StandardPosition_ReturnsLegalMove()
+    {
+        var game = new Game();
+        var engine = new AiEngine(Side.White, maxDepth: 2);
+
+        var result = engine.Search(game);
+
+        result.BestMove.ShouldNotBeNull();
+        result.Nodes.ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
+    public void Search_RespectsDepthParameter()
+    {
+        var game = new Game();
+        var shallow = new AiEngine(Side.White, maxDepth: 1);
+        var deeper = new AiEngine(Side.White, maxDepth: 3);
+
+        var shallowResult = shallow.Search(game);
+        var deeperResult = deeper.Search(game);
+
+        deeperResult.Nodes.ShouldBeGreaterThan(shallowResult.Nodes);
+        deeperResult.Depth.ShouldBeGreaterThanOrEqualTo(shallowResult.Depth);
+    }
+
+    [Fact]
+    public void Search_FinishedGame_ReturnsNull()
+    {
+        var game = new Game();
+        var engine = new AiEngine(Side.Black, maxDepth: 2);
+
+        // White to move, engine is Black — should return null
+        var result = engine.Search(game);
+        result.BestMove.ShouldBeNull();
+    }
+
+    [Fact]
+    public void PickMove_StandardPosition_ReturnsMove()
+    {
+        var game = new Game();
+        var engine = new AiEngine(Side.White, maxDepth: 2);
+
+        var move = engine.PickMove(game);
+        move.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public void Search_CallsOnDepthComplete_ForEachDepth()
+    {
+        var game = new Game();
+        var engine = new AiEngine(Side.White, maxDepth: 3);
+        var depthCallbacks = new List<int>();
+
+        engine.Search(game, onDepthComplete: info => depthCallbacks.Add(info.Depth));
+
+        depthCallbacks.ShouldBe([1, 2, 3]);
+    }
+
+    [Fact]
+    public void Search_FindsMateInOne()
+    {
+        // Fool's mate setup: White has played f3, g4; Black to deliver Qh4#
+        var game = new Game();
+        game.TryMove(Position.F2, Position.F3); // White f3
+        game.TryMove(Position.E7, Position.E5); // Black e5
+        game.TryMove(Position.G2, Position.G4); // White g4
+
+        var engine = new AiEngine(Side.Black, maxDepth: 2);
+        var result = engine.Search(game);
+
+        // Black should find Qh4# (Qd8-h4)
+        result.BestMove.ShouldNotBeNull();
+        result.BestMove.Value.To.ShouldBe(Position.H4);
+        result.Score.ShouldBeGreaterThan(AiEngine.MateScore - 100);
+    }
+}

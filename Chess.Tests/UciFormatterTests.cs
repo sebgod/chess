@@ -75,7 +75,7 @@ public class UciFormatterTests
 
     [Fact]
     public void FormatResponse_Info() =>
-        UciFormatter.Format(new UciResponse.Info("hello")).ShouldBe("info string hello");
+        UciFormatter.Format(new UciResponse.Info("hello")).ShouldBe("info hello");
 
     [Fact]
     public void RoundTrip_CommandFormattedThenParsed()

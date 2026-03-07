@@ -56,17 +56,21 @@ internal sealed class ChessUciEngine : IUciEngine
     public void OnGo(UciCommand.Go goParams, TextWriter output)
     {
         var side = _game.CurrentSide;
-        var aiEngine = new AiEngine(side);
-        var action = aiEngine.PickMove(_game);
+        var depth = goParams.Depth ?? AiEngine.DefaultDepth;
+        var aiEngine = new AiEngine(side, depth);
 
-        if (action is { } move)
+        var result = aiEngine.Search(_game, onDepthComplete: info =>
         {
-            var uciMove = UciMove.Format(move);
-            UciServer.WriteResponse(output, new UciResponse.BestMove(uciMove));
+            UciServer.WriteResponse(output, new UciResponse.Info(
+                $"depth {info.Depth} score cp {info.Score} nodes {info.Nodes}"));
+        });
+
+        if (result.BestMove is { } move)
+        {
+            UciServer.WriteResponse(output, new UciResponse.BestMove(UciMove.Format(move)));
         }
         else
         {
-            // No legal move available — send a null move placeholder
             UciServer.WriteResponse(output, new UciResponse.BestMove("0000"));
         }
     }
