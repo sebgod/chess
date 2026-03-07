@@ -4,8 +4,10 @@ public abstract class Renderer<TSurface>(TSurface surface)
 {
     public TSurface Surface { get; } = surface;
 
-    public abstract int Width { get; }
-    public abstract int Height { get; }
+    public abstract uint Width { get; }
+    public abstract uint Height { get; }
+
+    public abstract void Resize(uint width, uint height);
 
     public abstract void DrawRectangle(in RectInt rect, RGBAColor32 strokeColor, int strokeWidth);
     public abstract void FillRectangle(in RectInt rect, RGBAColor32 fillColor);

@@ -18,6 +18,11 @@ public sealed class VirtualTerminal : IVirtualTerminal
     {
         if (_initialized) return;
 
+        if (OperatingSystem.IsWindows())
+        {
+            WindowsConsoleInput.EnableVirtualTerminalIO();
+        }
+
         System.Console.InputEncoding = Encoding.UTF8;
         System.Console.OutputEncoding = Encoding.UTF8;
 
@@ -62,13 +67,8 @@ public sealed class VirtualTerminal : IVirtualTerminal
     /// <summary>
     /// Enters the alternate screen buffer, hides the cursor, and enables mouse tracking.
     /// </summary>
-    public ValueTask EnterAlternateScreenAsync()
+    public void EnterAlternateScreen()
     {
-        if (OperatingSystem.IsWindows())
-        {
-            WindowsConsoleInput.EnableVirtualTerminalIO();
-        }
-
         System.Console.Write("\e[?1049h"); // Enter alternate buffer
         System.Console.Write("\e[?25l");   // Hide cursor
         System.Console.Write("\e[?1000h"); // VT200 mouse tracking (basic button press/release and wheel)
@@ -77,8 +77,6 @@ public sealed class VirtualTerminal : IVirtualTerminal
 
         _stdIn = System.Console.OpenStandardInput();
         _alternateScreen = true;
-
-        return ValueTask.CompletedTask;
     }
 
     public bool IsAlternateScreen => _alternateScreen;
@@ -163,13 +161,13 @@ public sealed class VirtualTerminal : IVirtualTerminal
             System.Console.Write("\e[?1000l"); // Disable VT200 mouse tracking
             System.Console.Write("\e[?1006l"); // Disable SGR extended tracking
 
-            if (OperatingSystem.IsWindows())
-            {
-                WindowsConsoleInput.RestoreConsoleMode();
-            }
-
             System.Console.Write("\e[?25h");   // Show cursor
             System.Console.Write("\e[?1049l"); // Leave alternate buffer
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            WindowsConsoleInput.RestoreConsoleMode();
         }
 
         OutputStream.Dispose();

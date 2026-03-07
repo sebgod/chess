@@ -2,7 +2,6 @@ using System.Collections.Immutable;
 using Chess.Lib;
 using Chess.Lib.UI;
 using Console.Lib;
-using ImageMagick;
 
 using File = Chess.Lib.File;
 
@@ -19,7 +18,6 @@ internal sealed class SixelGameDisplay : IGameDisplay
     private readonly IVirtualTerminal _terminal;
     private readonly byte _cellWidth;
     private readonly byte _cellHeight;
-    private readonly MagickImage _image;
     private readonly MagickImageRenderer _imageRenderer;
     private readonly SixelDisplay _display;
     private readonly ConsoleGameRenderer _chrome;
@@ -28,9 +26,11 @@ internal sealed class SixelGameDisplay : IGameDisplay
     private readonly TerminalViewport _historyViewport;
     private readonly TerminalViewport _statusBarViewport;
 
-    public GameUI UI { get; private set; }
+    private GameUI? _gameUI;
 
-    public SixelGameDisplay(IVirtualTerminal terminal, Game game)
+    public GameUI UI => _gameUI ?? throw new InvalidOperationException("Call ResetGame before accessing UI.");
+
+    public SixelGameDisplay(IVirtualTerminal terminal)
     {
         _terminal = terminal;
 
@@ -48,19 +48,9 @@ internal sealed class SixelGameDisplay : IGameDisplay
         var width = (uint)boardCols * cell.Width;
         var height = (uint)boardRows * cell.Height;
 
-        _image = new MagickImage(MagickColors.Black, width, height);
-        _imageRenderer = new MagickImageRenderer(_image);
+        _imageRenderer = new MagickImageRenderer(width, height);
         _display = new SixelDisplay(_boardViewport);
         _chrome = new ConsoleGameRenderer(_historyViewport, _statusBarViewport);
-
-        UI = new GameUI(game, _image.Width, _image.Height,
-            mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
-            backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff),
-            alignment: (cell.Width, cell.Height),
-            resolveHistoryClick: ResolveHistoryClick)
-        {
-            HistoryViewportRows = _historyViewport.Size.Height - 1
-        };
     }
 
     private int? ResolveHistoryClick(int px, int py)
@@ -107,9 +97,9 @@ internal sealed class SixelGameDisplay : IGameDisplay
         var width = (uint)boardCols * _cellWidth;
         var height = (uint)boardRows * _cellHeight;
 
-        _image.Read(MagickColors.Black, width, height);
+        _imageRenderer.Resize(width, height);
+        _gameUI = UI.Resize(width, height);
 
-        UI = UI.Resize(_image.Width, _image.Height);
         UI.HistoryViewportRows = _historyViewport.Size.Height - 1;
 
         _display.RenderFrame(UI, _imageRenderer, []);
@@ -119,7 +109,7 @@ internal sealed class SixelGameDisplay : IGameDisplay
 
     public void ResetGame(Game game)
     {
-        UI = new GameUI(game, _image.Width, _image.Height,
+        _gameUI = new GameUI(game, _imageRenderer.Width, _imageRenderer.Height,
             mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
             backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff),
             alignment: (_cellWidth, _cellHeight),
@@ -129,6 +119,5 @@ internal sealed class SixelGameDisplay : IGameDisplay
     public void Dispose()
     {
         _imageRenderer.Dispose();
-        _image.Dispose();
     }
 }

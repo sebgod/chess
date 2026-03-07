@@ -14,9 +14,10 @@ namespace Chess.Tests;
 
 public class GameLoopTests
 {
-    private sealed class FakeDisplay(Game game) : IGameDisplay
+    private sealed class FakeDisplay : IGameDisplay
     {
-        public GameUI UI { get; private set; } = new(game, 800, 600);
+        private GameUI? _gameUI;
+        public GameUI UI => _gameUI ?? throw new InvalidOperationException("Call ResetGame before accessing UI.");
         public int RenderInitialCount { get; private set; }
         public int RenderMoveCount { get; private set; }
 
@@ -29,7 +30,7 @@ public class GameLoopTests
 
         public void ResetGame(Game game)
         {
-            UI = new(game, 800, 600);
+            _gameUI = new(game, 800, 600);
         }
 
         public void Dispose() { }
@@ -112,7 +113,11 @@ public class GameLoopTests
 
         var gameLoop = new GameLoop(
             new FakeTimeProvider(),
-            game => display = new FakeDisplay(game),
+            () =>
+            {
+                display = new FakeDisplay();
+                return display;
+            },
             () => player,
             (_, _) => throw new InvalidOperationException("Should not create engine in PvP")
         );
@@ -150,7 +155,11 @@ public class GameLoopTests
 
         var gameLoop = new GameLoop(
             new FakeTimeProvider(),
-            game => display = new FakeDisplay(game),
+            () =>
+            {
+                display = new FakeDisplay();
+                return display;
+            },
             () => player,
             (_, _) => throw new InvalidOperationException("Should not create engine in PvP")
         );
@@ -176,7 +185,7 @@ public class GameLoopTests
 
         var gameLoop = new GameLoop(
             new FakeTimeProvider(),
-            game => new FakeDisplay(game),
+            () => new FakeDisplay(),
             () => new FakePlayer(humanMoves, cts),
             (side, _) =>
             {
@@ -205,7 +214,7 @@ public class GameLoopTests
 
         var gameLoop = new GameLoop(
             new FakeTimeProvider(),
-            game => new FakeDisplay(game),
+            () => new FakeDisplay(),
             () => new FakePlayer(humanMoves, cts),
             (side, _) =>
             {
@@ -237,9 +246,9 @@ public class GameLoopTests
 
         var gameLoop = new GameLoop(
             new FakeTimeProvider(),
-            game =>
+            () =>
             {
-                display = new FakeDisplay(game);
+                display = new FakeDisplay();
                 return display;
             },
             () =>
@@ -275,7 +284,7 @@ public class GameLoopTests
 
         var gameLoop = new GameLoop(
             new FakeTimeProvider(),
-            game => new FakeDisplay(game),
+            () => new FakeDisplay(),
             () => new FakePlayer(new Queue<Action>(), cts),
             (_, _) => throw new InvalidOperationException("Should not create engine")
         );

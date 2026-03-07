@@ -4,14 +4,16 @@ using ImageMagick.Drawing;
 
 namespace Chess.Console;
 
-public class MagickImageRenderer(MagickImage surface) : Renderer<MagickImage>(surface), IDisposable
+public class MagickImageRenderer(uint width, uint height) : Renderer<MagickImage>(new MagickImage(MagickColors.Black, width, height)), IDisposable
 {
     private readonly Dictionary<CaptionCacheKey, MagickImage> _captionCache = [];
     private Density? _cachedDensity;
     private double _cachedFactor;
 
-    public override int Width => (int)Surface.Width;
-    public override int Height => (int)Surface.Height;
+    public override uint Width => Surface.Width;
+    public override uint Height => Surface.Height;
+
+    public override void Resize(uint width, uint height) => Surface.Read(MagickColors.Black, width, height);
 
     public override void FillRectangle(in RectInt rect, RGBAColor32 fillColor)
         => Surface.Draw(GetDrawableRect(rect), new DrawableFillColor(GetColor(fillColor)), new DrawableFillOpacity(new Percentage(fillColor.Alpha / 255.0 * 100.0)));
@@ -133,6 +135,8 @@ public class MagickImageRenderer(MagickImage surface) : Renderer<MagickImage>(su
 
     public void Dispose()
     {
+        Surface.Dispose();
+
         foreach (var cachedImage in _captionCache.Values)
         {
             cachedImage.Dispose();

@@ -2,7 +2,7 @@ namespace Chess.Lib.UI;
 
 public class GameLoop(
     TimeProvider timeProvider,
-    Func<Game, IGameDisplay> displayFactory,
+    Func<IGameDisplay> displayFactory,
     Func<IGamePlayer> playerFactory,
     Func<Side, TimeProvider, IEngineBasedPlayer> engineBasedPlayerFactory
 )
@@ -17,7 +17,8 @@ public class GameLoop(
             ? new Game(new Board(), Side.White, [])
             : new Game();
 
-        using var gameDisplay = displayFactory(game);
+        using var gameDisplay = displayFactory();
+        gameDisplay.ResetGame(game);
 
         // Custom game setup phase
         if (gameMode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard)

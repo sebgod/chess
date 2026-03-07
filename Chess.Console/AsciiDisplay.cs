@@ -10,12 +10,13 @@ namespace Chess.Console;
 /// <summary>
 /// Renders the board as ASCII text using FEN notation, for terminals without Sixel support.
 /// </summary>
-internal sealed class AsciiDisplay(IVirtualTerminal terminal, Game game) : IGameDisplay
+internal sealed class AsciiDisplay(IVirtualTerminal terminal) : IGameDisplay
 {
     private readonly IVirtualTerminal _terminal = terminal;
     private string _lastFen = "";
+    private GameUI? _gameUI;
 
-    public GameUI UI { get; private set; } = new GameUI(game, 800, 800);
+    public GameUI UI => _gameUI ?? throw new InvalidOperationException("Call ResetGame before accessing UI.");
 
     public void RenderInitial(Game game) => RenderBoard(game);
 
@@ -43,7 +44,7 @@ internal sealed class AsciiDisplay(IVirtualTerminal terminal, Game game) : IGame
 
     public void ResetGame(Game game)
     {
-        UI = new GameUI(game, 800, 800);
+        _gameUI = new GameUI(game, 800, 800);
         _lastFen = "";
     }
 

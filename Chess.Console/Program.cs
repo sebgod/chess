@@ -62,7 +62,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
 
     if (hasSixel)
     {
-        await terminal.EnterAlternateScreenAsync();
+        terminal.EnterAlternateScreen();
     }
 
     GameMode gameMode;
@@ -96,7 +96,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
 
     var gameLoop = new GameLoop(
         timeProvider,
-        game => hasSixel  ? new SixelGameDisplay(terminal, game) : new AsciiDisplay(terminal, game),
+        () => hasSixel  ? new SixelGameDisplay(terminal) : new AsciiDisplay(terminal),
         () => new HumanPlayer(terminal),
         (computerSide, tp) => new UciPlayer(Path.Combine(AppContext.BaseDirectory, "chess-engine" + (OperatingSystem.IsWindows() ? ".exe" : "")), computerSide, tp)
     );
