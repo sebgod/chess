@@ -1,4 +1,4 @@
-using Chess.Lib.UI;
+using DIR.Lib;
 
 namespace Chess.UI.Windows;
 
