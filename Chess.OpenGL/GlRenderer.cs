@@ -256,12 +256,16 @@ public sealed class GlRenderer : Renderer<GL>
             var line = lines[lineIdx];
             if (string.IsNullOrEmpty(line)) continue;
 
-            var (textWidth, _) = _fontAtlas.MeasureText(fontFamily, fontSize, line);
+            // Compute text width from glyph advances (same values used for rendering)
+            // so that centering and rendering agree exactly.
+            var textWidth = 0f;
+            foreach (var mc in line)
+                textWidth += _fontAtlas.GetGlyph(fontFamily, fontSize, mc).AdvanceX;
 
             var penX = horizAlignment switch
             {
-                TextAlign.Center => layoutX + (layoutW - (float)textWidth) / 2f,
-                TextAlign.Far => layoutX + layoutW - (float)textWidth,
+                TextAlign.Center => layoutX + (layoutW - textWidth) / 2f,
+                TextAlign.Far => layoutX + layoutW - textWidth,
                 _ => layoutX
             };
             var penY = startY + lineIdx * lineHeight;
@@ -269,7 +273,11 @@ public sealed class GlRenderer : Renderer<GL>
             foreach (var ch in line)
             {
                 var glyph = _fontAtlas.GetGlyph(fontFamily, fontSize, ch);
-                if (glyph.Width == 0) continue;
+                if (glyph.Width == 0)
+                {
+                    penX += glyph.AdvanceX;
+                    continue;
+                }
 
                 var gx0 = penX;
                 var gy0 = penY + (lineHeight - glyph.Height) / 2f;

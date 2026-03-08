@@ -90,13 +90,17 @@ public class GameUI
             _squareSize = AlignDown(_squareSize, unit);
             _margin = AlignDown(_squareSize / 2, unit);
             var capturedHeight = (int)MathF.Round(_squareSize * 0.4f * 1.4f);
-            _topMargin = AlignUp(Math.Max(_squareSize / 2, capturedHeight), unit);
+            var minTopMargin = AlignUp(Math.Max(_squareSize / 2, capturedHeight), unit);
+            var contentHeight = 8 * _squareSize + 2 * _margin + 2 * capturedHeight;
+            _topMargin = Math.Max(minTopMargin, AlignDown(((int)uiSizeY - contentHeight) / 2 + capturedHeight, unit));
         }
         else
         {
             _margin = _squareSize / 2;
             var capturedHeight = (int)MathF.Round(_squareSize * 0.4f * 1.4f);
-            _topMargin = Math.Max((int)(_squareSize * 0.5), capturedHeight);
+            var minTopMargin = Math.Max((int)(_squareSize * 0.5), capturedHeight);
+            var contentHeight = 8 * _squareSize + 2 * _margin + 2 * capturedHeight;
+            _topMargin = Math.Max(minTopMargin, ((int)uiSizeY - contentHeight) / 2 + capturedHeight);
         }
 
         _boardEnd = _squareSize * 8 + _margin;

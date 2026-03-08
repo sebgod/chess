@@ -52,6 +52,10 @@ internal sealed class GlFontAtlas : IDisposable
     /// </summary>
     public GlyphInfo GetGlyph(string fontPath, float fontSize, char character)
     {
+        // Quantize font size to reduce cache misses during window resize.
+        // Without this, every pixel of resize produces new font sizes and
+        // triggers expensive ImageMagick rasterisation for every glyph.
+        fontSize = MathF.Round(fontSize);
         var key = new GlyphKey(fontPath, fontSize, character);
         if (_glyphs.TryGetValue(key, out var existing))
             return existing;
@@ -108,6 +112,7 @@ internal sealed class GlFontAtlas : IDisposable
     /// </summary>
     public (double Width, double Height) MeasureText(string fontPath, float fontSize, string text)
     {
+        fontSize = MathF.Round(fontSize);
         var settings = new MagickReadSettings
         {
             Font = fontPath,
