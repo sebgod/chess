@@ -19,6 +19,7 @@ public sealed class OpenGLPlayer : IGamePlayer
 {
     private readonly ConcurrentQueue<InputEvent> _eventQueue = new();
     private File? _pendingFile;
+    private int _lastKnownPlyCount = -1;
 
     private readonly record struct InputEvent(Key Key, bool IsCtrl, int MouseX, int MouseY, bool IsClick, bool IsScroll, int ScrollDelta);
 
@@ -43,6 +44,17 @@ public sealed class OpenGLPlayer : IGamePlayer
     /// <inheritdoc />
     public PlayerMoveResult? TryMakeMove(GameUI ui)
     {
+        // If the game state changed while we weren't being polled (e.g. engine move),
+        // discard any stale input that accumulated during the wait.
+        var currentPlyCount = ui.Game.PlyCount;
+        if (currentPlyCount != _lastKnownPlyCount)
+        {
+            _lastKnownPlyCount = currentPlyCount;
+            _eventQueue.Clear();
+            _pendingFile = null;
+            return null;
+        }
+
         if (!_eventQueue.TryDequeue(out var evt))
             return null;
 
