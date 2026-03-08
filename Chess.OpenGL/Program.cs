@@ -11,7 +11,7 @@ var window = OpenGLGameDisplay.CreateWindow();
 GL? gl = null;
 GlRenderer? renderer = null;
 OpenGLStartupMenu? menu = null;
-OpenGLPlayer? player = null;
+HumanPlayer? player = null;
 OpenGLGameDisplay? display = null;
 Task? gameTask = null;
 
@@ -23,7 +23,7 @@ window.Load += () =>
 
     renderer = new GlRenderer(gl, (uint)window.Size.X, (uint)window.Size.Y);
     menu = new OpenGLStartupMenu();
-    player = new OpenGLPlayer();
+    player = new HumanPlayer();
 
     var input = window.CreateInput();
     player.Attach(input);

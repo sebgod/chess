@@ -15,7 +15,7 @@ namespace Chess.OpenGL;
 /// An <see cref="IGamePlayer"/> that translates Silk.NET keyboard and mouse events into chess game actions.
 /// Events are enqueued from the window's input callbacks and dequeued by the game loop thread.
 /// </summary>
-public sealed class OpenGLPlayer : IGamePlayer
+public sealed class HumanPlayer : IGamePlayer
 {
     private readonly ConcurrentQueue<InputEvent> _eventQueue = new();
     private File? _pendingFile;
@@ -58,6 +58,17 @@ public sealed class OpenGLPlayer : IGamePlayer
         if (!_eventQueue.TryDequeue(out var evt))
             return null;
 
+        // Keymap overlay: any click, F1, or Escape dismisses it
+        if (ui.ShowingKeymap)
+        {
+            if (evt.IsClick || evt.Key is Key.F1 or Key.Escape)
+            {
+                _pendingFile = null;
+                return Result(ui.ToggleKeymap());
+            }
+            return Result(UIResponse.None);
+        }
+
         if (evt.IsScroll)
         {
             return Result(ui.ScrollHistory(evt.ScrollDelta > 0 ? -3 : 3));
@@ -77,16 +88,6 @@ public sealed class OpenGLPlayer : IGamePlayer
 
     private PlayerMoveResult HandleKeyInput(GameUI ui, Key key, bool isCtrl)
     {
-        if (ui.ShowingKeymap)
-        {
-            if (key is Key.F1 or Key.Escape)
-            {
-                _pendingFile = null;
-                return Result(ui.ToggleKeymap());
-            }
-            return Result(UIResponse.None);
-        }
-
         if (key is Key.F1)
         {
             _pendingFile = null;

@@ -29,6 +29,15 @@ internal sealed class HumanPlayer(IVirtualTerminal terminal) : IGamePlayer
         }
 
         var (mouseEvent, key, modifiers) = terminal.TryReadInput();
+        if (ui.ShowingKeymap)
+        {
+            if (mouseEvent is { Button: 0, IsRelease: true } || key is ConsoleKey.F1 or ConsoleKey.Escape)
+            {
+                _pendingFile = null;
+                return Result(ui.ToggleKeymap());
+            }
+            return Result(UIResponse.None);
+        }
         if (mouseEvent is { Button: 64 or 65 } wheel)
         {
             var delta = wheel.Button == 64 ? -3 : 3;
@@ -53,17 +62,6 @@ internal sealed class HumanPlayer(IVirtualTerminal terminal) : IGamePlayer
 
     private PlayerMoveResult HandleKeyInput(GameUI ui, ConsoleKey key, ConsoleModifiers modifiers)
     {
-        // Keymap overlay: '?' toggles, Escape dismisses
-        if (ui.ShowingKeymap)
-        {
-            if (key is ConsoleKey.F1 or ConsoleKey.Escape)
-            {
-                _pendingFile = null;
-                return Result(ui.ToggleKeymap());
-            }
-            return Result(UIResponse.None);
-        }
-
         if (key is ConsoleKey.F1)
         {
             _pendingFile = null;
