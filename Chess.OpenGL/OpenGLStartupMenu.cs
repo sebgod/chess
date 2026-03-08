@@ -92,6 +92,36 @@ internal sealed class OpenGLStartupMenu
     }
 
     /// <summary>
+    /// Processes a mouse click. Selects and confirms the clicked item, if any.
+    /// </summary>
+    public void HandleClick(int x, int y, uint rendererWidth, uint rendererHeight)
+    {
+        if (IsComplete) return;
+
+        var (_, _, items) = CurrentMenuContent();
+        var h = rendererHeight;
+        var fontSize = Math.Max(16f, h / 25f);
+        var titleSize = fontSize * 1.6f;
+        var lineH = fontSize * 2f;
+
+        var totalH = titleSize * 2f + lineH + items.Length * lineH;
+        var startY = (h - totalH) / 2f;
+        var promptY = startY + titleSize * 2f + lineH * 0.5f;
+        var itemsStartY = promptY + lineH * 1.5f;
+
+        for (var i = 0; i < items.Length; i++)
+        {
+            var itemY = itemsStartY + i * lineH;
+            if (y >= itemY && y < itemY + lineH)
+            {
+                _selected = i;
+                Confirm();
+                return;
+            }
+        }
+    }
+
+    /// <summary>
     /// Processes a keyboard input event. Call from the Silk.NET key-down callback.
     /// </summary>
     public void HandleKey(Key key)

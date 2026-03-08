@@ -35,6 +35,15 @@ window.Load += () =>
                 menu.HandleKey(key);
         };
     }
+
+    foreach (var mouse in input.Mice)
+    {
+        mouse.MouseDown += (m, button) =>
+        {
+            if (button == MouseButton.Left && menu is { IsComplete: false } && renderer is not null)
+                menu.HandleClick((int)m.Position.X, (int)m.Position.Y, renderer.Width, renderer.Height);
+        };
+    }
 };
 
 window.Resize += (size) =>
