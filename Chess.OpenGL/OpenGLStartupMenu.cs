@@ -1,6 +1,5 @@
 using Chess.Lib;
 using DIR.Lib;
-using Silk.NET.Input;
 
 using Key = Silk.NET.Input.Key;
 
@@ -207,4 +206,5 @@ internal sealed class OpenGLStartupMenu
                 break;
         }
     }
+
 }

@@ -7,7 +7,9 @@
     <Nullable>enable</Nullable>
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
-
+    <!-- Silk.NET uses reflection for platform discovery (IL2072, IL3000 etc.) but we bypass it
+         with explicit GlfwWindowing/GlfwInput.RegisterPlatform() calls, so suppress third-party warnings. -->
+    <TrimmerSingleWarn>true</TrimmerSingleWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -31,6 +33,18 @@
       <EngineFiles Include="..\Chess.Engine\bin\$(Configuration)\$(TargetFramework)\chess-engine.*" />
     </ItemGroup>
     <Copy SourceFiles="@(EngineFiles)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="PublishEngineNative" AfterTargets="Publish">
+    <PropertyGroup>
+      <_EnginePublishDir>$(IntermediateOutputPath)engine-publish/</_EnginePublishDir>
+      <_EngineRidArg Condition="'$(RuntimeIdentifier)' != ''"> -r $(RuntimeIdentifier)</_EngineRidArg>
+    </PropertyGroup>
+    <Exec Command="dotnet publish &quot;$(MSBuildThisFileDirectory)../Chess.Engine/Chess.Engine.csproj&quot; -c $(Configuration)$(_EngineRidArg) -p:PublishAot=$(PublishAot) -o &quot;$(_EnginePublishDir.TrimEnd('/'))&quot;" />
+    <ItemGroup>
+      <EnginePublishFiles Include="$(_EnginePublishDir)chess-engine*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(EnginePublishFiles)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

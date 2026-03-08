@@ -35,4 +35,16 @@
     <Copy SourceFiles="@(EngineFiles)" DestinationFolder="$(OutputPath)" SkipUnchangedFiles="true" />
   </Target>
 
+  <Target Name="PublishEngineNative" AfterTargets="Publish">
+    <PropertyGroup>
+      <_EnginePublishDir>$(IntermediateOutputPath)engine-publish/</_EnginePublishDir>
+      <_EngineRidArg Condition="'$(RuntimeIdentifier)' != ''"> -r $(RuntimeIdentifier)</_EngineRidArg>
+    </PropertyGroup>
+    <Exec Command="dotnet publish &quot;$(MSBuildThisFileDirectory)../Chess.Engine/Chess.Engine.csproj&quot; -c $(Configuration)$(_EngineRidArg) -p:PublishAot=$(PublishAot) -o &quot;$(_EnginePublishDir.TrimEnd('/'))&quot;" />
+    <ItemGroup>
+      <EnginePublishFiles Include="$(_EnginePublishDir)chess-engine*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(EnginePublishFiles)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+  </Target>
+
 </Project>

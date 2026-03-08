@@ -2,8 +2,14 @@ using Chess.Lib.UI;
 using Chess.OpenGL;
 using Chess.UCI;
 using Silk.NET.Input;
+using Silk.NET.Input.Glfw;
 using Silk.NET.OpenGL;
 using Silk.NET.Windowing;
+using Silk.NET.Windowing.Glfw;
+
+// Explicitly register GLFW platforms to avoid reflection-based discovery (AOT-incompatible).
+GlfwWindowing.RegisterPlatform();
+GlfwInput.RegisterPlatform();
 
 var cts = new CancellationTokenSource();
 var window = OpenGLGameDisplay.CreateWindow();
