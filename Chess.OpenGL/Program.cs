@@ -3,6 +3,7 @@ using Chess.OpenGL;
 using Chess.UCI;
 using Silk.NET.Input;
 using Silk.NET.OpenGL;
+using Silk.NET.Windowing;
 
 var cts = new CancellationTokenSource();
 var window = OpenGLGameDisplay.CreateWindow();
@@ -31,6 +32,14 @@ window.Load += () =>
     {
         kb.KeyDown += (_, key, _) =>
         {
+            if (key is Key.F11)
+            {
+                window.WindowState = window.WindowState == WindowState.Fullscreen
+                    ? WindowState.Normal
+                    : WindowState.Fullscreen;
+                return;
+            }
+
             if (menu is { IsComplete: false })
                 menu.HandleKey(key);
         };

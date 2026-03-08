@@ -267,6 +267,9 @@ public sealed class OpenGLPlayer : IGamePlayer
 
     private void OnKeyDown(IKeyboard keyboard, Key key, int scancode)
     {
+        // F11 is handled at the window level, not queued as a game event
+        if (key is Key.F11) return;
+
         var isCtrl = keyboard.IsKeyPressed(Key.ControlLeft) || keyboard.IsKeyPressed(Key.ControlRight);
         _eventQueue.Enqueue(new InputEvent(key, isCtrl, 0, 0, false, false, 0));
     }
