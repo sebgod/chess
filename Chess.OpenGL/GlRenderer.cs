@@ -353,39 +353,33 @@ public sealed class GlRenderer : Renderer<GL>
             color.Alpha / 255f);
     }
 
-    private unsafe void UploadAndDraw(ReadOnlySpan<float> vertices, int components, int vertexCount)
+    private void UploadAndDraw(ReadOnlySpan<float> vertices, int components, int vertexCount)
     {
         Surface.BindVertexArray(_vao);
         Surface.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
 
-        fixed (float* ptr = vertices)
-        {
-            Surface.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(float)), ptr, BufferUsageARB.StreamDraw);
-        }
+        Surface.BufferData<float>(BufferTargetARB.ArrayBuffer, vertices, BufferUsageARB.StreamDraw);
 
         Surface.EnableVertexAttribArray(0);
-        Surface.VertexAttribPointer(0, components, GLEnum.Float, false, (uint)(components * sizeof(float)), null);
+        Surface.VertexAttribPointer(0, components, GLEnum.Float, false, (uint)(components * sizeof(float)), 0);
 
         Surface.DrawArrays(PrimitiveType.Triangles, 0, (uint)vertexCount);
     }
 
-    private unsafe void UploadAndDrawInterleaved(ReadOnlySpan<float> vertices, int stride, int vertexCount, int posComponents, int extraComponents)
+    private void UploadAndDrawInterleaved(ReadOnlySpan<float> vertices, int stride, int vertexCount, int posComponents, int extraComponents)
     {
         Surface.BindVertexArray(_vao);
         Surface.BindBuffer(BufferTargetARB.ArrayBuffer, _vbo);
 
-        fixed (float* ptr = vertices)
-        {
-            Surface.BufferData(BufferTargetARB.ArrayBuffer, (nuint)(vertices.Length * sizeof(float)), ptr, BufferUsageARB.StreamDraw);
-        }
+        Surface.BufferData<float>(BufferTargetARB.ArrayBuffer, vertices, BufferUsageARB.StreamDraw);
 
         var strideBytes = (uint)(stride * sizeof(float));
 
         Surface.EnableVertexAttribArray(0);
-        Surface.VertexAttribPointer(0, posComponents, GLEnum.Float, false, strideBytes, null);
+        Surface.VertexAttribPointer(0, posComponents, GLEnum.Float, false, strideBytes, 0);
 
         Surface.EnableVertexAttribArray(1);
-        Surface.VertexAttribPointer(1, extraComponents, GLEnum.Float, false, strideBytes, (void*)(posComponents * sizeof(float)));
+        Surface.VertexAttribPointer(1, extraComponents, GLEnum.Float, false, strideBytes, posComponents * sizeof(float));
 
         Surface.DrawArrays(PrimitiveType.Triangles, 0, (uint)vertexCount);
     }

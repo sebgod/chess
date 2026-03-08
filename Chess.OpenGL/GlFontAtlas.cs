@@ -27,7 +27,12 @@ internal sealed class GlFontAtlas : IDisposable
 
     // Staging buffer for building the atlas before upload
     private MagickImage? _staging;
-    private bool _dirty;
+
+    // Dirty region tracking — bounding box of glyphs added since last Flush
+    private int _dirtyX0;
+    private int _dirtyY0;
+    private int _dirtyX1;
+    private int _dirtyY1;
 
     /// <summary>The OpenGL texture handle for the atlas.</summary>
     public uint TextureHandle => _textureHandle;
@@ -38,6 +43,7 @@ internal sealed class GlFontAtlas : IDisposable
         _atlasWidth = initialWidth;
         _atlasHeight = initialHeight;
         _staging = new MagickImage(MagickColors.Transparent, (uint)initialWidth, (uint)initialHeight);
+        ResetDirtyRegion();
 
         _textureHandle = gl.GenTexture();
         gl.BindTexture(TextureTarget.Texture2D, _textureHandle);
@@ -45,6 +51,11 @@ internal sealed class GlFontAtlas : IDisposable
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)GLEnum.Linear);
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)GLEnum.ClampToEdge);
         gl.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)GLEnum.ClampToEdge);
+
+        // Allocate the GPU texture once with empty data
+        gl.TexImage2D<byte>(TextureTarget.Texture2D, 0, InternalFormat.Rgba,
+            (uint)initialWidth, (uint)initialHeight, 0,
+            PixelFormat.Rgba, PixelType.UnsignedByte, ReadOnlySpan<byte>.Empty);
     }
 
     /// <summary>
@@ -65,22 +76,25 @@ internal sealed class GlFontAtlas : IDisposable
 
     /// <summary>
     /// Uploads any pending glyph rasterisations to the GPU texture.
+    /// Only uploads the dirty region rather than the full atlas.
     /// Call this once per frame after all <see cref="GetGlyph"/> calls.
     /// </summary>
-    public unsafe void Flush()
+    public void Flush()
     {
-        if (!_dirty || _staging is null)
+        if (_dirtyX0 >= _dirtyX1 || _dirtyY0 >= _dirtyY1 || _staging is null)
             return;
+
+        var regionW = _dirtyX1 - _dirtyX0;
+        var regionH = _dirtyY1 - _dirtyY0;
 
         _gl.BindTexture(TextureTarget.Texture2D, _textureHandle);
 
         using var pixels = _staging.GetPixelsUnsafe();
-        var rawPixels = pixels.GetArea(0, 0, _staging.Width, _staging.Height);
+        var rawPixels = pixels.GetArea(_dirtyX0, _dirtyY0, (uint)regionW, (uint)regionH);
         if (rawPixels is null) return;
 
-        // Magick.NET Q8 returns RGB by default; we need to convert to RGBA
         var channels = (int)_staging.ChannelCount;
-        var pixelCount = _atlasWidth * _atlasHeight;
+        var pixelCount = regionW * regionH;
         var rgba = new byte[pixelCount * 4];
 
         for (var i = 0; i < pixelCount; i++)
@@ -97,14 +111,11 @@ internal sealed class GlFontAtlas : IDisposable
             }
         }
 
-        fixed (byte* ptr = rgba)
-        {
-            _gl.TexImage2D(TextureTarget.Texture2D, 0, InternalFormat.Rgba,
-                (uint)_atlasWidth, (uint)_atlasHeight, 0,
-                PixelFormat.Rgba, PixelType.UnsignedByte, ptr);
-        }
+        _gl.TexSubImage2D<byte>(TextureTarget.Texture2D, 0,
+            _dirtyX0, _dirtyY0, (uint)regionW, (uint)regionH,
+            PixelFormat.Rgba, PixelType.UnsignedByte, rgba.AsSpan());
 
-        _dirty = false;
+        ResetDirtyRegion();
     }
 
     /// <summary>
@@ -180,6 +191,12 @@ internal sealed class GlFontAtlas : IDisposable
         // Composite into the staging atlas
         _staging?.Composite(glyphImage, _cursorX, _cursorY, CompositeOperator.Over);
 
+        // Expand the dirty region to include this glyph
+        _dirtyX0 = Math.Min(_dirtyX0, _cursorX);
+        _dirtyY0 = Math.Min(_dirtyY0, _cursorY);
+        _dirtyX1 = Math.Max(_dirtyX1, _cursorX + glyphWidth);
+        _dirtyY1 = Math.Max(_dirtyY1, _cursorY + glyphHeight);
+
         var glyphInfo = new GlyphInfo(
             U0: _cursorX / (float)_atlasWidth,
             V0: _cursorY / (float)_atlasHeight,
@@ -193,8 +210,15 @@ internal sealed class GlFontAtlas : IDisposable
         _glyphs[key] = glyphInfo;
         _cursorX += glyphWidth + 1;
         _rowHeight = Math.Max(_rowHeight, glyphHeight);
-        _dirty = true;
 
         return glyphInfo;
+    }
+
+    private void ResetDirtyRegion()
+    {
+        _dirtyX0 = _atlasWidth;
+        _dirtyY0 = _atlasHeight;
+        _dirtyX1 = 0;
+        _dirtyY1 = 0;
     }
 }

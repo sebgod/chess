@@ -55,15 +55,12 @@ internal sealed class GlShaderProgram : IDisposable
     public void Use() => _gl.UseProgram(Handle);
 
     /// <summary>Sets a uniform <c>mat4</c> value by name.</summary>
-    public unsafe void SetMatrix4(string name, ReadOnlySpan<float> matrix)
+    public void SetMatrix4(string name, ReadOnlySpan<float> matrix)
     {
         var location = _gl.GetUniformLocation(Handle, name);
         if (location >= 0)
         {
-            fixed (float* ptr = matrix)
-            {
-                _gl.UniformMatrix4(location, 1, false, ptr);
-            }
+            _gl.UniformMatrix4(location, 1, false, matrix);
         }
     }
 
