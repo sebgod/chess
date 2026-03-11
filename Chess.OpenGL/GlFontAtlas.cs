@@ -19,8 +19,10 @@ internal sealed class GlFontAtlas : IDisposable
     private readonly Dictionary<GlyphKey, GlyphInfo> _glyphs = new();
 
     private uint _textureHandle;
-    private readonly int _atlasWidth;
-    private readonly int _atlasHeight;
+    private const int MaxAtlasSize = 2048;
+
+    private int _atlasWidth;
+    private int _atlasHeight;
     private int _cursorX;
     private int _cursorY;
     private int _rowHeight;
@@ -37,7 +39,7 @@ internal sealed class GlFontAtlas : IDisposable
     /// <summary>The OpenGL texture handle for the atlas.</summary>
     public uint TextureHandle => _textureHandle;
 
-    public GlFontAtlas(GL gl, int initialWidth = 2048, int initialHeight = 2048)
+    public GlFontAtlas(GL gl, int initialWidth = 512, int initialHeight = 512)
     {
         _gl = gl;
         _atlasWidth = initialWidth;
@@ -148,7 +150,7 @@ internal sealed class GlFontAtlas : IDisposable
         _staging = null;
     }
 
-    private GlyphInfo RasterizeGlyph(GlyphKey key)
+    private GlyphInfo RasterizeGlyph(GlyphKey key, bool retrying = false)
     {
         // Spaces and whitespace: measure advance via a reference character, no texture needed
         if (char.IsWhiteSpace(key.Character))
@@ -184,9 +186,26 @@ internal sealed class GlFontAtlas : IDisposable
             _rowHeight = 0;
         }
 
-        // If we've exceeded vertical space, the atlas is too small
+        // If we've exceeded vertical space, try to recover
         if (_cursorY + glyphHeight > _atlasHeight)
+        {
+            if (_atlasWidth < MaxAtlasSize || _atlasHeight < MaxAtlasSize)
+            {
+                // First attempt: grow the atlas (preserves existing glyphs & UVs)
+                Grow();
+                return RasterizeGlyph(key);
+            }
+
+            if (!retrying)
+            {
+                // At max size: evict stale glyphs and retry
+                EvictAll();
+                return RasterizeGlyph(key, retrying: true);
+            }
+
+            // Already at max size and evicted — give up
             return default;
+        }
 
         // Composite into the staging atlas
         _staging?.Composite(glyphImage, _cursorX, _cursorY, CompositeOperator.Over);
@@ -212,6 +231,80 @@ internal sealed class GlFontAtlas : IDisposable
         _rowHeight = Math.Max(_rowHeight, glyphHeight);
 
         return glyphInfo;
+    }
+
+    /// <summary>
+    /// Doubles the atlas dimensions (up to <see cref="MaxAtlasSize"/>),
+    /// preserving existing glyph data and rescaling cached UV coordinates.
+    /// </summary>
+    private void Grow()
+    {
+        var oldWidth = _atlasWidth;
+        var oldHeight = _atlasHeight;
+
+        _atlasWidth = Math.Min(_atlasWidth * 2, MaxAtlasSize);
+        _atlasHeight = Math.Min(_atlasHeight * 2, MaxAtlasSize);
+
+        // Preserve existing staging content in a larger buffer
+        var newStaging = new MagickImage(MagickColors.Transparent, (uint)_atlasWidth, (uint)_atlasHeight);
+        if (_staging is not null)
+        {
+            newStaging.Composite(_staging, 0, 0, CompositeOperator.Over);
+            _staging.Dispose();
+        }
+        _staging = newStaging;
+
+        // Rescale cached glyph UV coordinates for the new atlas dimensions
+        var scaleX = (float)oldWidth / _atlasWidth;
+        var scaleY = (float)oldHeight / _atlasHeight;
+        var keys = new GlyphKey[_glyphs.Count];
+        _glyphs.Keys.CopyTo(keys, 0);
+        foreach (var key in keys)
+        {
+            var g = _glyphs[key];
+            _glyphs[key] = g with
+            {
+                U0 = g.U0 * scaleX,
+                V0 = g.V0 * scaleY,
+                U1 = g.U1 * scaleX,
+                V1 = g.V1 * scaleY
+            };
+        }
+
+        // Reallocate the GPU texture at the new size
+        _gl.BindTexture(TextureTarget.Texture2D, _textureHandle);
+        _gl.TexImage2D<byte>(TextureTarget.Texture2D, 0, InternalFormat.Rgba,
+            (uint)_atlasWidth, (uint)_atlasHeight, 0,
+            PixelFormat.Rgba, PixelType.UnsignedByte, ReadOnlySpan<byte>.Empty);
+
+        // Mark entire atlas dirty so Flush uploads the preserved content
+        _dirtyX0 = 0;
+        _dirtyY0 = 0;
+        _dirtyX1 = _atlasWidth;
+        _dirtyY1 = _atlasHeight;
+    }
+
+    /// <summary>
+    /// Clears all cached glyphs and resets the atlas packing cursors.
+    /// The staging image is wiped to transparent so evicted glyphs
+    /// do not bleed into newly rasterised ones.
+    /// </summary>
+    private void EvictAll()
+    {
+        _glyphs.Clear();
+        _cursorX = 0;
+        _cursorY = 0;
+        _rowHeight = 0;
+
+        // Wipe the staging buffer — a fresh transparent canvas
+        _staging?.Dispose();
+        _staging = new MagickImage(MagickColors.Transparent, (uint)_atlasWidth, (uint)_atlasHeight);
+
+        // Mark the entire atlas dirty so the next Flush clears the GPU texture
+        _dirtyX0 = 0;
+        _dirtyY0 = 0;
+        _dirtyX1 = _atlasWidth;
+        _dirtyY1 = _atlasHeight;
     }
 
     private void ResetDirtyRegion()

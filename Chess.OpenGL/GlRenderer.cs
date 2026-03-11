@@ -258,9 +258,13 @@ public sealed class GlRenderer : Renderer<GL>
 
             // Compute text width from glyph advances (same values used for rendering)
             // so that centering and rendering agree exactly.
+            // This also pre-warms the cache, which may trigger atlas growth.
             var textWidth = 0f;
             foreach (var mc in line)
                 textWidth += _fontAtlas.GetGlyph(fontFamily, fontSize, mc).AdvanceX;
+
+            // Sync any newly rasterised glyphs to the GPU texture before drawing
+            _fontAtlas.Flush();
 
             var penX = horizAlignment switch
             {
@@ -299,9 +303,6 @@ public sealed class GlRenderer : Renderer<GL>
                 penX += glyph.AdvanceX;
             }
         }
-
-        // Flush atlas after all glyphs requested this frame
-        _fontAtlas.Flush();
     }
 
     /// <summary>
