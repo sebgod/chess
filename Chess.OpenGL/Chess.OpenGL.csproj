@@ -5,19 +5,19 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
-    <!-- Silk.NET uses reflection for platform discovery (IL2072, IL3000 etc.) but we bypass it
-         with explicit GlfwWindowing/GlfwInput.RegisterPlatform() calls, so suppress third-party warnings. -->
-    <TrimmerSingleWarn>true</TrimmerSingleWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Magick.NET-Q8-AnyCPU" />
-    <PackageReference Include="Silk.NET.Input" />
-    <PackageReference Include="Silk.NET.OpenGL" />
-    <PackageReference Include="Silk.NET.Windowing" />
-</ItemGroup>
+    <PackageReference Include="SDL3-CS" />
+    <PackageReference Include="SDL3-CS.Native" />
+    <PackageReference Include="Vortice.Vulkan" />
+    <PackageReference Include="Vortice.VulkanMemoryAllocator" />
+    <PackageReference Include="Vortice.ShaderCompiler" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\DIR.Lib\DIR.Lib.csproj" />

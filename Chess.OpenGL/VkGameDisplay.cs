@@ -2,19 +2,12 @@ using System.Collections.Immutable;
 using Chess.Lib;
 using Chess.Lib.UI;
 using DIR.Lib;
-using Silk.NET.Maths;
-using Silk.NET.OpenGL;
-using Silk.NET.Windowing;
 
 using File = Chess.Lib.File;
 
 namespace Chess.OpenGL;
 
-/// <summary>
-/// An <see cref="IGameDisplay"/> implementation that renders the chess board
-/// in an OpenGL window using Silk.NET for windowing and input.
-/// </summary>
-public sealed class OpenGLGameDisplay : IGameDisplay
+public sealed class VkGameDisplay : IGameDisplay
 {
     private static readonly RGBAColor32 BackgroundColor = new(0x1a, 0x1a, 0x2e, 0xff);
     private static readonly RGBAColor32 FontColor = new(0xff, 0xff, 0xff, 0xff);
@@ -29,64 +22,42 @@ public sealed class OpenGLGameDisplay : IGameDisplay
     private const float HistoryPanelWidthFactor = 18f;
     private const float StatusBarHeightFactor = 2f;
 
-    private readonly IWindow _window;
-    private readonly GlRenderer _renderer;
+    private readonly VkRenderer _renderer;
     private readonly string _labelFont;
     private GameUI? _gameUI;
+    private volatile bool _hasPendingUpdate;
     private Game? _game;
     private File? _pendingFile;
 
-    /// <summary>
-    /// Creates the display with a pre-initialised window and renderer.
-    /// The renderer and GL context are owned externally (e.g. by the application host).
-    /// </summary>
-    public OpenGLGameDisplay(IWindow window, GlRenderer renderer)
+    public VkGameDisplay(VkRenderer renderer)
     {
-        _window = window;
         _renderer = renderer;
         _labelFont = Path.Combine(AppContext.BaseDirectory, "Fonts", "DejaVuSans.ttf");
-        _window.Render += OnRender;
-        _window.Resize += OnResize;
     }
 
-    /// <inheritdoc />
     public GameUI UI => _gameUI ?? throw new InvalidOperationException("Call ResetGame before accessing UI.");
 
-    /// <summary>
-    /// Creates a Silk.NET window with default options suitable for the chess game.
-    /// </summary>
-    public static IWindow CreateWindow()
+    public bool HasPendingUpdate
     {
-        var options = WindowOptions.Default with
+        get
         {
-            Title = "Chess",
-            Size = new Vector2D<int>(1050, 830),
-            API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.ForwardCompatible, new APIVersion(3, 3))
-        };
-
-        return Window.Create(options);
+            var val = _hasPendingUpdate;
+            _hasPendingUpdate = false;
+            return val;
+        }
     }
 
-    /// <inheritdoc />
-    public void RenderInitial(Game game)
-    {
-        _game = game;
-    }
+    public void RenderInitial(Game game) { _game = game; _hasPendingUpdate = true; }
 
-    /// <inheritdoc />
     public void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects, File? pendingFile = null)
     {
         _game = game;
         _pendingFile = pendingFile;
+        _hasPendingUpdate = true;
     }
 
-    /// <inheritdoc />
-    public void HandleResize(Game game)
-    {
-        // Handled by the Silk.NET Resize callback
-    }
+    public void HandleResize(Game game) { }
 
-    /// <inheritdoc />
     public void ResetGame(Game game)
     {
         _game = game;
@@ -97,19 +68,40 @@ public sealed class OpenGLGameDisplay : IGameDisplay
             backgroundColor: BackgroundColor,
             resolveHistoryClick: ResolveHistoryClick);
         _gameUI.HistoryViewportRows = ComputeHistoryVisibleRows(boardH);
+        _hasPendingUpdate = true;
     }
 
-    /// <inheritdoc />
-    public void Dispose()
+    public void OnResize(int width, int height)
     {
-        _window.Render -= OnRender;
-        _window.Resize -= OnResize;
+        if (_gameUI is null) return;
+
+        var (boardW, boardH) = ComputeBoardArea();
+        _gameUI = _gameUI.Resize((uint)boardW, (uint)boardH);
+        _gameUI.HistoryViewportRows = ComputeHistoryVisibleRows(boardH);
     }
+
+    public void Render()
+    {
+        if (_gameUI is null) return;
+
+        var (boardW, boardH) = ComputeBoardArea();
+        var totalW = (int)_renderer.Width;
+        var totalH = (int)_renderer.Height;
+
+        var boardClip = new RectInt((boardW, boardH), PointInt.Origin);
+        _gameUI.Render<VulkanContext, Renderer<VulkanContext>>(_renderer, boardClip);
+
+        var historyRect = new RectInt((totalW, boardH), (boardW, 0));
+        RenderHistoryPanel(historyRect);
+
+        var statusRect = new RectInt((totalW, totalH), (0, boardH));
+        RenderStatusBar(statusRect);
+    }
+
+    public void Dispose() { }
 
     private float ChromeFontSize => MathF.Max(13f, (int)_renderer.Height / 40f);
-
     private int HistoryPanelWidth => (int)(ChromeFontSize * HistoryPanelWidthFactor);
-
     private int StatusBarHeight => (int)(ChromeFontSize * StatusBarHeightFactor);
 
     private (int BoardW, int BoardH) ComputeBoardArea()
@@ -127,39 +119,6 @@ public sealed class OpenGLGameDisplay : IGameDisplay
         return Math.Max(1, (int)((boardH - headerH) / rowH));
     }
 
-    private void OnResize(Vector2D<int> size)
-    {
-        if (_gameUI is null) return;
-
-        _renderer.Resize((uint)size.X, (uint)size.Y);
-        var (boardW, boardH) = ComputeBoardArea();
-        _gameUI = _gameUI.Resize((uint)boardW, (uint)boardH);
-        _gameUI.HistoryViewportRows = ComputeHistoryVisibleRows(boardH);
-    }
-
-    private void OnRender(double deltaTime)
-    {
-        if (_gameUI is null) return;
-
-        _renderer.Clear(BackgroundColor);
-
-        var (boardW, boardH) = ComputeBoardArea();
-        var totalW = (int)_renderer.Width;
-        var totalH = (int)_renderer.Height;
-
-        // Board
-        var boardClip = new RectInt((boardW, boardH), PointInt.Origin);
-        _gameUI.Render<GL, Renderer<GL>>(_renderer, boardClip);
-
-        // History panel
-        var historyRect = new RectInt((totalW, boardH), (boardW, 0));
-        RenderHistoryPanel(historyRect);
-
-        // Status bar
-        var statusRect = new RectInt((totalW, totalH), (0, boardH));
-        RenderStatusBar(statusRect);
-    }
-
     private void RenderHistoryPanel(in RectInt rect)
     {
         var fontSize = ChromeFontSize;
@@ -167,17 +126,14 @@ public sealed class OpenGLGameDisplay : IGameDisplay
         var headerH = (int)(fontSize * 2f);
         var rowH = fontSize * 1.5f;
 
-        // Background
         _renderer.FillRectangle(rect, HistoryBg);
 
-        // Header
         var headerRect = new RectInt(
             (rect.LowerRight.X, rect.UpperLeft.Y + headerH),
             (rect.UpperLeft.X + 8, rect.UpperLeft.Y));
         _renderer.DrawText("Move History", _labelFont, headerFontSize,
             HistoryHeaderColor, headerRect, TextAlign.Near, TextAlign.Center);
 
-        // Separator
         var sepRect = new RectInt(
             (rect.LowerRight.X - 4, rect.UpperLeft.Y + headerH + 1),
             (rect.UpperLeft.X + 4, rect.UpperLeft.Y + headerH));
@@ -210,14 +166,12 @@ public sealed class OpenGLGameDisplay : IGameDisplay
             var rowY = (int)(contentY + i * rowH);
             var rowH2 = (int)rowH;
 
-            // Move index
             var idxRect = new RectInt(
                 (rect.UpperLeft.X + idxColW, rowY + rowH2),
                 (rect.UpperLeft.X + 4, rowY));
             _renderer.DrawText(idxStr.AsSpan().Trim(), _labelFont, fontSize,
                 HistoryIndexColor, idxRect, TextAlign.Far, TextAlign.Center);
 
-            // White ply
             var whiteX = rect.UpperLeft.X + idxColW + 4;
             var whiteRect = new RectInt(
                 (whiteX + plyColW, rowY + rowH2),
@@ -230,7 +184,6 @@ public sealed class OpenGLGameDisplay : IGameDisplay
                 isHighlightWhite ? PlaybackHighlightText : FontColor,
                 whiteRect, TextAlign.Near, TextAlign.Center);
 
-            // Black ply
             if (blackPlyStr.Length > 0)
             {
                 var blackX = whiteX + plyColW + 2;
@@ -251,8 +204,6 @@ public sealed class OpenGLGameDisplay : IGameDisplay
     private void RenderStatusBar(in RectInt rect)
     {
         var fontSize = ChromeFontSize;
-
-        // Background
         _renderer.FillRectangle(rect, StatusBarBg);
 
         string status;
@@ -313,7 +264,6 @@ public sealed class OpenGLGameDisplay : IGameDisplay
         if (whitePlyIdx >= plyCount)
             return null;
 
-        // Left half = white ply, right half = black ply
         var idxColW = (int)(fontSize * 3.5f);
         var plyColW = (HistoryPanelWidth - idxColW) / 2;
         var midX = boardW + idxColW + plyColW;

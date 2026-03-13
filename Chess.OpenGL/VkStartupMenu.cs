@@ -1,15 +1,10 @@
 using Chess.Lib;
 using DIR.Lib;
-
-using Key = Silk.NET.Input.Key;
+using static SDL3.SDL;
 
 namespace Chess.OpenGL;
 
-/// <summary>
-/// An OpenGL-rendered startup menu for selecting game mode and side.
-/// Handles arrow-key navigation, Enter to confirm, and digit shortcuts.
-/// </summary>
-internal sealed class OpenGLStartupMenu
+internal sealed class VkStartupMenu
 {
     private enum Phase { GameMode, PlayAs, BoardType }
 
@@ -21,31 +16,21 @@ internal sealed class OpenGLStartupMenu
     private static readonly RGBAColor32 SelectedFg = new(0xff, 0xd7, 0x00, 0xff);
 
     private readonly string _fontPath;
-
     private Phase _phase = Phase.GameMode;
     private int _selected;
-
     private GameMode _gameMode;
     private Side _computerSide;
 
-    /// <summary>Whether the menu has finished and <see cref="Result"/> is available.</summary>
     public bool IsComplete { get; private set; }
-
-    /// <summary>The selected game configuration. Only valid when <see cref="IsComplete"/> is <c>true</c>.</summary>
     public (GameMode Mode, Side ComputerSide) Result => (_gameMode, _computerSide);
 
-    public OpenGLStartupMenu()
+    public VkStartupMenu()
     {
         _fontPath = Path.Combine(AppContext.BaseDirectory, "Fonts", "DejaVuSans.ttf");
     }
 
-    /// <summary>
-    /// Renders the current menu state to the given renderer.
-    /// </summary>
-    public void Render(GlRenderer renderer)
+    public void Render(VkRenderer renderer)
     {
-        renderer.Clear(BackgroundColor);
-
         var w = renderer.Width;
         var h = renderer.Height;
         var fontSize = Math.Max(16f, h / 25f);
@@ -57,16 +42,13 @@ internal sealed class OpenGLStartupMenu
         var totalH = titleSize * 2f + lineH + items.Length * lineH;
         var startY = (h - totalH) / 2f;
 
-        // Title
         var titleRect = new RectInt(((int)w, (int)(startY + titleSize * 2f)), (0, (int)startY));
         renderer.DrawText(title.AsSpan(), _fontPath, titleSize, TitleColor, titleRect, vertAlignment: TextAlign.Center);
 
-        // Prompt
         var promptY = startY + titleSize * 2f + lineH * 0.5f;
         var promptRect = new RectInt(((int)w, (int)(promptY + lineH)), (0, (int)promptY));
         renderer.DrawText(prompt.AsSpan(), _fontPath, fontSize, PromptColor, promptRect, vertAlignment: TextAlign.Center);
 
-        // Items
         var itemsStartY = promptY + lineH * 1.5f;
         for (var i = 0; i < items.Length; i++)
         {
@@ -90,9 +72,6 @@ internal sealed class OpenGLStartupMenu
         }
     }
 
-    /// <summary>
-    /// Processes a mouse click. Selects and confirms the clicked item, if any.
-    /// </summary>
     public void HandleClick(int x, int y, uint rendererWidth, uint rendererHeight)
     {
         if (IsComplete) return;
@@ -120,10 +99,7 @@ internal sealed class OpenGLStartupMenu
         }
     }
 
-    /// <summary>
-    /// Processes a keyboard input event. Call from the Silk.NET key-down callback.
-    /// </summary>
-    public void HandleKey(Key key)
+    public void HandleKey(Scancode key)
     {
         if (IsComplete) return;
 
@@ -131,21 +107,21 @@ internal sealed class OpenGLStartupMenu
 
         switch (key)
         {
-            case Key.Up:
+            case Scancode.Up:
                 _selected = (_selected - 1 + items.Length) % items.Length;
                 break;
-            case Key.Down:
+            case Scancode.Down:
                 _selected = (_selected + 1) % items.Length;
                 break;
-            case Key.Enter:
+            case Scancode.Return:
                 Confirm();
                 break;
             default:
                 var digit = key switch
                 {
-                    Key.Number1 => 0,
-                    Key.Number2 => 1,
-                    Key.Number3 => 2,
+                    Scancode.Alpha1 => 0,
+                    Scancode.Alpha2 => 1,
+                    Scancode.Alpha3 => 2,
                     _ => -1
                 };
                 if (digit >= 0 && digit < items.Length)
@@ -206,5 +182,4 @@ internal sealed class OpenGLStartupMenu
                 break;
         }
     }
-
 }

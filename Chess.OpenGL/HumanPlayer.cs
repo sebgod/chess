@@ -3,49 +3,41 @@ using System.Collections.Immutable;
 using Chess.Lib;
 using Chess.Lib.UI;
 using DIR.Lib;
-using Silk.NET.Input;
+using static SDL3.SDL;
 
 using Action = Chess.Lib.Action;
 using File = Chess.Lib.File;
-using Key = Silk.NET.Input.Key;
 
 namespace Chess.OpenGL;
 
-/// <summary>
-/// An <see cref="IGamePlayer"/> that translates Silk.NET keyboard and mouse events into chess game actions.
-/// Events are enqueued from the window's input callbacks and dequeued by the game loop thread.
-/// </summary>
 public sealed class HumanPlayer : IGamePlayer
 {
     private readonly ConcurrentQueue<InputEvent> _eventQueue = new();
     private File? _pendingFile;
     private int _lastKnownPlyCount = -1;
 
-    private readonly record struct InputEvent(Key Key, bool IsCtrl, int MouseX, int MouseY, bool IsClick, bool IsScroll, int ScrollDelta);
+    private readonly record struct InputEvent(Scancode Scancode, bool IsCtrl, int MouseX, int MouseY, bool IsClick, bool IsScroll, int ScrollDelta);
 
-    /// <summary>
-    /// Connects this player to the given Silk.NET input context.
-    /// Call after the window has loaded and input is available.
-    /// </summary>
-    public void Attach(IInputContext input)
+    public void EnqueueKeyDown(Scancode scancode, Keymod keymod)
     {
-        foreach (var keyboard in input.Keyboards)
-        {
-            keyboard.KeyDown += OnKeyDown;
-        }
+        if (scancode == Scancode.F11) return;
 
-        foreach (var mouse in input.Mice)
-        {
-            mouse.MouseDown += OnMouseDown;
-            mouse.Scroll += OnMouseScroll;
-        }
+        var isCtrl = (keymod & Keymod.Ctrl) != 0;
+        _eventQueue.Enqueue(new InputEvent(scancode, isCtrl, 0, 0, false, false, 0));
     }
 
-    /// <inheritdoc />
+    public void EnqueueMouseDown(int x, int y)
+    {
+        _eventQueue.Enqueue(new InputEvent(Scancode.Unknown, false, x, y, true, false, 0));
+    }
+
+    public void EnqueueScroll(int delta)
+    {
+        _eventQueue.Enqueue(new InputEvent(Scancode.Unknown, false, 0, 0, false, true, delta));
+    }
+
     public PlayerMoveResult? TryMakeMove(GameUI ui)
     {
-        // If the game state changed while we weren't being polled (e.g. engine move),
-        // discard any stale input that accumulated during the wait.
         var currentPlyCount = ui.Game.PlyCount;
         if (currentPlyCount != _lastKnownPlyCount)
         {
@@ -58,10 +50,9 @@ public sealed class HumanPlayer : IGamePlayer
         if (!_eventQueue.TryDequeue(out var evt))
             return null;
 
-        // Keymap overlay: any click, F1, or Escape dismisses it
         if (ui.ShowingKeymap)
         {
-            if (evt.IsClick || evt.Key is Key.F1 or Key.Escape)
+            if (evt.IsClick || evt.Scancode is Scancode.F1 or Scancode.Escape)
             {
                 _pendingFile = null;
                 return Result(ui.ToggleKeymap());
@@ -70,9 +61,7 @@ public sealed class HumanPlayer : IGamePlayer
         }
 
         if (evt.IsScroll)
-        {
             return Result(ui.ScrollHistory(evt.ScrollDelta > 0 ? -3 : 3));
-        }
 
         if (evt.IsClick)
         {
@@ -83,38 +72,37 @@ public sealed class HumanPlayer : IGamePlayer
             return Result(response, clips);
         }
 
-        return HandleKeyInput(ui, evt.Key, evt.IsCtrl);
+        return HandleKeyInput(ui, evt.Scancode, evt.IsCtrl);
     }
 
-    private PlayerMoveResult HandleKeyInput(GameUI ui, Key key, bool isCtrl)
+    private PlayerMoveResult HandleKeyInput(GameUI ui, Scancode key, bool isCtrl)
     {
-        if (key is Key.F1)
+        if (key is Scancode.F1)
         {
             _pendingFile = null;
             return Result(ui.ToggleKeymap());
         }
 
-        if (key is Key.F9)
+        if (key is Scancode.F9)
         {
             _pendingFile = null;
             return Result(UIResponse.NeedsReset);
         }
 
-        // Playback navigation
         if (isCtrl)
         {
-            if (key is Key.Left)  { _pendingFile = null; return Result(ui.NavigateBack()); }
-            if (key is Key.Right) { _pendingFile = null; return Result(ui.NavigateForward()); }
-            if (key is Key.Up)    { _pendingFile = null; return Result(ui.NavigateBack(2)); }
-            if (key is Key.Down)  { _pendingFile = null; return Result(ui.NavigateForward(2)); }
+            if (key is Scancode.Left)  { _pendingFile = null; return Result(ui.NavigateBack()); }
+            if (key is Scancode.Right) { _pendingFile = null; return Result(ui.NavigateForward()); }
+            if (key is Scancode.Up)    { _pendingFile = null; return Result(ui.NavigateBack(2)); }
+            if (key is Scancode.Down)  { _pendingFile = null; return Result(ui.NavigateForward(2)); }
         }
 
-        if (key is Key.PageUp)
+        if (key is Scancode.Pageup)
         {
             _pendingFile = null;
             return Result(ui.ScrollHistory(-(ui.HistoryViewportRows - 1)));
         }
-        if (key is Key.PageDown)
+        if (key is Scancode.Pagedown)
         {
             _pendingFile = null;
             return Result(ui.ScrollHistory(ui.HistoryViewportRows - 1));
@@ -124,11 +112,11 @@ public sealed class HumanPlayer : IGamePlayer
         {
             return key switch
             {
-                Key.Escape => Result(ui.ExitPlayback()),
-                Key.Left => Result(ui.NavigateBack()),
-                Key.Right => Result(ui.NavigateForward()),
-                Key.Up => Result(ui.NavigateBack(2)),
-                Key.Down => Result(ui.NavigateForward(2)),
+                Scancode.Escape => Result(ui.ExitPlayback()),
+                Scancode.Left => Result(ui.NavigateBack()),
+                Scancode.Right => Result(ui.NavigateForward()),
+                Scancode.Up => Result(ui.NavigateBack(2)),
+                Scancode.Down => Result(ui.NavigateForward(2)),
                 _ => Result(UIResponse.None),
             };
         }
@@ -136,7 +124,7 @@ public sealed class HumanPlayer : IGamePlayer
         if (ui.IsSetupMode)
             return HandleSetupKeyInput(ui, key);
 
-        if (key is Key.Escape)
+        if (key is Scancode.Escape)
         {
             _pendingFile = null;
             var (clearResponse, clearClips) = ui.ClearSelection();
@@ -162,15 +150,14 @@ public sealed class HumanPlayer : IGamePlayer
                 return Result(ui.TryPerformAction(new Position(selected.File, rank)));
         }
 
-        // Promotion keys
         if (ui.PendingPromotion is { } pendingPromotion && ui.Selected is { } prev)
         {
             var promoteType = key switch
             {
-                Key.N => PieceType.Knight,
-                Key.B => PieceType.Bishop,
-                Key.R => PieceType.Rook,
-                Key.Q => PieceType.Queen,
+                Scancode.N => PieceType.Knight,
+                Scancode.B => PieceType.Bishop,
+                Scancode.R => PieceType.Rook,
+                Scancode.Q => PieceType.Queen,
                 _ => PieceType.None
             };
 
@@ -185,15 +172,15 @@ public sealed class HumanPlayer : IGamePlayer
         return Result(UIResponse.None);
     }
 
-    private PlayerMoveResult HandleSetupKeyInput(GameUI ui, Key key)
+    private PlayerMoveResult HandleSetupKeyInput(GameUI ui, Scancode key)
     {
-        if (key is Key.Tab)
+        if (key is Scancode.Tab)
         {
             _pendingFile = null;
             return Result(ui.TogglePlacementSide());
         }
 
-        if (key is Key.S)
+        if (key is Scancode.S)
         {
             _pendingFile = null;
             ui.IsSetupMode = false;
@@ -202,13 +189,13 @@ public sealed class HumanPlayer : IGamePlayer
 
         if (ui.PendingPlacement is { } pendingPos)
         {
-            if (key is Key.Escape)
+            if (key is Scancode.Escape)
             {
                 _pendingFile = null;
                 return Result(ui.CancelPlacement());
             }
 
-            if (key is Key.Delete or Key.Backspace)
+            if (key is Scancode.Delete or Scancode.Backspace)
             {
                 _pendingFile = null;
                 return Result(ui.ClearSquare(pendingPos));
@@ -216,12 +203,12 @@ public sealed class HumanPlayer : IGamePlayer
 
             var pieceType = key switch
             {
-                Key.P => PieceType.Pawn,
-                Key.N => PieceType.Knight,
-                Key.B => PieceType.Bishop,
-                Key.R => PieceType.Rook,
-                Key.Q => PieceType.Queen,
-                Key.K => PieceType.King,
+                Scancode.P => PieceType.Pawn,
+                Scancode.N => PieceType.Knight,
+                Scancode.B => PieceType.Bishop,
+                Scancode.R => PieceType.Rook,
+                Scancode.Q => PieceType.Queen,
+                Scancode.K => PieceType.King,
                 _ => PieceType.None
             };
 
@@ -234,14 +221,14 @@ public sealed class HumanPlayer : IGamePlayer
             return Result(UIResponse.None);
         }
 
-        if (key is Key.Escape)
+        if (key is Scancode.Escape)
         {
             _pendingFile = null;
             var (clearResponse, clearClips) = ui.ClearSelection();
             return Result(clearResponse | UIResponse.IsUpdate, clearClips);
         }
 
-        if (key is Key.Backspace or Key.Delete)
+        if (key is Scancode.Backspace or Scancode.Delete)
         {
             if (ui.Selected is { } selected)
             {
@@ -266,28 +253,6 @@ public sealed class HumanPlayer : IGamePlayer
         return Result(UIResponse.None);
     }
 
-    private void OnKeyDown(IKeyboard keyboard, Key key, int scancode)
-    {
-        // F11 is handled at the window level, not queued as a game event
-        if (key is Key.F11) return;
-
-        var isCtrl = keyboard.IsKeyPressed(Key.ControlLeft) || keyboard.IsKeyPressed(Key.ControlRight);
-        _eventQueue.Enqueue(new InputEvent(key, isCtrl, 0, 0, false, false, 0));
-    }
-
-    private void OnMouseDown(IMouse mouse, MouseButton button)
-    {
-        if (button == MouseButton.Left)
-        {
-            _eventQueue.Enqueue(new InputEvent(Key.Unknown, false, (int)mouse.Position.X, (int)mouse.Position.Y, true, false, 0));
-        }
-    }
-
-    private void OnMouseScroll(IMouse mouse, ScrollWheel scroll)
-    {
-        _eventQueue.Enqueue(new InputEvent(Key.Unknown, false, 0, 0, false, true, (int)scroll.Y));
-    }
-
     private PlayerMoveResult Result(UIResponse response)
         => new(response, [], _pendingFile);
 
@@ -297,29 +262,29 @@ public sealed class HumanPlayer : IGamePlayer
     private PlayerMoveResult Result((UIResponse Response, ImmutableArray<RectInt> ClipRects) uiResult)
         => new(uiResult.Response, uiResult.ClipRects, _pendingFile);
 
-    private static File? TryParseFile(Key key) => key switch
+    private static File? TryParseFile(Scancode key) => key switch
     {
-        Key.A => File.A,
-        Key.B => File.B,
-        Key.C => File.C,
-        Key.D => File.D,
-        Key.E => File.E,
-        Key.F => File.F,
-        Key.G => File.G,
-        Key.H => File.H,
+        Scancode.A => File.A,
+        Scancode.B => File.B,
+        Scancode.C => File.C,
+        Scancode.D => File.D,
+        Scancode.E => File.E,
+        Scancode.F => File.F,
+        Scancode.G => File.G,
+        Scancode.H => File.H,
         _ => null
     };
 
-    private static Rank? TryParseRank(Key key) => key switch
+    private static Rank? TryParseRank(Scancode key) => key switch
     {
-        Key.Number1 => Rank.R1,
-        Key.Number2 => Rank.R2,
-        Key.Number3 => Rank.R3,
-        Key.Number4 => Rank.R4,
-        Key.Number5 => Rank.R5,
-        Key.Number6 => Rank.R6,
-        Key.Number7 => Rank.R7,
-        Key.Number8 => Rank.R8,
+        Scancode.Alpha1 => Rank.R1,
+        Scancode.Alpha2 => Rank.R2,
+        Scancode.Alpha3 => Rank.R3,
+        Scancode.Alpha4 => Rank.R4,
+        Scancode.Alpha5 => Rank.R5,
+        Scancode.Alpha6 => Rank.R6,
+        Scancode.Alpha7 => Rank.R7,
+        Scancode.Alpha8 => Rank.R8,
         _ => null
     };
 }
