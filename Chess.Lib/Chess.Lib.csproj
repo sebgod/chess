@@ -14,7 +14,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\DIR.Lib\DIR.Lib.csproj" />
+    <PackageReference Include="DIR.Lib" />
   </ItemGroup>
 
   <ItemGroup>

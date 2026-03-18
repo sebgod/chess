@@ -17,9 +17,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\DIR.Lib\DIR.Lib.csproj" />
+    <PackageReference Include="Console.Lib" />
     <ProjectReference Include="..\Chess.Lib\Chess.Lib.csproj" />
-    <ProjectReference Include="..\Console.Lib\Console.Lib.csproj" />
   </ItemGroup>
 
 </Project>

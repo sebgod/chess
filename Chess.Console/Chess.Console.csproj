@@ -20,7 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Chess.ImageMagickSixelRenderer\Chess.ImageMagickSixelRenderer.csproj" />
-<ProjectReference Include="..\Console.Lib\Console.Lib.csproj" />
+<PackageReference Include="Console.Lib" />
     <ProjectReference Include="..\Chess.Lib\Chess.Lib.csproj" />
     <ProjectReference Include="..\Chess.UCI\Chess.UCI.csproj" />
     <ProjectReference Include="..\Chess.Engine\Chess.Engine.csproj">
