@@ -1,8 +1,9 @@
 using Chess.Lib;
 using DIR.Lib;
+using SdlVulkan.Renderer;
 using static SDL3.SDL;
 
-namespace Chess.OpenGL;
+namespace Chess.GUI;
 
 internal sealed class VkStartupMenu
 {

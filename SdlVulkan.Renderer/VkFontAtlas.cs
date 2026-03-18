@@ -2,7 +2,7 @@ using ImageMagick;
 using Vortice.Vulkan;
 using static Vortice.Vulkan.Vulkan;
 
-namespace Chess.OpenGL;
+namespace SdlVulkan.Renderer;
 
 internal sealed unsafe class VkFontAtlas : IDisposable
 {

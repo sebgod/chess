@@ -2,7 +2,7 @@ using System.Runtime.InteropServices;
 using Vortice.Vulkan;
 using static Vortice.Vulkan.Vulkan;
 
-namespace Chess.OpenGL;
+namespace SdlVulkan.Renderer;
 
 public sealed unsafe class VulkanContext : IDisposable
 {

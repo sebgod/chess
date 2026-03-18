@@ -2,12 +2,12 @@ using Vortice.Vulkan;
 using static Vortice.Vulkan.Vulkan;
 using static SDL3.SDL;
 
-namespace Chess.OpenGL;
+namespace SdlVulkan.Renderer;
 
 /// <summary>
 /// Owns the SDL window and Vulkan instance/surface lifecycle.
 /// </summary>
-internal sealed unsafe class SdlVulkanWindow : IDisposable
+public sealed unsafe class SdlVulkanWindow : IDisposable
 {
     public nint Handle { get; }
     public VkInstance Instance { get; }
@@ -70,9 +70,27 @@ internal sealed unsafe class SdlVulkanWindow : IDisposable
         };
 
 #if DEBUG
-        using var validationLayers = new VkStringArray(["VK_LAYER_KHRONOS_validation"]);
-        instanceCI.enabledLayerCount = validationLayers.Length;
-        instanceCI.ppEnabledLayerNames = validationLayers;
+        const string validationLayerName = "VK_LAYER_KHRONOS_validation";
+        uint layerCount = 0;
+        vkEnumerateInstanceLayerProperties(&layerCount, null);
+        var layerProps = new VkLayerProperties[layerCount];
+        fixed (VkLayerProperties* pLayerProps = layerProps)
+            vkEnumerateInstanceLayerProperties(&layerCount, pLayerProps);
+        bool hasValidation = false;
+        foreach (var layer in layerProps)
+        {
+            if (VkStringInterop.ConvertToManaged(layer.layerName) == validationLayerName)
+            {
+                hasValidation = true;
+                break;
+            }
+        }
+        using var validationLayers = hasValidation ? new VkStringArray([validationLayerName]) : default;
+        if (hasValidation)
+        {
+            instanceCI.enabledLayerCount = validationLayers.Length;
+            instanceCI.ppEnabledLayerNames = validationLayers;
+        }
 #endif
 
         vkCreateInstance(&instanceCI, null, out var instance).CheckResult();

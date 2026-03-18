@@ -2,7 +2,7 @@ using Vortice.Vulkan;
 using Vortice.ShaderCompiler;
 using static Vortice.Vulkan.Vulkan;
 
-namespace Chess.OpenGL;
+namespace SdlVulkan.Renderer;
 
 internal sealed unsafe class VkPipelineSet : IDisposable
 {

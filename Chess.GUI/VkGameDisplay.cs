@@ -2,10 +2,11 @@ using System.Collections.Immutable;
 using Chess.Lib;
 using Chess.Lib.UI;
 using DIR.Lib;
+using SdlVulkan.Renderer;
 
 using File = Chess.Lib.File;
 
-namespace Chess.OpenGL;
+namespace Chess.GUI;
 
 public sealed class VkGameDisplay : IGameDisplay
 {

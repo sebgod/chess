@@ -5,22 +5,18 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Magick.NET-Q8-AnyCPU" />
+    <PackageReference Include="DIR.Lib" />
     <PackageReference Include="SDL3-CS" />
     <PackageReference Include="SDL3-CS.Native" />
-    <PackageReference Include="Vortice.Vulkan" />
-    <PackageReference Include="Vortice.VulkanMemoryAllocator" />
-    <PackageReference Include="Vortice.ShaderCompiler" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="DIR.Lib" />
+    <ProjectReference Include="..\SdlVulkan.Renderer\SdlVulkan.Renderer.csproj" />
     <ProjectReference Include="..\Chess.Lib\Chess.Lib.csproj" />
     <ProjectReference Include="..\Chess.UCI\Chess.UCI.csproj" />
     <ProjectReference Include="..\Chess.Engine\Chess.Engine.csproj">

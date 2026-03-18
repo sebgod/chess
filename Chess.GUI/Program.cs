@@ -1,6 +1,7 @@
 using Chess.Lib.UI;
-using Chess.OpenGL;
+using Chess.GUI;
 using Chess.UCI;
+using SdlVulkan.Renderer;
 using static SDL3.SDL;
 
 using var sdlWindow = SdlVulkanWindow.Create("Chess", 1050, 830);

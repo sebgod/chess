@@ -1,7 +1,7 @@
 using DIR.Lib;
 using Vortice.Vulkan;
 
-namespace Chess.OpenGL;
+namespace SdlVulkan.Renderer;
 
 public sealed unsafe class VkRenderer : Renderer<VulkanContext>
 {

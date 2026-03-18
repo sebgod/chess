@@ -39,16 +39,16 @@ jobs:
         dotnet-version: 10.0.x
     - name: Publish Chess.Console
       run: dotnet publish Chess.Console/Chess.Console.csproj -r ${{ matrix.rid }} -c Release
-    - name: Publish Chess.OpenGL
-      run: dotnet publish Chess.OpenGL/Chess.OpenGL.csproj -r ${{ matrix.rid }} -c Release
+    - name: Publish Chess.GUI
+      run: dotnet publish Chess.GUI/Chess.GUI.csproj -r ${{ matrix.rid }} -c Release
     - uses: actions/upload-artifact@v4
       with:
         name: chess-console-${{ matrix.rid }}
         path: Chess.Console/bin/Release/net10.0/${{ matrix.rid }}/publish/
     - uses: actions/upload-artifact@v4
       with:
-        name: chess-opengl-${{ matrix.rid }}
-        path: Chess.OpenGL/bin/Release/net10.0/${{ matrix.rid }}/publish/
+        name: chess-gui-${{ matrix.rid }}
+        path: Chess.GUI/bin/Release/net10.0/${{ matrix.rid }}/publish/
 
   release:
     needs: publish

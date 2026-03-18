@@ -8,7 +8,7 @@ using static SDL3.SDL;
 using Action = Chess.Lib.Action;
 using File = Chess.Lib.File;
 
-namespace Chess.OpenGL;
+namespace Chess.GUI;
 
 public sealed class HumanPlayer : IGamePlayer
 {
