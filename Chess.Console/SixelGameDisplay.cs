@@ -1,14 +1,13 @@
-using Chess.ImageMagickSixelRenderer;
 using Console.Lib;
-using ImageMagick;
+using DIR.Lib;
 
 namespace Chess.Console;
 
 /// <summary>
-/// Sixel-based display using ImageMagick for rendering.
+/// Sixel-based display using software RGBA renderer with FreeType text.
 /// </summary>
-internal sealed class SixelGameDisplay(IVirtualTerminal terminal) : ConsoleGameDisplayBase<MagickImage>(terminal)
+internal sealed class SixelGameDisplay(IVirtualTerminal terminal) : ConsoleGameDisplayBase<RgbaImage>(terminal)
 {
-    protected override SixelRenderer<MagickImage> CreateRenderer(uint width, uint height)
-        => new MagickImageRenderer(width, height);
+    protected override SixelRenderer<RgbaImage> CreateRenderer(uint width, uint height)
+        => new RgbaImageRenderer(width, height);
 }
