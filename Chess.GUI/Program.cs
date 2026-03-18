@@ -1,5 +1,5 @@
-using Chess.Lib.UI;
 using Chess.GUI;
+using Chess.Lib.UI;
 using Chess.UCI;
 using SdlVulkan.Renderer;
 using static SDL3.SDL;

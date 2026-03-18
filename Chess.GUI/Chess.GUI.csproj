@@ -13,10 +13,10 @@
     <PackageReference Include="DIR.Lib" />
     <PackageReference Include="SDL3-CS" />
     <PackageReference Include="SDL3-CS.Native" />
+    <PackageReference Include="SdlVulkan.Renderer" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\SdlVulkan.Renderer\SdlVulkan.Renderer.csproj" />
     <ProjectReference Include="..\Chess.Lib\Chess.Lib.csproj" />
     <ProjectReference Include="..\Chess.UCI\Chess.UCI.csproj" />
     <ProjectReference Include="..\Chess.Engine\Chess.Engine.csproj">
