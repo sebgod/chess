@@ -11,25 +11,24 @@ dotnet test -c Release               # Run all tests
 dotnet test Chess.Tests --filter "ClassName=Chess.Tests.GameTests"  # Run one test class
 dotnet test Chess.Tests --filter "GameTests.EvaluateMoves"          # Run one test method
 dotnet run --project Chess.Console -c Release                       # Run the console app
-dotnet run --project BenchmarkSuite1 -c Release                     # Run benchmarks
+dotnet run --project Chess.GUI -c Release                           # Run the Vulkan GUI app
 ```
 
 CI runs `dotnet test --configuration Release` on ubuntu-latest with .NET 10.0.
 
 ## Architecture
 
-Chess game with multiple rendering backends. Ten projects in the solution:
+Chess game with multiple rendering backends. Seven projects in the solution:
 
-- **DIR.Lib** — Device-independent rendering primitives: `PointInt`, `RectInt`, `RGBAColor32`, `TextAlign`, and abstract `Renderer<TSurface>`. No dependencies. AOT-compatible.
+- **DIR.Lib** (NuGet, [SharpAstro/DIR.Lib](https://github.com/SharpAstro/DIR.Lib)) — Device-independent rendering primitives: `PointInt`, `RectInt`, `RGBAColor32`, `TextAlign`, abstract `Renderer<TSurface>`, `RgbaImage` pixel buffer, and `FreeTypeGlyphRasterizer` (FreeType2 P/Invoke). AOT-compatible.
+- **Console.Lib** (NuGet, [SharpAstro/Console.Lib](https://github.com/SharpAstro/Console.Lib)) — Terminal I/O, virtual terminal abstraction, dock-based layout, widgets (`Canvas`, `TextBar`, `ScrollableList`), `SixelRenderer<TSurface>`, `RgbaImageRenderer` (software renderer with FreeType text), Sixel encoding, and truecolor/SGR-16 styling via `VtStyle`. References DIR.Lib. No ImageMagick dependency.
+- **SdlVulkan.Renderer** (NuGet, [SharpAstro/SdlVulkan.Renderer](https://github.com/SharpAstro/SdlVulkan.Renderer)) — SDL3 + Vortice.Vulkan renderer: `SdlVulkanWindow`, `VulkanContext`, `VkRenderer`, `VkPipelineSet`, `VkFontAtlas`. References DIR.Lib. AOT-compatible.
 - **Chess.Lib** — Core library: board representation, rules, move validation, AI engine (negamax with alpha-beta pruning). All chess logic lives here. References DIR.Lib. AOT-compatible.
 - **Chess.UCI** — Shared UCI (Universal Chess Interface) protocol library. Parsing, formatting, client/server helpers. Referenced by both Console and Engine.
 - **Chess.Engine** — Standalone UCI engine executable (`chess-engine`). Wraps `AiEngine` from Chess.Lib behind the UCI protocol. Supports `go depth N` and sends `info` lines during search. AOT-compatible.
-- **Console.Lib** — Terminal I/O, virtual terminal abstraction, dock-based layout, widgets (`Canvas`, `TextBar`, `ScrollableList`), `SixelRenderer<TSurface>`, Sixel encoding, and truecolor/SGR-16 styling via `VtStyle`. References DIR.Lib. No chess or ImageMagick dependencies.
-- **Chess.ImageMagickSixelRenderer** — Concrete `MagickImageRenderer` (extends `SixelRenderer<MagickImage>`) and Sixel encoding extensions for terminal display. References DIR.Lib, Chess.Lib, Console.Lib.
-- **Chess.OpenGL** — Standalone OpenGL chess executable (`WinExe`, no console window). Uses Silk.NET for windowing/input and Magick.NET for font atlas. Implements `Renderer<GL>`, `IGameDisplay`, and `IGamePlayer`. References DIR.Lib, Chess.Lib, Chess.UCI. AOT-compatible.
-- **Chess.Console** — Terminal chess application with Sixel and ASCII display backends. Communicates with Chess.Engine via UCI over stdin/stdout.
+- **Chess.GUI** — Standalone Vulkan chess executable (`WinExe`, no console window). Uses SdlVulkan.Renderer for windowing/rendering and SDL3 for input. Implements `IGameDisplay` and `IGamePlayer`. References SdlVulkan.Renderer, DIR.Lib, Chess.Lib, Chess.UCI. AOT-compatible.
+- **Chess.Console** — Terminal chess application with Sixel and ASCII display backends. Uses Console.Lib's `RgbaImageRenderer` for Magick-free sixel rendering. Communicates with Chess.Engine via UCI over stdin/stdout.
 - **Chess.Tests** — xUnit v3 tests with Shouldly assertions. Uses `[MemberData]` with static `DataSource()` methods for parameterized tests.
-- **BenchmarkSuite1** — BenchmarkDotNet performance benchmarks for rendering.
 
 ### Key type design
 
