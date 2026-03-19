@@ -48,7 +48,11 @@ internal sealed class AsciiDisplay(IVirtualTerminal terminal) : IGameDisplay
 
     public GameUI UI => _gameUI ?? throw new InvalidOperationException("Call ResetGame before accessing UI.");
 
-    public void RenderInitial(Game game) => RenderBoard(game);
+    public void RenderInitial(Game game)
+    {
+        RenderBoard(game);
+        WritePrompt(game, pendingFile: null);
+    }
 
     public void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects, File? pendingFile)
     {
@@ -68,6 +72,8 @@ internal sealed class AsciiDisplay(IVirtualTerminal terminal) : IGameDisplay
         {
             WriteMarkdown($"**Setup:** placing *{UI.PlacementSide}* pieces — **Tab** toggle | **s** start");
         }
+
+        WritePrompt(game, pendingFile);
     }
 
     public void HandleResize(Game game) { }
@@ -134,6 +140,16 @@ internal sealed class AsciiDisplay(IVirtualTerminal terminal) : IGameDisplay
         }
 
         _terminal.WriteLine();
+    }
+
+    private void WritePrompt(Game game, File? pendingFile)
+    {
+        if (UI.ShowingKeymap || game.GameStatus is not (GameStatus.Ongoing or GameStatus.Check))
+            return;
+
+        var fileChar = pendingFile is { } f ? ((char)('a' + (int)f)).ToString() : "";
+        var selected = UI.Selected is { } sel ? $" [{sel}]" : "";
+        _terminal.WriteInPlace($"> {fileChar}{selected}");
     }
 
     private void WriteMarkdown(string markdown)

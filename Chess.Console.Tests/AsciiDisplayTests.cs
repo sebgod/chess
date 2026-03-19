@@ -164,7 +164,7 @@ public class AsciiDisplayTests
     }
 
     [Fact]
-    public void RenderMove_WithNoFlags_RendersNothing()
+    public void RenderMove_WithNoFlags_ShowsPromptOnly()
     {
         var (display, terminal) = CreateDisplay();
         var game = new Game();
@@ -172,7 +172,7 @@ public class AsciiDisplayTests
 
         display.RenderMove(game, UIResponse.None, [], null);
 
-        terminal.Output.ShouldBeEmpty();
+        terminal.Output.ShouldContain("> ");
     }
 
     [Fact]
