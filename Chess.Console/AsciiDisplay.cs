@@ -10,12 +10,41 @@ namespace Chess.Console;
 
 /// <summary>
 /// Renders the board as ASCII text using FEN notation, for terminals without Sixel support.
+/// Uses <see cref="MarkdownRenderer"/> for styled keymap help and status output.
 /// </summary>
 internal sealed class AsciiDisplay(IVirtualTerminal terminal) : IGameDisplay
 {
     private readonly IVirtualTerminal _terminal = terminal;
     private string _lastFen = "";
     private GameUI? _gameUI;
+
+    /// <summary>
+    /// Markdown-formatted version of <see cref="GameUI.KeymapText"/> for styled terminal rendering.
+    /// </summary>
+    private const string KeymapMarkdown =
+        "### Keyboard Controls\n" +
+        "\n" +
+        "### Gameplay\n" +
+        "- **a-h** Select file\n" +
+        "- **1-8** Select rank\n" +
+        "- **Esc** Cancel selection\n" +
+        "\n" +
+        "### Playback\n" +
+        "- **Ctrl+Arrow** Navigate history\n" +
+        "- **Esc** Exit playback\n" +
+        "\n" +
+        "### Promotion\n" +
+        "- **n/b/r/q** Select piece\n" +
+        "\n" +
+        "### Custom Setup\n" +
+        "- **p/n/b/r/q/k** Place piece\n" +
+        "- **Tab** Toggle side\n" +
+        "- **Del** Clear square\n" +
+        "- **s** Start game\n" +
+        "\n" +
+        "---\n" +
+        "- **F1** Toggle this help\n" +
+        "- **F9** New game";
 
     public GameUI UI => _gameUI ?? throw new InvalidOperationException("Call ResetGame before accessing UI.");
 
@@ -26,7 +55,7 @@ internal sealed class AsciiDisplay(IVirtualTerminal terminal) : IGameDisplay
         if (UI.ShowingKeymap && response.HasFlag(UIResponse.NeedsRefresh))
         {
             _terminal.WriteLine();
-            _terminal.WriteLine(GameUI.KeymapText);
+            WriteMarkdown(KeymapMarkdown);
             _terminal.WriteLine();
             return;
         }
@@ -37,7 +66,7 @@ internal sealed class AsciiDisplay(IVirtualTerminal terminal) : IGameDisplay
         }
         if (UI.IsSetupMode && (response.HasFlag(UIResponse.IsUpdate) || response.HasFlag(UIResponse.NeedsPiecePlacement)))
         {
-            _terminal.WriteLine($" Setup: placing {UI.PlacementSide} pieces [Tab to toggle; s to start]  ");
+            WriteMarkdown($"**Setup:** placing *{UI.PlacementSide}* pieces — **Tab** toggle | **s** start");
         }
     }
 
@@ -90,11 +119,11 @@ internal sealed class AsciiDisplay(IVirtualTerminal terminal) : IGameDisplay
         _terminal.WriteLine();
         if (UI.Mode == GameUIMode.Playback)
         {
-            _terminal.Write($" Playback: ply {UI.PlaybackPlyIndex + 2}/{game.PlyCount + 1} [Ctrl+Up/Down, Esc exit]  ");
+            WriteMarkdown($"**Playback:** ply {UI.PlaybackPlyIndex + 2}/{game.PlyCount + 1} — *Ctrl+Up/Down* navigate | *Esc* exit");
         }
         else
         {
-            _terminal.Write($" {game.GameStatus.ToMessage(game.CurrentSide)}  ");
+            WriteMarkdown($"**{game.GameStatus.ToMessage(game.CurrentSide)}**");
         }
 
         var plies = game.Plies;
@@ -105,6 +134,14 @@ internal sealed class AsciiDisplay(IVirtualTerminal terminal) : IGameDisplay
         }
 
         _terminal.WriteLine();
+    }
+
+    private void WriteMarkdown(string markdown)
+    {
+        var width = _terminal.Size.Width;
+        var lines = MarkdownRenderer.RenderLines(markdown, width, _terminal.ColorMode);
+        foreach (var line in lines)
+            _terminal.WriteLine(line);
     }
 
     public void Dispose() { }

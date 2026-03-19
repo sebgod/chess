@@ -11,7 +11,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="BenchmarkSuite1" />
-    <InternalsVisibleTo Include="Chess.Tests" />
+    <InternalsVisibleTo Include="Chess.Console.Tests" />
   </ItemGroup>
 
   <ItemGroup>
