@@ -1,6 +1,7 @@
 using Chess.GUI;
 using Chess.Lib.UI;
 using Chess.UCI;
+using DIR.Lib;
 using SdlVulkan.Renderer;
 using static SDL3.SDL;
 
@@ -51,19 +52,19 @@ while (running)
                     break;
 
                 case EventType.KeyDown:
-                    var scancode = evt.Key.Scancode;
-                    var keymod = evt.Key.Mod;
+                    var inputKey = evt.Key.Scancode.ToInputKey;
+                    var inputMod = evt.Key.Mod.ToInputModifier;
 
-                    if (scancode == Scancode.F11)
+                    if (inputKey == InputKey.F11)
                     {
                         sdlWindow.ToggleFullscreen();
                         break;
                     }
 
                     if (menu is { IsComplete: false })
-                        menu.HandleKey(scancode);
+                        menu.HandleKey(inputKey);
                     else
-                        player.EnqueueKeyDown(scancode, keymod);
+                        player.EnqueueKeyDown(inputKey, inputMod);
                     needsRedraw = true;
                     break;
 

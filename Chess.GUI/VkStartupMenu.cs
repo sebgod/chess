@@ -1,7 +1,6 @@
 using Chess.Lib;
 using DIR.Lib;
 using SdlVulkan.Renderer;
-using static SDL3.SDL;
 
 namespace Chess.GUI;
 
@@ -100,7 +99,7 @@ internal sealed class VkStartupMenu
         }
     }
 
-    public void HandleKey(Scancode key)
+    public void HandleKey(InputKey key)
     {
         if (IsComplete) return;
 
@@ -108,21 +107,21 @@ internal sealed class VkStartupMenu
 
         switch (key)
         {
-            case Scancode.Up:
+            case InputKey.Up:
                 _selected = (_selected - 1 + items.Length) % items.Length;
                 break;
-            case Scancode.Down:
+            case InputKey.Down:
                 _selected = (_selected + 1) % items.Length;
                 break;
-            case Scancode.Return:
+            case InputKey.Enter:
                 Confirm();
                 break;
             default:
                 var digit = key switch
                 {
-                    Scancode.Alpha1 => 0,
-                    Scancode.Alpha2 => 1,
-                    Scancode.Alpha3 => 2,
+                    InputKey.D1 => 0,
+                    InputKey.D2 => 1,
+                    InputKey.D3 => 2,
                     _ => -1
                 };
                 if (digit >= 0 && digit < items.Length)
