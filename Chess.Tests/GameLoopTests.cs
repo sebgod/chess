@@ -24,7 +24,7 @@ public class GameLoopTests
 
         public void RenderInitial(Game game) => RenderInitialCount++;
 
-        public void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects, File? pendingFile = null)
+        public void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects)
             => RenderMoveCount++;
 
         public void HandleResize(Game game) { }

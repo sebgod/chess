@@ -117,9 +117,9 @@ public class AsciiGameIntegrationTests
         var result = player.TryMakeMove(display.UI);
 
         result.ShouldNotBeNull();
-        result.Value.PendingFile.ShouldBe(Chess.Lib.File.E);
+        display.UI.PendingFile.ShouldBe(Chess.Lib.File.E);
 
-        display.RenderMove(game, result.Value.Response, result.Value.ClipRects, result.Value.PendingFile);
+        display.RenderMove(game, result.Value.Response, result.Value.ClipRects);
 
         terminal.Output.ShouldContain("> e");
     }
@@ -148,7 +148,7 @@ public class AsciiGameIntegrationTests
         var result = player.TryMakeMove(display.UI);
 
         result.ShouldNotBeNull();
-        display.RenderMove(game, result.Value.Response, result.Value.ClipRects, result.Value.PendingFile);
+        display.RenderMove(game, result.Value.Response, result.Value.ClipRects);
 
         terminal.Output.ShouldContain("[e2]");
     }
@@ -173,7 +173,7 @@ public class AsciiGameIntegrationTests
         game.GameStatus.ShouldBe(GameStatus.Checkmate);
 
         terminal.ClearOutput();
-        display.RenderMove(game, UIResponse.NeedsRefresh, [], null);
+        display.RenderMove(game, UIResponse.NeedsRefresh, []);
 
         var output = terminal.Output;
         output.ShouldContain("Checkmate");
@@ -196,7 +196,7 @@ public class AsciiGameIntegrationTests
         var result = player.TryMakeMove(display.UI);
 
         result.ShouldNotBeNull();
-        result.Value.PendingFile.ShouldBeNull();
+        display.UI.PendingFile.ShouldBeNull();
         result.Value.Response.ShouldBe(UIResponse.None);
     }
 

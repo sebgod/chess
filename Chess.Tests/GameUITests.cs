@@ -613,4 +613,131 @@ public class GameUITests
         ui.LastMove.ShouldNotBeNull();
         ui.LastMove.Value.To.ShouldBe(E4);
     }
+
+    // ── HandleKeyDown ────────────────────────────────────────────
+
+    [Fact]
+    public void HandleKeyDown_FileKey_SetsPendingFile()
+    {
+        var ui = CreateStandardUI();
+
+        var (response, _) = ui.HandleKeyDown(InputKey.E, InputModifier.None);
+
+        response.ShouldBe(UIResponse.IsUpdate);
+        ui.PendingFile.ShouldBe(File.E);
+    }
+
+    [Fact]
+    public void HandleKeyDown_FileAndRankKeys_PerformsMove()
+    {
+        var ui = CreateStandardUI();
+
+        ui.HandleKeyDown(InputKey.E, InputModifier.None);
+        var (response, _) = ui.HandleKeyDown(InputKey.D4, InputModifier.None);
+
+        response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
+        ui.Game.Board[E4].PieceType.ShouldBe(PieceType.Pawn);
+        ui.PendingFile.ShouldBeNull();
+    }
+
+    [Fact]
+    public void HandleKeyDown_F9_ReturnsNeedsReset()
+    {
+        var ui = CreateStandardUI();
+
+        var (response, _) = ui.HandleKeyDown(InputKey.F9, InputModifier.None);
+
+        response.ShouldBe(UIResponse.NeedsReset);
+    }
+
+    [Fact]
+    public void HandleKeyDown_EscapeWithSelection_ClearsSelection()
+    {
+        var ui = CreateStandardUI();
+        ui.TryPerformAction(E2); // select e2
+        ui.Selected.ShouldBe(E2);
+
+        var (response, _) = ui.HandleKeyDown(InputKey.Escape, InputModifier.None);
+
+        response.HasFlag(UIResponse.IsUpdate).ShouldBeTrue();
+        ui.Selected.ShouldBeNull();
+    }
+
+    [Fact]
+    public void HandleKeyDown_CtrlLeft_EntersPlayback()
+    {
+        var ui = CreateStandardUI();
+        // Make a move first so there's history
+        ui.TryPerformAction(E2);
+        ui.TryPerformAction(E4);
+
+        var (response, _) = ui.HandleKeyDown(InputKey.Left, InputModifier.Ctrl);
+
+        response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
+        ui.Mode.ShouldBe(GameUIMode.Playback);
+    }
+
+    [Fact]
+    public void HandleKeyDown_F1_TogglesKeymap()
+    {
+        var ui = CreateStandardUI();
+        ui.ShowingKeymap.ShouldBeFalse();
+
+        ui.HandleKeyDown(InputKey.F1, InputModifier.None);
+
+        ui.ShowingKeymap.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void HandleKeyDown_SetupMode_PlacesPiece()
+    {
+        var game = new Game(new Board(), Side.White, []);
+        var ui = CreateUI(game);
+        ui.IsSetupMode = true;
+
+        // Select square e4
+        ui.HandleKeyDown(InputKey.E, InputModifier.None);
+        ui.HandleKeyDown(InputKey.D4, InputModifier.None);
+        ui.PendingPlacement.ShouldBe(E4);
+
+        // Place a queen
+        var (response, _) = ui.HandleKeyDown(InputKey.Q, InputModifier.None);
+
+        response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
+        ui.Game.Board[E4].PieceType.ShouldBe(PieceType.Queen);
+    }
+
+    // ── HandleMouseDown ──────────────────────────────────────────
+
+    [Fact]
+    public void HandleMouseDown_ClickSquare_SelectsOrMoves()
+    {
+        var ui = CreateStandardUI();
+
+        // Click on E4 area — should auto-move pawn
+        var (response, _) = ui.HandleMouseDown(
+            ui.SquareRect(E4).UpperLeft.X + 5,
+            ui.SquareRect(E4).UpperLeft.Y + 5);
+
+        response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
+        ui.Game.Board[E4].PieceType.ShouldBe(PieceType.Pawn);
+    }
+
+    // ── HandleMouseWheel ─────────────────────────────────────────
+
+    [Fact]
+    public void HandleMouseWheel_ScrollsHistory()
+    {
+        var ui = CreateStandardUI();
+        ui.HistoryViewportRows = 10;
+
+        // Make a move for history
+        ui.TryPerformAction(E2);
+        ui.TryPerformAction(E4);
+
+        var (response, _) = ui.HandleMouseWheel(-1);
+
+        // ScrollHistory should return a valid response
+        (response == UIResponse.None || response.HasFlag(UIResponse.IsUpdate)).ShouldBeTrue();
+    }
 }

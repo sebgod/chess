@@ -101,7 +101,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         UpdateHistory(game);
     }
 
-    public void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects, File? pendingFile)
+    public void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects)
     {
         if (response.HasFlag(UIResponse.NeedsRefresh))
         {
@@ -109,7 +109,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         }
         if (response.HasFlag(UIResponse.IsUpdate) || response.HasFlag(UIResponse.NeedsPiecePlacement))
         {
-            UpdateStatusBar(game, pendingFile);
+            UpdateStatusBar(game);
             UpdateHistory(game);
         }
     }
@@ -122,9 +122,9 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
     private int? HighlightPlyIndex => UI.Mode == GameUIMode.Playback ? UI.PlaybackPlyIndex : null;
 
-    private void UpdateStatusBar(Game game, File? pendingFile = null)
+    private void UpdateStatusBar(Game game)
     {
-        var fileInfo = pendingFile is { } f ? $" [{f.ToLabel()}]" : "";
+        var fileInfo = UI.PendingFile is { } f ? $" [{f.ToLabel()}]" : "";
         var setupInfo = SetupPlacementSide is { } side ? $" Setup: placing {side} pieces [Tab to toggle; s to start]" : "";
         string status;
         if (PlaybackInfo is (var plyIdx, var plyCount))

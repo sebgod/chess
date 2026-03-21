@@ -10,7 +10,7 @@ public interface IGameDisplay : IDisposable
 {
     GameUI UI { get; }
     void RenderInitial(Game game);
-    void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects, File? pendingFile = null);
+    void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects);
     void HandleResize(Game game);
     void ResetGame(Game game);
 }

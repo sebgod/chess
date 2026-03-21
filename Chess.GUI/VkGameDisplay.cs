@@ -4,8 +4,6 @@ using Chess.Lib.UI;
 using DIR.Lib;
 using SdlVulkan.Renderer;
 
-using File = Chess.Lib.File;
-
 namespace Chess.GUI;
 
 public sealed class VkGameDisplay : IGameDisplay
@@ -28,7 +26,6 @@ public sealed class VkGameDisplay : IGameDisplay
     private GameUI? _gameUI;
     private volatile bool _hasPendingUpdate;
     private Game? _game;
-    private File? _pendingFile;
 
     public VkGameDisplay(VkRenderer renderer)
     {
@@ -50,10 +47,9 @@ public sealed class VkGameDisplay : IGameDisplay
 
     public void RenderInitial(Game game) { _game = game; _hasPendingUpdate = true; }
 
-    public void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects, File? pendingFile = null)
+    public void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects)
     {
         _game = game;
-        _pendingFile = pendingFile;
         _hasPendingUpdate = true;
     }
 
@@ -221,12 +217,12 @@ public sealed class VkGameDisplay : IGameDisplay
         else if (_gameUI?.IsSetupMode == true)
         {
             var side = _gameUI.PlacementSide;
-            var fileInfo = _pendingFile is { } f ? $" [{f.ToLabel()}]" : "";
+            var fileInfo = _gameUI.PendingFile is { } f ? $" [{f.ToLabel()}]" : "";
             status = $"Setup: placing {side} pieces [Tab toggle, s start]{fileInfo}";
         }
         else
         {
-            var fileInfo = _pendingFile is { } f ? $" [{f.ToLabel()}]" : "";
+            var fileInfo = _gameUI?.PendingFile is { } f ? $" [{f.ToLabel()}]" : "";
             status = $"{_game.GameStatus.ToMessage(_game.CurrentSide)}{fileInfo}";
         }
 

@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using DIR.Lib;
 
 public enum File : byte
 {
@@ -35,11 +36,17 @@ public enum Rank : byte
 public static class FileExtensions
 {
     public static string ToLabel(this File file) => file is File.Unknown ? "" : char.ToString((char)((byte)file + 'a'));
+
+    public static File? TryParseFromKey(InputKey key) => key is >= InputKey.A and <= InputKey.H
+        ? (File)(key - InputKey.A) : null;
 }
 
 public static class RankExtensions
 {
     public static string ToLabel(this Rank rank) => rank is Rank.Unknown ? "" : Convert.ToString((byte)rank + 1, CultureInfo.InvariantCulture);
+
+    public static Rank? TryParseFromKey(InputKey key) => key is >= InputKey.D1 and <= InputKey.D8
+        ? (Rank)(key - InputKey.D1) : null;
 }
 
 public readonly record struct Position(File File, Rank Rank)

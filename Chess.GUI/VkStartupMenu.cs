@@ -4,20 +4,12 @@ using SdlVulkan.Renderer;
 
 namespace Chess.GUI;
 
-internal sealed class VkStartupMenu
+internal sealed class VkStartupMenu : IWidget
 {
     private enum Phase { GameMode, PlayAs, BoardType }
 
-    private static readonly RGBAColor32 BackgroundColor = new(0x1a, 0x1a, 0x2e, 0xff);
-    private static readonly RGBAColor32 TitleColor = new(0xff, 0xce, 0x9e, 0xff);
-    private static readonly RGBAColor32 PromptColor = new(0xdd, 0xdd, 0xdd, 0xff);
-    private static readonly RGBAColor32 ItemColor = new(0xcc, 0xcc, 0xcc, 0xff);
-    private static readonly RGBAColor32 SelectedBg = new(0x30, 0x50, 0x90, 0xff);
-    private static readonly RGBAColor32 SelectedFg = new(0xff, 0xd7, 0x00, 0xff);
-
-    private readonly string _fontPath;
+    private readonly VkMenuWidget _menu;
     private Phase _phase = Phase.GameMode;
-    private int _selected;
     private GameMode _gameMode;
     private Side _computerSide;
 
@@ -26,160 +18,92 @@ internal sealed class VkStartupMenu
 
     public VkStartupMenu()
     {
-        _fontPath = Path.Combine(AppContext.BaseDirectory, "Fonts", "DejaVuSans.ttf");
+        var fontPath = Path.Combine(AppContext.BaseDirectory, "Fonts", "DejaVuSans.ttf");
+        var (title, prompt, items) = MenuContent(Phase.GameMode);
+        _menu = new VkMenuWidget(fontPath, title, prompt, items);
     }
 
-    public void Render(VkRenderer renderer)
+    public void Render(VkRenderer renderer) => _menu.Render(renderer);
+
+    public bool HandleKeyDown(InputKey key, InputModifier modifiers)
     {
-        var w = renderer.Width;
-        var h = renderer.Height;
-        var fontSize = Math.Max(16f, h / 25f);
-        var titleSize = fontSize * 1.6f;
-        var lineH = fontSize * 2f;
+        if (IsComplete) return false;
 
-        var (title, prompt, items) = CurrentMenuContent();
+        if (!_menu.HandleKeyDown(key, modifiers))
+            return false;
 
-        var totalH = titleSize * 2f + lineH + items.Length * lineH;
-        var startY = (h - totalH) / 2f;
+        if (_menu.IsConfirmed)
+            Confirm();
 
-        var titleRect = new RectInt(((int)w, (int)(startY + titleSize * 2f)), (0, (int)startY));
-        renderer.DrawText(title.AsSpan(), _fontPath, titleSize, TitleColor, titleRect, vertAlignment: TextAlign.Center);
-
-        var promptY = startY + titleSize * 2f + lineH * 0.5f;
-        var promptRect = new RectInt(((int)w, (int)(promptY + lineH)), (0, (int)promptY));
-        renderer.DrawText(prompt.AsSpan(), _fontPath, fontSize, PromptColor, promptRect, vertAlignment: TextAlign.Center);
-
-        var itemsStartY = promptY + lineH * 1.5f;
-        for (var i = 0; i < items.Length; i++)
-        {
-            var itemY = itemsStartY + i * lineH;
-            var itemRect = new RectInt(((int)w, (int)(itemY + lineH)), (0, (int)itemY));
-
-            if (i == _selected)
-            {
-                var highlightPad = w * 0.2f;
-                var bgRect = new RectInt(((int)(w - highlightPad), (int)(itemY + lineH)), ((int)highlightPad, (int)itemY));
-                renderer.FillRectangle(bgRect, SelectedBg);
-
-                var label = $"\u25B6  {items[i]}";
-                renderer.DrawText(label.AsSpan(), _fontPath, fontSize, SelectedFg, itemRect, vertAlignment: TextAlign.Center);
-            }
-            else
-            {
-                var label = $"   {items[i]}";
-                renderer.DrawText(label.AsSpan(), _fontPath, fontSize, ItemColor, itemRect, vertAlignment: TextAlign.Center);
-            }
-        }
+        return true;
     }
 
-    public void HandleClick(int x, int y, uint rendererWidth, uint rendererHeight)
+    public bool HandleMouseDown(float x, float y)
     {
-        if (IsComplete) return;
+        if (IsComplete) return false;
 
-        var (_, _, items) = CurrentMenuContent();
-        var h = rendererHeight;
-        var fontSize = Math.Max(16f, h / 25f);
-        var titleSize = fontSize * 1.6f;
-        var lineH = fontSize * 2f;
+        if (!_menu.HandleMouseDown(x, y))
+            return false;
 
-        var totalH = titleSize * 2f + lineH + items.Length * lineH;
-        var startY = (h - totalH) / 2f;
-        var promptY = startY + titleSize * 2f + lineH * 0.5f;
-        var itemsStartY = promptY + lineH * 1.5f;
+        if (_menu.IsConfirmed)
+            Confirm();
 
-        for (var i = 0; i < items.Length; i++)
-        {
-            var itemY = itemsStartY + i * lineH;
-            if (y >= itemY && y < itemY + lineH)
-            {
-                _selected = i;
-                Confirm();
-                return;
-            }
-        }
+        return true;
     }
 
-    public void HandleKey(InputKey key)
+    private void Confirm()
     {
-        if (IsComplete) return;
+        var selected = _menu.SelectedIndex;
 
-        var (_, _, items) = CurrentMenuContent();
-
-        switch (key)
+        switch (_phase)
         {
-            case InputKey.Up:
-                _selected = (_selected - 1 + items.Length) % items.Length;
-                break;
-            case InputKey.Down:
-                _selected = (_selected + 1) % items.Length;
-                break;
-            case InputKey.Enter:
-                Confirm();
-                break;
-            default:
-                var digit = key switch
+            case Phase.GameMode:
+                if (selected == 0)
                 {
-                    InputKey.D1 => 0,
-                    InputKey.D2 => 1,
-                    InputKey.D3 => 2,
-                    _ => -1
-                };
-                if (digit >= 0 && digit < items.Length)
+                    _gameMode = GameMode.PlayerVsPlayer;
+                    _computerSide = Side.None;
+                    IsComplete = true;
+                }
+                else if (selected == 1)
                 {
-                    _selected = digit;
-                    Confirm();
+                    _gameMode = GameMode.PlayerVsComputer;
+                    AdvanceTo(Phase.PlayAs);
+                }
+                else
+                {
+                    AdvanceTo(Phase.BoardType);
                 }
                 break;
+
+            case Phase.PlayAs when _gameMode is GameMode.PlayerVsComputer:
+                _computerSide = selected == 0 ? Side.Black : Side.White;
+                IsComplete = true;
+                break;
+
+            case Phase.BoardType:
+                _gameMode = selected == 1 ? GameMode.CustomGameStandardBoard : GameMode.CustomGameEmpty;
+                AdvanceTo(Phase.PlayAs);
+                break;
+
+            case Phase.PlayAs:
+                _computerSide = selected == 0 ? Side.Black : Side.White;
+                IsComplete = true;
+                break;
         }
     }
 
-    private (string Title, string Prompt, string[] Items) CurrentMenuContent() => _phase switch
+    private void AdvanceTo(Phase phase)
+    {
+        _phase = phase;
+        var (title, prompt, items) = MenuContent(phase);
+        _menu.Reset(title, prompt, items);
+    }
+
+    private static (string Title, string Prompt, string[] Items) MenuContent(Phase phase) => phase switch
     {
         Phase.GameMode => ("\u265a Chess \u2654", "Select game mode:", ["Player vs Player", "Player vs Computer", "Custom Game"]),
         Phase.PlayAs => ("\u265a Chess \u2654", "Play as:", ["White", "Black"]),
         Phase.BoardType => ("\u265a Chess \u2654", "Starting board:", ["Empty Board", "Standard Board"]),
         _ => ("", "", [])
     };
-
-    private void Confirm()
-    {
-        switch (_phase)
-        {
-            case Phase.GameMode:
-                if (_selected == 0)
-                {
-                    _gameMode = GameMode.PlayerVsPlayer;
-                    _computerSide = Side.None;
-                    IsComplete = true;
-                }
-                else if (_selected == 1)
-                {
-                    _gameMode = GameMode.PlayerVsComputer;
-                    _phase = Phase.PlayAs;
-                    _selected = 0;
-                }
-                else
-                {
-                    _phase = Phase.BoardType;
-                    _selected = 0;
-                }
-                break;
-
-            case Phase.PlayAs when _gameMode is GameMode.PlayerVsComputer:
-                _computerSide = _selected == 0 ? Side.Black : Side.White;
-                IsComplete = true;
-                break;
-
-            case Phase.BoardType:
-                _gameMode = _selected == 1 ? GameMode.CustomGameStandardBoard : GameMode.CustomGameEmpty;
-                _phase = Phase.PlayAs;
-                _selected = 0;
-                break;
-
-            case Phase.PlayAs:
-                _computerSide = _selected == 0 ? Side.Black : Side.White;
-                IsComplete = true;
-                break;
-        }
-    }
 }

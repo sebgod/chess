@@ -51,10 +51,10 @@ internal sealed class AsciiDisplay(IVirtualTerminal terminal) : IGameDisplay
     public void RenderInitial(Game game)
     {
         RenderBoard(game);
-        WritePrompt(game, pendingFile: null);
+        WritePrompt(game);
     }
 
-    public void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects, File? pendingFile)
+    public void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects)
     {
         if (UI.ShowingKeymap && response.HasFlag(UIResponse.NeedsRefresh))
         {
@@ -73,7 +73,7 @@ internal sealed class AsciiDisplay(IVirtualTerminal terminal) : IGameDisplay
             WriteMarkdown($"**Setup:** placing *{UI.PlacementSide}* pieces — **Tab** toggle | **s** start");
         }
 
-        WritePrompt(game, pendingFile);
+        WritePrompt(game);
     }
 
     public void HandleResize(Game game) { }
@@ -142,12 +142,12 @@ internal sealed class AsciiDisplay(IVirtualTerminal terminal) : IGameDisplay
         _terminal.WriteLine();
     }
 
-    private void WritePrompt(Game game, File? pendingFile)
+    private void WritePrompt(Game game)
     {
         if (UI.ShowingKeymap || game.GameStatus is not (GameStatus.Ongoing or GameStatus.Check))
             return;
 
-        var fileChar = pendingFile is { } f ? ((char)('a' + (int)f)).ToString() : "";
+        var fileChar = UI.PendingFile is { } f ? ((char)('a' + (int)f)).ToString() : "";
         var selected = UI.Selected is { } sel ? $" [{sel}]" : "";
         _terminal.WriteInPlace($"> {fileChar}{selected}");
     }

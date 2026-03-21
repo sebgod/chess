@@ -146,7 +146,7 @@ public class AsciiDisplayTests
         var game = new Game();
         display.ResetGame(game);
 
-        display.RenderMove(game, UIResponse.NeedsRefresh, [], null);
+        display.RenderMove(game, UIResponse.NeedsRefresh, []);
 
         terminal.Output.ShouldContain("White to move.");
     }
@@ -158,7 +158,7 @@ public class AsciiDisplayTests
         var game = new Game();
         display.ResetGame(game);
 
-        display.RenderMove(game, UIResponse.IsUpdate, [], null);
+        display.RenderMove(game, UIResponse.IsUpdate, []);
 
         terminal.Output.ShouldContain("White to move.");
     }
@@ -170,7 +170,7 @@ public class AsciiDisplayTests
         var game = new Game();
         display.ResetGame(game);
 
-        display.RenderMove(game, UIResponse.None, [], null);
+        display.RenderMove(game, UIResponse.None, []);
 
         terminal.Output.ShouldContain("> ");
     }
@@ -184,7 +184,7 @@ public class AsciiDisplayTests
 
         game.TryMove(DoMove(E2, E4));
 
-        display.RenderMove(game, UIResponse.NeedsRefresh, [], null);
+        display.RenderMove(game, UIResponse.NeedsRefresh, []);
 
         terminal.Output.ShouldContain("e4");
     }
@@ -197,7 +197,7 @@ public class AsciiDisplayTests
         display.ResetGame(game);
         display.UI.ShowingKeymap = true;
 
-        display.RenderMove(game, UIResponse.NeedsRefresh, [], null);
+        display.RenderMove(game, UIResponse.NeedsRefresh, []);
 
         var output = terminal.Output;
         output.ShouldContain("Keyboard Controls");
@@ -219,7 +219,7 @@ public class AsciiDisplayTests
         display.UI.NavigateBack();
 
         terminal.ClearOutput();
-        display.RenderMove(game, UIResponse.NeedsRefresh, [], null);
+        display.RenderMove(game, UIResponse.NeedsRefresh, []);
 
         terminal.Output.ShouldContain("Playback");
     }
@@ -237,7 +237,7 @@ public class AsciiDisplayTests
         game.TryMove(DoMove(G2, G4));
         game.TryMove(DoMove(D8, H4));
 
-        display.RenderMove(game, UIResponse.NeedsRefresh, [], null);
+        display.RenderMove(game, UIResponse.NeedsRefresh, []);
 
         terminal.Output.ShouldContain("Checkmate");
     }
@@ -268,7 +268,7 @@ public class AsciiDisplayTests
         display.ResetGame(game);
         display.UI.IsSetupMode = true;
 
-        display.RenderMove(game, UIResponse.IsUpdate | UIResponse.NeedsPiecePlacement, [], null);
+        display.RenderMove(game, UIResponse.IsUpdate | UIResponse.NeedsPiecePlacement, []);
 
         terminal.Output.ShouldContain("Setup");
     }

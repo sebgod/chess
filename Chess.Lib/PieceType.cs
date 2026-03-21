@@ -1,3 +1,5 @@
+using DIR.Lib;
+
 namespace Chess.Lib;
 
 // See https://aka.ms/new-console-template for more information
@@ -57,6 +59,17 @@ public static class PieceTypeExtensions
             ConsoleKey.R => PieceType.Rook,
             ConsoleKey.Q or ConsoleKey.D => PieceType.Queen,
             ConsoleKey.K => PieceType.King,
+            _ => null
+        };
+
+        public static PieceType? TryParseFromKey(InputKey key) => key switch
+        {
+            InputKey.P => PieceType.Pawn,
+            InputKey.N => PieceType.Knight,
+            InputKey.B => PieceType.Bishop,
+            InputKey.R => PieceType.Rook,
+            InputKey.Q => PieceType.Queen,
+            InputKey.K => PieceType.King,
             _ => null
         };
     }

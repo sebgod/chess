@@ -1,5 +1,13 @@
 # TODO
 
+## Console Input
+
+### ASCII mode requires a real terminal
+`Console.KeyAvailable` throws `InvalidOperationException` when stdin is redirected
+(e.g., piped or launched from a non-interactive context). The app builds and starts
+correctly but crashes in `VirtualTerminal.InitAsync()`. Needs a guard or fallback
+for redirected stdin scenarios.
+
 ## Missing Draw Rules
 
 ### Fifty-Move Rule

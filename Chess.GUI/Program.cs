@@ -3,146 +3,77 @@ using Chess.Lib.UI;
 using Chess.UCI;
 using DIR.Lib;
 using SdlVulkan.Renderer;
-using static SDL3.SDL;
 
 using var sdlWindow = SdlVulkanWindow.Create("Chess", 1050, 830);
 sdlWindow.GetSizeInPixels(out var w, out var h);
 
 var ctx = VulkanContext.Create(sdlWindow.Instance, sdlWindow.Surface, (uint)w, (uint)h);
 var renderer = new VkRenderer(ctx, (uint)w, (uint)h);
-var menu = new VkStartupMenu();
+VkStartupMenu? menu = new();
 var player = new HumanPlayer();
 
 var cts = new CancellationTokenSource();
 VkGameDisplay? display = null;
 Task? gameTask = null;
-var needsRedraw = true;
 
-var running = true;
-while (running)
+var loop = new SdlEventLoop(sdlWindow, renderer)
 {
-    Event evt;
-    var hadEvent = needsRedraw
-        ? PollEvent(out evt)
-        : WaitEventTimeout(out evt, 16);
+    BackgroundColor = new RGBAColor32(0x1a, 0x1a, 0x2e, 0xff),
 
-    if (hadEvent)
+    OnKeyDown = (inputKey, inputMod) =>
     {
-        do
+        IWidget activeWidget = menu is { IsComplete: false } ? menu : player;
+        return activeWidget.HandleKeyDown(inputKey, inputMod);
+    },
+
+    OnMouseDown = (x, y) =>
+    {
+        IWidget clickTarget = menu is { IsComplete: false } ? menu : player;
+        return clickTarget.HandleMouseDown(x, y);
+    },
+
+    OnMouseWheel = (scrollY, _, _) =>
+        player.HandleMouseWheel(scrollY, 0, 0),
+
+    OnResize = (rw, rh) =>
+        display?.OnResize((int)rw, (int)rh),
+
+    CheckNeedsRedraw = () =>
+        display is { HasPendingUpdate: true },
+
+    OnRender = () =>
+    {
+        if (display is not null)
         {
-            switch ((EventType)evt.Type)
-            {
-                case EventType.Quit:
-                    running = false;
-                    break;
+            display.Render();
+        }
+        else if (menu is { IsComplete: false })
+        {
+            menu.Render(renderer);
+        }
+        else if (menu is { IsComplete: true } && gameTask is null)
+        {
+            var (gameMode, computerSide) = menu.Result;
+            menu = null;
 
-                case EventType.WindowResized:
-                case EventType.WindowPixelSizeChanged:
-                    sdlWindow.GetSizeInPixels(out var rw, out var rh);
-                    if (rw > 0 && rh > 0)
-                    {
-                        renderer.Resize((uint)rw, (uint)rh);
-                        display?.OnResize(rw, rh);
-                    }
-                    needsRedraw = true;
-                    break;
+            display = new VkGameDisplay(renderer);
+            var timeProvider = TimeProvider.System;
+            var enginePath = Path.Combine(AppContext.BaseDirectory,
+                "chess-engine" + (OperatingSystem.IsWindows() ? ".exe" : ""));
 
-                case EventType.WindowExposed:
-                    needsRedraw = true;
-                    break;
+            var gameLoop = new GameLoop(
+                timeProvider,
+                () => display,
+                () => player,
+                (cs, tp) => new UciPlayer(enginePath, cs, tp)
+            );
 
-                case EventType.KeyDown:
-                    var inputKey = evt.Key.Scancode.ToInputKey;
-                    var inputMod = evt.Key.Mod.ToInputModifier;
-
-                    if (inputKey == InputKey.F11)
-                    {
-                        sdlWindow.ToggleFullscreen();
-                        break;
-                    }
-
-                    if (menu is { IsComplete: false })
-                        menu.HandleKey(inputKey);
-                    else
-                        player.EnqueueKeyDown(inputKey, inputMod);
-                    needsRedraw = true;
-                    break;
-
-                case EventType.MouseButtonDown:
-                    if (evt.Button.Button == 1) // Left
-                    {
-                        var mx = (int)evt.Button.X;
-                        var my = (int)evt.Button.Y;
-                        if (menu is { IsComplete: false })
-                            menu.HandleClick(mx, my, renderer.Width, renderer.Height);
-                        else
-                            player.EnqueueMouseDown(mx, my);
-                        needsRedraw = true;
-                    }
-                    break;
-
-                case EventType.MouseWheel:
-                    player.EnqueueScroll((int)evt.Wheel.Y);
-                    needsRedraw = true;
-                    break;
-            }
-        } while (PollEvent(out evt));
+            gameTask = gameLoop.RunAsync(gameMode, computerSide, cts.Token);
+        }
     }
+};
 
-    // Check if the game display has been updated by the game loop thread
-    if (display is { HasPendingUpdate: true })
-        needsRedraw = true;
-
-    if (!needsRedraw)
-        continue;
-    needsRedraw = false;
-
-    // Render
-    var bgColor = new DIR.Lib.RGBAColor32(0x1a, 0x1a, 0x2e, 0xff);
-    if (!renderer.BeginFrame(bgColor))
-    {
-        sdlWindow.GetSizeInPixels(out var sw, out var sh);
-        if (sw > 0 && sh > 0)
-            renderer.Resize((uint)sw, (uint)sh);
-        needsRedraw = true;
-        continue;
-    }
-
-    if (display is not null)
-    {
-        display.Render();
-    }
-    else if (menu is { IsComplete: false })
-    {
-        menu.Render(renderer);
-    }
-    else if (menu is { IsComplete: true } && gameTask is null)
-    {
-        var (gameMode, computerSide) = menu.Result;
-        menu = null;
-
-        display = new VkGameDisplay(renderer);
-        var timeProvider = TimeProvider.System;
-        var enginePath = Path.Combine(AppContext.BaseDirectory,
-            "chess-engine" + (OperatingSystem.IsWindows() ? ".exe" : ""));
-
-        var gameLoop = new GameLoop(
-            timeProvider,
-            () => display,
-            () => player,
-            (cs, tp) => new UciPlayer(enginePath, cs, tp)
-        );
-
-        gameTask = gameLoop.RunAsync(gameMode, computerSide, cts.Token);
-    }
-
-    renderer.EndFrame();
-
-    // New glyphs were rasterized during DrawText but won't be visible
-    // until next frame's Flush — schedule another render
-    if (renderer.FontAtlasDirty)
-        needsRedraw = true;
-}
+loop.Run(cts.Token);
 
 cts.Cancel();
 display?.Dispose();

@@ -36,7 +36,7 @@ public class GameLoop(
 
                     if (result is { } setupResult)
                     {
-                        gameDisplay.RenderMove(game, setupResult.Response, setupResult.ClipRects, setupResult.PendingFile);
+                        gameDisplay.RenderMove(game, setupResult.Response, setupResult.ClipRects);
                     }
                     else
                     {
@@ -114,7 +114,7 @@ public class GameLoop(
                         continue;
                     }
 
-                    gameDisplay.RenderMove(game, moveResult.Response, moveResult.ClipRects, moveResult.PendingFile);
+                    gameDisplay.RenderMove(game, moveResult.Response, moveResult.ClipRects);
                 }
                 else
                 {

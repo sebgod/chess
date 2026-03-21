@@ -166,6 +166,8 @@ public class GameUI
 
     public Position? PendingPlacement { get; private set; }
 
+    public File? PendingFile { get; set; }
+
     public bool ShowingKeymap { get; set; }
 
     /// <summary>
@@ -212,6 +214,7 @@ public class GameUI
         resized.ShowingKeymap = ShowingKeymap;
         resized.HistoryViewportRows = HistoryViewportRows;
         resized.HistoryScrollStart = HistoryScrollStart;
+        resized.PendingFile = PendingFile;
         return resized;
     }
 
@@ -992,4 +995,197 @@ public class GameUI
         }
         return (UIResponse.None, []);
     }
+
+    // ── Input Handling ───────────────────────────────────────────
+
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) HandleKeyDown(InputKey key, InputModifier modifiers)
+    {
+        if (ShowingKeymap)
+        {
+            if (key is InputKey.F1 or InputKey.Escape)
+            {
+                PendingFile = null;
+                return ToggleKeymap();
+            }
+            return (UIResponse.None, []);
+        }
+
+        if (key is InputKey.F1)
+        {
+            PendingFile = null;
+            return ToggleKeymap();
+        }
+
+        if (key is InputKey.F9)
+        {
+            PendingFile = null;
+            return (UIResponse.NeedsReset, []);
+        }
+
+        var isCtrl = (modifiers & InputModifier.Ctrl) != 0;
+
+        if (isCtrl)
+        {
+            if (key is InputKey.Left)  { PendingFile = null; return NavigateBack(); }
+            if (key is InputKey.Right) { PendingFile = null; return NavigateForward(); }
+            if (key is InputKey.Up)    { PendingFile = null; return NavigateBack(2); }
+            if (key is InputKey.Down)  { PendingFile = null; return NavigateForward(2); }
+        }
+
+        if (key is InputKey.PageUp)
+        {
+            PendingFile = null;
+            return (ScrollHistory(-(HistoryViewportRows - 1)), []);
+        }
+        if (key is InputKey.PageDown)
+        {
+            PendingFile = null;
+            return (ScrollHistory(HistoryViewportRows - 1), []);
+        }
+
+        if (Mode == GameUIMode.Playback)
+        {
+            return key switch
+            {
+                InputKey.Escape => ExitPlayback(),
+                InputKey.Left => NavigateBack(),
+                InputKey.Right => NavigateForward(),
+                InputKey.Up => NavigateBack(2),
+                InputKey.Down => NavigateForward(2),
+                _ => (UIResponse.None, []),
+            };
+        }
+
+        if (IsSetupMode)
+            return HandleSetupKeyInput(key);
+
+        if (key is InputKey.Escape)
+        {
+            PendingFile = null;
+            var (clearResponse, clearClips) = ClearSelection();
+            return (clearResponse | UIResponse.IsUpdate, clearClips);
+        }
+
+        if (FileExtensions.TryParseFromKey(key) is { } file)
+        {
+            PendingFile = file;
+            return (UIResponse.IsUpdate, []);
+        }
+
+        if (RankExtensions.TryParseFromKey(key) is { } rank)
+        {
+            if (PendingFile is { } pendingFile)
+            {
+                PendingFile = null;
+                var (response, clips) = TryPerformAction(new Position(pendingFile, rank));
+                return (response | UIResponse.IsUpdate, clips);
+            }
+
+            if (Selected is { } selected)
+                return TryPerformAction(new Position(selected.File, rank));
+        }
+
+        if (PendingPromotion is { } pendingPromotion && Selected is { } prev)
+        {
+            var promoteType = PieceType.TryParseFromKey(key);
+
+            if (promoteType is { } pt && pt.IsValidPromotion)
+            {
+                PendingFile = null;
+                return TryPerformAction(Action.Promote(prev, pendingPromotion, pt));
+            }
+        }
+
+        PendingFile = null;
+        return (UIResponse.None, []);
+    }
+
+    private (UIResponse Response, ImmutableArray<RectInt> ClipRects) HandleSetupKeyInput(InputKey key)
+    {
+        if (key is InputKey.Tab)
+        {
+            PendingFile = null;
+            return TogglePlacementSide();
+        }
+
+        if (key is InputKey.S)
+        {
+            PendingFile = null;
+            IsSetupMode = false;
+            return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
+        }
+
+        if (PendingPlacement is { } pendingPos)
+        {
+            if (key is InputKey.Escape)
+            {
+                PendingFile = null;
+                return CancelPlacement();
+            }
+
+            if (key is InputKey.Delete or InputKey.Backspace)
+            {
+                PendingFile = null;
+                return ClearSquare(pendingPos);
+            }
+
+            var pieceType = PieceType.TryParseFromKey(key);
+            if (pieceType is not null)
+            {
+                PendingFile = null;
+                return TryPlacePiece(pendingPos, pieceType.Value, PlacementSide);
+            }
+
+            return (UIResponse.None, []);
+        }
+
+        if (key is InputKey.Escape)
+        {
+            PendingFile = null;
+            var (clearResponse, clearClips) = ClearSelection();
+            return (clearResponse | UIResponse.IsUpdate, clearClips);
+        }
+
+        if (key is InputKey.Backspace or InputKey.Delete)
+        {
+            if (Selected is { } selected)
+            {
+                PendingFile = null;
+                return ClearSquare(selected);
+            }
+        }
+
+        if (FileExtensions.TryParseFromKey(key) is { } file)
+        {
+            PendingFile = file;
+            return (UIResponse.IsUpdate, []);
+        }
+
+        if (RankExtensions.TryParseFromKey(key) is { } rank && PendingFile is { } pf)
+        {
+            PendingFile = null;
+            return SetupSelect(new Position(pf, rank));
+        }
+
+        PendingFile = null;
+        return (UIResponse.None, []);
+    }
+
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) HandleMouseDown(int x, int y)
+    {
+        if (ShowingKeymap)
+        {
+            PendingFile = null;
+            return ToggleKeymap();
+        }
+
+        var hadPendingFile = PendingFile is not null;
+        PendingFile = null;
+        var (response, clips) = TryPerformAction(x, y);
+        if (hadPendingFile) response |= UIResponse.IsUpdate;
+        return (response, clips);
+    }
+
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) HandleMouseWheel(int delta)
+        => (ScrollHistory(delta > 0 ? -3 : 3), []);
 }
