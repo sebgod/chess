@@ -123,7 +123,7 @@ public class GameLoopTests
             (_, _) => throw new InvalidOperationException("Should not create engine in PvP")
         );
 
-        await gameLoop.RunAsync(GameMode.PlayerVsPlayer, Side.None, cts.Token);
+        await gameLoop.RunAsync(GameMode.PlayerVsPlayer, Side.None, Side.White, cts.Token);
 
         display.ShouldNotBeNull();
         display.UI.Game.IsFinished.ShouldBeTrue();
@@ -165,7 +165,7 @@ public class GameLoopTests
             (_, _) => throw new InvalidOperationException("Should not create engine in PvP")
         );
 
-        await gameLoop.RunAsync(GameMode.PlayerVsPlayer, Side.None, cts.Token);
+        await gameLoop.RunAsync(GameMode.PlayerVsPlayer, Side.None, Side.White, cts.Token);
 
         display.ShouldNotBeNull();
         display.UI.Game.IsFinished.ShouldBeTrue();
@@ -195,7 +195,7 @@ public class GameLoopTests
             }
         );
 
-        await gameLoop.RunAsync(GameMode.PlayerVsComputer, Side.Black, cts.Token);
+        await gameLoop.RunAsync(GameMode.PlayerVsComputer, Side.Black, Side.White, cts.Token);
 
         engine.ShouldNotBeNull();
         engine.WasInitialized.ShouldBeTrue();
@@ -225,7 +225,7 @@ public class GameLoopTests
             }
         );
 
-        await gameLoop.RunAsync(GameMode.PlayerVsComputer, Side.White, cts.Token);
+        await gameLoop.RunAsync(GameMode.PlayerVsComputer, Side.White, Side.White, cts.Token);
 
         engine.ShouldNotBeNull();
         engine.MovesMade.ShouldBe(1);
@@ -266,7 +266,7 @@ public class GameLoopTests
             }
         );
 
-        await gameLoop.RunAsync(GameMode.CustomGameStandardBoard, Side.Black, cts.Token);
+        await gameLoop.RunAsync(GameMode.CustomGameStandardBoard, Side.Black, Side.White, cts.Token);
 
         playerCallCount.ShouldBe(2);
         engine.ShouldNotBeNull();
@@ -291,7 +291,7 @@ public class GameLoopTests
         );
 
         // Should not throw
-        await gameLoop.RunAsync(GameMode.PlayerVsPlayer, Side.None, cts.Token);
+        await gameLoop.RunAsync(GameMode.PlayerVsPlayer, Side.None, Side.White, cts.Token);
     }
 
     /// <summary>

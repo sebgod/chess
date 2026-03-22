@@ -66,43 +66,49 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
         terminal.EnterAlternateScreen();
     }
 
-    GameMode gameMode;
-    Side computerSide;
-
-    var modeArg = parseResult.GetValue(modeOption);
-    if (modeArg is null)
+    var restart = true;
+    while (restart && !cancellationToken.IsCancellationRequested)
     {
-        var startupMenu = new StartupMenu(terminal, timeProvider);
-        (gameMode, computerSide) = await startupMenu.ShowAsync(cancellationToken);
-    }
-    else
-    {
-        var sideArg = parseResult.GetValue(sideOption);
-        var boardArg = parseResult.GetValue(boardOption);
+        GameMode gameMode;
+        Side computerSide;
+        Side sideToMove;
 
-        gameMode = modeArg switch
+        var modeArg = parseResult.GetValue(modeOption);
+        if (modeArg is null)
         {
-            "pvp" => GameMode.PlayerVsPlayer,
-            "pvc" => GameMode.PlayerVsComputer,
-            "custom" when boardArg == "empty" => GameMode.CustomGameEmpty,
-            "custom" when boardArg != "empty" => GameMode.CustomGameStandardBoard,
-            _ => throw new InvalidOperationException()
-        };
+            var startupMenu = new StartupMenu(terminal, timeProvider);
+            (gameMode, computerSide, sideToMove) = await startupMenu.ShowAsync(cancellationToken);
+        }
+        else
+        {
+            var sideArg = parseResult.GetValue(sideOption);
+            var boardArg = parseResult.GetValue(boardOption);
 
-        computerSide = gameMode is GameMode.PlayerVsPlayer
-            ? Side.None
-            : (sideArg == "white" ? Side.Black : Side.White);
+            gameMode = modeArg switch
+            {
+                "pvp" => GameMode.PlayerVsPlayer,
+                "pvc" => GameMode.PlayerVsComputer,
+                "custom" when boardArg == "empty" => GameMode.CustomGameEmpty,
+                "custom" when boardArg != "empty" => GameMode.CustomGameStandardBoard,
+                _ => throw new InvalidOperationException()
+            };
 
+            computerSide = gameMode is GameMode.PlayerVsPlayer
+                ? Side.None
+                : (sideArg == "white" ? Side.Black : Side.White);
+
+            sideToMove = Side.White; // TODO: add --side-to-move CLI option for custom mode
+        }
+
+        var gameLoop = new GameLoop(
+            timeProvider,
+            () => hasSixel  ? new SixelGameDisplay(terminal) : new AsciiDisplay(terminal),
+            () => new HumanPlayer(terminal),
+            (computerSide, tp) => new UciPlayer(Path.Combine(AppContext.BaseDirectory, "chess-engine" + (OperatingSystem.IsWindows() ? ".exe" : "")), computerSide, tp)
+        );
+
+        restart = await gameLoop.RunAsync(gameMode, computerSide, sideToMove, cancellationToken);
     }
-
-    var gameLoop = new GameLoop(
-        timeProvider,
-        () => hasSixel  ? new SixelGameDisplay(terminal) : new AsciiDisplay(terminal),
-        () => new HumanPlayer(terminal),
-        (computerSide, tp) => new UciPlayer(Path.Combine(AppContext.BaseDirectory, "chess-engine" + (OperatingSystem.IsWindows() ? ".exe" : "")), computerSide, tp)
-    );
-
-    await gameLoop.RunAsync(gameMode, computerSide, cancellationToken);
 });
 
 return await rootCommand.Parse(args).InvokeAsync();

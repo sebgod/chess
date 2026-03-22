@@ -57,6 +57,7 @@ public class GameUI
         "  s      Start game\n" +
         "\n" +
         "F1       Toggle this help\n" +
+        "F8       Back to menu\n" +
         "F9       New game";
 
     private const int PieceTypeStride = 7;
@@ -1014,6 +1015,12 @@ public class GameUI
         {
             PendingFile = null;
             return ToggleKeymap();
+        }
+
+        if (key is InputKey.F8)
+        {
+            PendingFile = null;
+            return (UIResponse.NeedsRestart, []);
         }
 
         if (key is InputKey.F9)

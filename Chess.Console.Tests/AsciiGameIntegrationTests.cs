@@ -50,7 +50,7 @@ public class AsciiGameIntegrationTests
         using var cts = new CancellationTokenSource();
 
         var menu = new StartupMenu(terminal, timeProvider);
-        var (gameMode, computerSide) = await menu.ShowAsync(cts.Token);
+        var (gameMode, computerSide, _) = await menu.ShowAsync(cts.Token);
 
         gameMode.ShouldBe(GameMode.PlayerVsPlayer);
         computerSide.ShouldBe(Side.None);
@@ -75,7 +75,7 @@ public class AsciiGameIntegrationTests
             }
         }, cts.Token);
 
-        await gameLoop.RunAsync(gameMode, computerSide, cts.Token);
+        await gameLoop.RunAsync(gameMode, computerSide, Side.White, cts.Token);
 
         // Assert: output should contain checkmate
         var output = terminal.Output;

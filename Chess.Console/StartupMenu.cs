@@ -8,9 +8,9 @@ namespace Chess.Console;
 /// and returns the selected game mode.
 /// </summary>
 internal class StartupMenu(IVirtualTerminal terminal, TimeProvider timeProvider)
-    : MenuBase<(GameMode Mode, Side ComputerSide)>(terminal, timeProvider)
+    : MenuBase<(GameMode Mode, Side ComputerSide, Side SideToMove)>(terminal, timeProvider)
 {
-    protected override async Task<(GameMode Mode, Side ComputerSide)> ShowAsyncCore(CancellationToken cancellationToken)
+    protected override async Task<(GameMode Mode, Side ComputerSide, Side SideToMove)> ShowAsyncCore(CancellationToken cancellationToken)
     {
         var mode = await ShowMenuAsync(
             "\u265A Chess \u2654",
@@ -20,7 +20,7 @@ internal class StartupMenu(IVirtualTerminal terminal, TimeProvider timeProvider)
 
         if (mode == 0)
         {
-            return (GameMode.PlayerVsPlayer, Side.None);
+            return (GameMode.PlayerVsPlayer, Side.None, Side.White);
         }
 
         if (mode == 1)
@@ -32,7 +32,7 @@ internal class StartupMenu(IVirtualTerminal terminal, TimeProvider timeProvider)
                 cancellationToken);
 
             var computerSide = side == 0 ? Side.Black : Side.White;
-            return (GameMode.PlayerVsComputer, computerSide);
+            return (GameMode.PlayerVsComputer, computerSide, Side.White);
         }
 
         // Custom Game
@@ -42,6 +42,14 @@ internal class StartupMenu(IVirtualTerminal terminal, TimeProvider timeProvider)
             ["Empty Board", "Standard Board"],
             cancellationToken);
 
+        var sideToMoveChoice = await ShowMenuAsync(
+            "\u265A Chess \u2654",
+            "Side to move first:",
+            ["White", "Black"],
+            cancellationToken);
+
+        var sideToMove = sideToMoveChoice == 0 ? Side.White : Side.Black;
+
         var customSide = await ShowMenuAsync(
             "\u265A Chess \u2654",
             "Play as:",
@@ -49,6 +57,6 @@ internal class StartupMenu(IVirtualTerminal terminal, TimeProvider timeProvider)
             cancellationToken);
 
         var customComputerSide = customSide == 0 ? Side.Black : Side.White;
-        return (boardChoice is 1 ? GameMode.CustomGameStandardBoard : GameMode.CustomGameEmpty, customComputerSide);
+        return (boardChoice is 1 ? GameMode.CustomGameStandardBoard : GameMode.CustomGameEmpty, customComputerSide, sideToMove);
     }
 }

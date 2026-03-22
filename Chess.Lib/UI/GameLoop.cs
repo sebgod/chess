@@ -7,14 +7,15 @@ public class GameLoop(
     Func<Side, TimeProvider, IEngineBasedPlayer> engineBasedPlayerFactory
 )
 {
-    public async Task RunAsync(
+    public async Task<bool> RunAsync(
         GameMode gameMode,
         Side computerSide,
+        Side sideToMove,
         CancellationToken cancellationToken
     )
     {
         var game = gameMode is GameMode.CustomGameEmpty
-            ? new Game(new Board(), Side.White, [])
+            ? new Game(new Board(), sideToMove, [])
             : new Game();
 
         using var gameDisplay = displayFactory();
@@ -48,18 +49,19 @@ public class GameLoop(
             }
             catch (OperationCanceledException)
             {
-                return;
+                return false;
             }
 
             // Transition from setup to gameplay: create a fresh game from the setup board
             var setupBoard = game.Board;
-            game = new Game(setupBoard, Side.White, []);
+            game = new Game(setupBoard, sideToMove, []);
             gameDisplay.ResetGame(game);
         }
 
         var initialBoard = game.Board;
+        var sideToMoveChar = sideToMove == Side.Black ? "b" : "w";
         var initialFen = gameMode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard
-            ? initialBoard.ToFEN() + " w - - 0 1"
+            ? initialBoard.ToFEN() + $" {sideToMoveChar} - - 0 1"
             : null;
 
         IGamePlayer whitePlayer, blackPlayer;
@@ -93,18 +95,23 @@ public class GameLoop(
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                var currentPlayer = gameDisplay.UI.Mode == GameUIMode.Playback
+                var currentPlayer = gameDisplay.UI.Mode == GameUIMode.Playback || game.IsFinished
                     ? humanPlayer
                     : (game.CurrentSide == Side.White ? whitePlayer : blackPlayer);
                 var result = currentPlayer.TryMakeMove(gameDisplay.UI);
 
                 if (result is { } moveResult)
                 {
+                    if (moveResult.Response.HasFlag(UIResponse.NeedsRestart))
+                    {
+                        return true;
+                    }
+
                     if (moveResult.Response.HasFlag(UIResponse.NeedsReset))
                     {
                         game = initialFen is null
                             ? new Game()
-                            : new Game(initialBoard, Side.White, []);
+                            : new Game(initialBoard, sideToMove, []);
                         gameDisplay.ResetGame(game);
                         gameDisplay.RenderInitial(game);
                         if (uciPlayer is not null)
@@ -132,5 +139,7 @@ public class GameLoop(
         {
             if (uciPlayer is not null) await uciPlayer.DisposeAsync();
         }
+
+        return false;
     }
 }

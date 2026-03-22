@@ -14,7 +14,7 @@ var player = new HumanPlayer();
 
 var cts = new CancellationTokenSource();
 VkGameDisplay? display = null;
-Task? gameTask = null;
+Task<bool>? gameTask = null;
 
 var loop = new SdlEventLoop(sdlWindow, renderer)
 {
@@ -22,12 +22,18 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
 
     OnKeyDown = (inputKey, inputMod) =>
     {
+        if (inputKey == InputKey.F11)
+        {
+            sdlWindow.ToggleFullscreen();
+            return true;
+        }
         IWidget activeWidget = menu is { IsComplete: false } ? menu : player;
         return activeWidget.HandleKeyDown(inputKey, inputMod);
     },
 
-    OnMouseDown = (x, y) =>
+    OnMouseDown = (button, x, y, _) =>
     {
+        if (button != 1) return false;
         IWidget clickTarget = menu is { IsComplete: false } ? menu : player;
         return clickTarget.HandleMouseDown(x, y);
     },
@@ -43,6 +49,22 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
 
     OnRender = () =>
     {
+        // Check if game requested restart (back to menu)
+        if (gameTask is { IsCompleted: true } completed)
+        {
+            var restart = false;
+            try { restart = completed.Result; } catch (AggregateException) { }
+
+            if (restart)
+            {
+                display?.Dispose();
+                display = null;
+                gameTask = null;
+                menu = new VkStartupMenu();
+                return;
+            }
+        }
+
         if (display is not null)
         {
             display.Render();
@@ -53,7 +75,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
         }
         else if (menu is { IsComplete: true } && gameTask is null)
         {
-            var (gameMode, computerSide) = menu.Result;
+            var (gameMode, computerSide, sideToMove) = menu.Result;
             menu = null;
 
             display = new VkGameDisplay(renderer);
@@ -68,7 +90,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                 (cs, tp) => new UciPlayer(enginePath, cs, tp)
             );
 
-            gameTask = gameLoop.RunAsync(gameMode, computerSide, cts.Token);
+            gameTask = gameLoop.RunAsync(gameMode, computerSide, sideToMove, cts.Token);
         }
     }
 };

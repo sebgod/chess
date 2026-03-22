@@ -6,15 +6,16 @@ namespace Chess.GUI;
 
 internal sealed class VkStartupMenu : IWidget
 {
-    private enum Phase { GameMode, PlayAs, BoardType }
+    private enum Phase { GameMode, PlayAs, BoardType, SideToMove, HumanSide }
 
     private readonly VkMenuWidget _menu;
     private Phase _phase = Phase.GameMode;
     private GameMode _gameMode;
     private Side _computerSide;
+    private Side _sideToMove = Side.White;
 
     public bool IsComplete { get; private set; }
-    public (GameMode Mode, Side ComputerSide) Result => (_gameMode, _computerSide);
+    public (GameMode Mode, Side ComputerSide, Side SideToMove) Result => (_gameMode, _computerSide, _sideToMove);
 
     public VkStartupMenu()
     {
@@ -82,10 +83,15 @@ internal sealed class VkStartupMenu : IWidget
 
             case Phase.BoardType:
                 _gameMode = selected == 1 ? GameMode.CustomGameStandardBoard : GameMode.CustomGameEmpty;
-                AdvanceTo(Phase.PlayAs);
+                AdvanceTo(Phase.SideToMove);
                 break;
 
-            case Phase.PlayAs:
+            case Phase.SideToMove:
+                _sideToMove = selected == 0 ? Side.White : Side.Black;
+                AdvanceTo(Phase.HumanSide);
+                break;
+
+            case Phase.HumanSide:
                 _computerSide = selected == 0 ? Side.Black : Side.White;
                 IsComplete = true;
                 break;
@@ -104,6 +110,8 @@ internal sealed class VkStartupMenu : IWidget
         Phase.GameMode => ("\u265a Chess \u2654", "Select game mode:", ["Player vs Player", "Player vs Computer", "Custom Game"]),
         Phase.PlayAs => ("\u265a Chess \u2654", "Play as:", ["White", "Black"]),
         Phase.BoardType => ("\u265a Chess \u2654", "Starting board:", ["Empty Board", "Standard Board"]),
+        Phase.SideToMove => ("\u265a Chess \u2654", "Side to move first:", ["White", "Black"]),
+        Phase.HumanSide => ("\u265a Chess \u2654", "Play as:", ["White", "Black"]),
         _ => ("", "", [])
     };
 }
