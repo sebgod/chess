@@ -28,6 +28,7 @@ public class GameUI
     private readonly string _labelFont;
     private readonly string _pieceFont;
     private readonly float _labelFontSize;
+    private readonly float _keymapFontSize;
     private readonly float _pieceFontSize;
     private readonly float _capturedFontSize;
 
@@ -111,6 +112,7 @@ public class GameUI
         _capturedAreaColor = ComputeCapturedAreaColor(_backgroundColor, _mainFontColor);
         _labelFont = Path.Combine(AppContext.BaseDirectory, labelFont);
         _labelFontSize = _squareSize * 0.3f;
+        _keymapFontSize = _squareSize * 0.265f;
         _pieceFont = Path.Combine(AppContext.BaseDirectory, pieceFont);
         _pieceFontSize = _squareSize * 0.8f;
         _capturedFontSize = _squareSize * 0.4f;
@@ -298,7 +300,7 @@ public class GameUI
         {
             renderer.FillRectangle(boardRect, OverlayFill);
 
-            renderer.DrawText(KeymapText, _labelFont, _labelFontSize, FontColorBlack, boardRect,
+            renderer.DrawText(KeymapText, _labelFont, _keymapFontSize, FontColorBlack, boardRect,
                 horizAlignment: TextAlign.Near, vertAlignment: TextAlign.Far);
         }
         // piece placement selection box (setup mode)

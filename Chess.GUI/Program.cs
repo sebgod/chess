@@ -11,10 +11,26 @@ var ctx = VulkanContext.Create(sdlWindow.Instance, sdlWindow.Surface, (uint)w, (
 var renderer = new VkRenderer(ctx, (uint)w, (uint)h);
 VkStartupMenu? menu = new();
 var player = new HumanPlayer();
+var bus = new SignalBus();
 
 var cts = new CancellationTokenSource();
 VkGameDisplay? display = null;
 Task<bool>? gameTask = null;
+
+// Signal handlers
+bus.Subscribe<RequestRestartSignal>(_ =>
+{
+    display?.Dispose();
+    display = null;
+    gameTask = null;
+    menu = new VkStartupMenu();
+});
+
+bus.Subscribe<RequestResetSignal>(_ =>
+{
+    // Reset is handled inside GameLoop via UIResponse.NeedsReset;
+    // the signal is available for future decoupling if needed.
+});
 
 var loop = new SdlEventLoop(sdlWindow, renderer)
 {
@@ -57,11 +73,11 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
 
             if (restart)
             {
-                display?.Dispose();
-                display = null;
+                bus.Post(new RequestRestartSignal());
+            }
+            else
+            {
                 gameTask = null;
-                menu = new VkStartupMenu();
-                return;
             }
         }
 
@@ -78,7 +94,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             var (gameMode, computerSide, sideToMove) = menu.Result;
             menu = null;
 
-            display = new VkGameDisplay(renderer);
+            display = new VkGameDisplay(renderer) { Bus = bus };
             var timeProvider = TimeProvider.System;
             var enginePath = Path.Combine(AppContext.BaseDirectory,
                 "chess-engine" + (OperatingSystem.IsWindows() ? ".exe" : ""));
@@ -92,6 +108,11 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
 
             gameTask = gameLoop.RunAsync(gameMode, computerSide, sideToMove, cts.Token);
         }
+    },
+
+    OnPostFrame = () =>
+    {
+        bus.ProcessPending();
     }
 };
 

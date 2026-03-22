@@ -6,9 +6,9 @@ namespace Chess.Console;
 
 /// <summary>
 /// A human player that reads mouse and keyboard input from the terminal and translates them into game actions.
-/// Uses <see cref="ConsoleInputMapping"/> to convert <see cref="ConsoleKey"/> to <see cref="InputKey"/>,
-/// then delegates to <see cref="GameUI.HandleKeyDown"/>, <see cref="GameUI.HandleMouseDown"/>,
-/// and <see cref="GameUI.HandleMouseWheel"/> for unified input handling.
+/// Uses <see cref="ConsoleInputMapping.ToInputEvent"/> to convert <see cref="ConsoleInputEvent"/> to the unified
+/// <see cref="InputEvent"/> hierarchy, then dispatches to <see cref="GameUI.HandleKeyDown"/>,
+/// <see cref="GameUI.HandleMouseDown"/>, and <see cref="GameUI.HandleMouseWheel"/>.
 /// </summary>
 internal sealed class HumanPlayer(IVirtualTerminal terminal) : IGamePlayer
 {
@@ -17,23 +17,21 @@ internal sealed class HumanPlayer(IVirtualTerminal terminal) : IGamePlayer
         if (!terminal.HasInput())
             return null;
 
-        var evt = terminal.TryReadInput();
+        var consoleEvt = terminal.TryReadInput();
+        var inputEvt = consoleEvt.ToInputEvent;
 
-        if (evt.Mouse is { Button: 64 or 65 } wheel)
-            return Result(ui.HandleMouseWheel(wheel.Button == 64 ? -1 : 1));
+        if (inputEvt is null)
+            return Result((UIResponse.None, []));
 
-        if (evt.Mouse is { Button: 0, IsRelease: true } mouse)
-            return Result(ui.HandleMouseDown(mouse.X, mouse.Y));
-
-        if (evt.Key is not ConsoleKey.None)
+        var (response, clips) = inputEvt switch
         {
-            var inputKey = evt.Key.ToInputKey;
-            var inputMod = evt.Modifiers.ToInputModifier;
-            if (inputKey != InputKey.None)
-                return Result(ui.HandleKeyDown(inputKey, inputMod));
-        }
+            InputEvent.Scroll s => ui.HandleMouseWheel((int)s.Delta),
+            InputEvent.MouseDown m => ui.HandleMouseDown((int)m.X, (int)m.Y),
+            InputEvent.KeyDown k when k.Key != InputKey.None => ui.HandleKeyDown(k.Key, k.Modifiers),
+            _ => (UIResponse.None, System.Collections.Immutable.ImmutableArray<RectInt>.Empty)
+        };
 
-        return Result((UIResponse.None, []));
+        return Result((response, clips));
     }
 
     private static PlayerMoveResult Result((UIResponse Response, System.Collections.Immutable.ImmutableArray<RectInt> ClipRects) uiResult)

@@ -6,7 +6,7 @@ using SdlVulkan.Renderer;
 
 namespace Chess.GUI;
 
-public sealed class VkGameDisplay : IGameDisplay
+public sealed class VkGameDisplay : PixelWidgetBase<VulkanContext>, IGameDisplay
 {
     private static readonly RGBAColor32 BackgroundColor = new(0x1a, 0x1a, 0x2e, 0xff);
     private static readonly RGBAColor32 FontColor = new(0xff, 0xff, 0xff, 0xff);
@@ -21,15 +21,13 @@ public sealed class VkGameDisplay : IGameDisplay
     private const float HistoryPanelWidthFactor = 18f;
     private const float StatusBarHeightFactor = 2f;
 
-    private readonly VkRenderer _renderer;
     private readonly string _labelFont;
     private GameUI? _gameUI;
     private volatile bool _hasPendingUpdate;
     private Game? _game;
 
-    public VkGameDisplay(VkRenderer renderer)
+    public VkGameDisplay(VkRenderer renderer) : base(renderer)
     {
-        _renderer = renderer;
         _labelFont = Path.Combine(AppContext.BaseDirectory, "Fonts", "DejaVuSans.ttf");
     }
 
@@ -81,31 +79,38 @@ public sealed class VkGameDisplay : IGameDisplay
     {
         if (_gameUI is null) return;
 
+        BeginFrame();
+
+        // Use ComputeBoardArea() for the clip rect — must match the dimensions
+        // passed to GameUI constructor/Resize to keep overlay sizing consistent.
         var (boardW, boardH) = ComputeBoardArea();
-        var totalW = (int)_renderer.Width;
-        var totalH = (int)_renderer.Height;
+
+        var totalW = (float)Renderer.Width;
+        var totalH = (float)Renderer.Height;
+        var layout = new PixelLayout(new RectF32(0, 0, totalW, totalH));
+
+        var statusRect = layout.Dock(PixelDockStyle.Bottom, totalH - boardH);
+        var historyRect = layout.Dock(PixelDockStyle.Right, totalW - boardW);
+        var boardRect = layout.Fill();
 
         var boardClip = new RectInt((boardW, boardH), PointInt.Origin);
-        _gameUI.Render<VulkanContext, Renderer<VulkanContext>>(_renderer, boardClip);
+        _gameUI.Render<VulkanContext, Renderer<VulkanContext>>(Renderer, boardClip);
 
-        var historyRect = new RectInt((totalW, boardH), (boardW, 0));
         RenderHistoryPanel(historyRect);
-
-        var statusRect = new RectInt((totalW, totalH), (0, boardH));
         RenderStatusBar(statusRect);
     }
 
     public void Dispose() { }
 
-    private float ChromeFontSize => MathF.Max(13f, (int)_renderer.Height / 40f);
-    private int HistoryPanelWidth => (int)(ChromeFontSize * HistoryPanelWidthFactor);
-    private int StatusBarHeight => (int)(ChromeFontSize * StatusBarHeightFactor);
+    private float ChromeFontSize => MathF.Max(13f, (int)Renderer.Height / 40f);
+    private float HistoryPanelWidth => ChromeFontSize * HistoryPanelWidthFactor;
+    private float StatusBarHeight => ChromeFontSize * StatusBarHeightFactor;
 
     private (int BoardW, int BoardH) ComputeBoardArea()
     {
-        var totalW = (int)_renderer.Width;
-        var totalH = (int)_renderer.Height;
-        return (totalW - HistoryPanelWidth, totalH - StatusBarHeight);
+        var totalW = (int)Renderer.Width;
+        var totalH = (int)Renderer.Height;
+        return (totalW - (int)HistoryPanelWidth, totalH - (int)StatusBarHeight);
     }
 
     private int ComputeHistoryVisibleRows(int boardH)
@@ -116,25 +121,20 @@ public sealed class VkGameDisplay : IGameDisplay
         return Math.Max(1, (int)((boardH - headerH) / rowH));
     }
 
-    private void RenderHistoryPanel(in RectInt rect)
+    private void RenderHistoryPanel(RectF32 rect)
     {
         var fontSize = ChromeFontSize;
         var headerFontSize = fontSize * 1.1f;
-        var headerH = (int)(fontSize * 2f);
+        var headerH = fontSize * 2f;
         var rowH = fontSize * 1.5f;
 
-        _renderer.FillRectangle(rect, HistoryBg);
+        FillRect(rect.X, rect.Y, rect.Width, rect.Height, HistoryBg);
 
-        var headerRect = new RectInt(
-            (rect.LowerRight.X, rect.UpperLeft.Y + headerH),
-            (rect.UpperLeft.X + 8, rect.UpperLeft.Y));
-        _renderer.DrawText("Move History", _labelFont, headerFontSize,
-            HistoryHeaderColor, headerRect, TextAlign.Near, TextAlign.Center);
+        DrawText("Move History", _labelFont,
+            rect.X + 8, rect.Y, rect.Width - 8, headerH,
+            headerFontSize, HistoryHeaderColor, TextAlign.Near, TextAlign.Center);
 
-        var sepRect = new RectInt(
-            (rect.LowerRight.X - 4, rect.UpperLeft.Y + headerH + 1),
-            (rect.UpperLeft.X + 4, rect.UpperLeft.Y + headerH));
-        _renderer.FillRectangle(sepRect, HistorySepColor);
+        FillRect(rect.X + 4, rect.Y + headerH, rect.Width - 8, 1, HistorySepColor);
 
         if (_game is null || _gameUI is null) return;
 
@@ -147,9 +147,9 @@ public sealed class VkGameDisplay : IGameDisplay
         var startMove = _gameUI.HistoryScrollStart ?? Math.Max(0, moveCount - visibleRows);
         var highlightPly = _gameUI.Mode == GameUIMode.Playback ? _gameUI.PlaybackPlyIndex : (int?)null;
 
-        var contentY = rect.UpperLeft.Y + headerH + 4;
-        var idxColW = (int)(fontSize * 3.5f);
-        var plyColW = (rect.LowerRight.X - rect.UpperLeft.X - idxColW) / 2;
+        var contentY = rect.Y + headerH + 4;
+        var idxColW = fontSize * 3.5f;
+        var plyColW = (rect.Width - idxColW) / 2;
 
         for (var i = 0; i < visibleRows && startMove + i < moveCount; i++)
         {
@@ -160,48 +160,52 @@ public sealed class VkGameDisplay : IGameDisplay
                 ? plies.GetRecordAndPGNIdx(whitePlyIdx + 1).Ply.ToString()
                 : "";
 
-            var rowY = (int)(contentY + i * rowH);
-            var rowH2 = (int)rowH;
+            var rowY = contentY + i * rowH;
 
-            var idxRect = new RectInt(
-                (rect.UpperLeft.X + idxColW, rowY + rowH2),
-                (rect.UpperLeft.X + 4, rowY));
-            _renderer.DrawText(idxStr.AsSpan().Trim(), _labelFont, fontSize,
-                HistoryIndexColor, idxRect, TextAlign.Far, TextAlign.Center);
+            DrawText(idxStr.AsSpan().Trim(), _labelFont,
+                rect.X + 4, rowY, idxColW - 4, rowH,
+                fontSize, HistoryIndexColor, TextAlign.Far, TextAlign.Center);
 
-            var whiteX = rect.UpperLeft.X + idxColW + 4;
-            var whiteRect = new RectInt(
-                (whiteX + plyColW, rowY + rowH2),
-                (whiteX, rowY));
+            var whiteX = rect.X + idxColW + 4;
 
             var isHighlightWhite = highlightPly == whitePlyIdx;
             if (isHighlightWhite)
-                _renderer.FillRectangle(whiteRect, PlaybackHighlightBg);
-            _renderer.DrawText(whitePly.ToString(), _labelFont, fontSize,
-                isHighlightWhite ? PlaybackHighlightText : FontColor,
-                whiteRect, TextAlign.Near, TextAlign.Center);
+                FillRect(whiteX, rowY, plyColW, rowH, PlaybackHighlightBg);
+            DrawText(whitePly.ToString(), _labelFont,
+                whiteX, rowY, plyColW, rowH,
+                fontSize, isHighlightWhite ? PlaybackHighlightText : FontColor,
+                TextAlign.Near, TextAlign.Center);
+
+            // Register clickable region for white ply
+            var capturedWhitePly = whitePlyIdx;
+            RegisterClickable(whiteX, rowY, plyColW, rowH,
+                new HitResult.ListItemHit("History", capturedWhitePly));
 
             if (blackPlyStr.Length > 0)
             {
                 var blackX = whiteX + plyColW + 2;
-                var blackRect = new RectInt(
-                    (rect.LowerRight.X - 4, rowY + rowH2),
-                    (blackX, rowY));
+                var blackW = rect.Width - idxColW - plyColW - 6;
 
                 var isHighlightBlack = highlightPly == whitePlyIdx + 1;
                 if (isHighlightBlack)
-                    _renderer.FillRectangle(blackRect, PlaybackHighlightBg);
-                _renderer.DrawText(blackPlyStr, _labelFont, fontSize,
-                    isHighlightBlack ? PlaybackHighlightText : FontColor,
-                    blackRect, TextAlign.Near, TextAlign.Center);
+                    FillRect(blackX, rowY, blackW, rowH, PlaybackHighlightBg);
+                DrawText(blackPlyStr, _labelFont,
+                    blackX, rowY, blackW, rowH,
+                    fontSize, isHighlightBlack ? PlaybackHighlightText : FontColor,
+                    TextAlign.Near, TextAlign.Center);
+
+                // Register clickable region for black ply
+                var capturedBlackPly = whitePlyIdx + 1;
+                RegisterClickable(blackX, rowY, blackW, rowH,
+                    new HitResult.ListItemHit("History", capturedBlackPly));
             }
         }
     }
 
-    private void RenderStatusBar(in RectInt rect)
+    private void RenderStatusBar(RectF32 rect)
     {
         var fontSize = ChromeFontSize;
-        _renderer.FillRectangle(rect, StatusBarBg);
+        FillRect(rect.X, rect.Y, rect.Width, rect.Height, StatusBarBg);
 
         string status;
         if (_game is null)
@@ -226,47 +230,18 @@ public sealed class VkGameDisplay : IGameDisplay
             status = $"{_game.GameStatus.ToMessage(_game.CurrentSide)}{fileInfo}";
         }
 
-        var textRect = new RectInt(
-            (rect.LowerRight.X - 8, rect.LowerRight.Y),
-            (rect.UpperLeft.X + 8, rect.UpperLeft.Y));
-        _renderer.DrawText(status, _labelFont, fontSize, FontColor,
-            textRect, TextAlign.Near, TextAlign.Center);
+        DrawText(status, _labelFont,
+            rect.X + 8, rect.Y, rect.Width - 16, rect.Height,
+            fontSize, FontColor, TextAlign.Near, TextAlign.Center);
     }
 
     private int? ResolveHistoryClick(int px, int py)
     {
-        var (boardW, boardH) = ComputeBoardArea();
+        // Use the hit-test system from PixelWidgetBase
+        var hit = HitTest(px, py);
+        if (hit is HitResult.ListItemHit { ListId: "History" } historyHit)
+            return historyHit.Index;
 
-        if (px < boardW || py < 0 || py >= boardH)
-            return null;
-
-        var fontSize = ChromeFontSize;
-        var headerH = (int)(fontSize * 2f);
-
-        if (py < headerH)
-            return null;
-
-        var rowH = (int)(fontSize * 1.5f);
-        var row = (py - headerH - 4) / rowH;
-
-        if (_game is null || _gameUI is null) return null;
-
-        var plyCount = _game.PlyCount;
-        var moveCount = (plyCount + 1) / 2;
-        var visibleRows = _gameUI.HistoryViewportRows;
-        var startMove = _gameUI.HistoryScrollStart ?? Math.Max(0, moveCount - visibleRows);
-        var moveIdx = startMove + row;
-        var whitePlyIdx = moveIdx * 2;
-
-        if (whitePlyIdx >= plyCount)
-            return null;
-
-        var idxColW = (int)(fontSize * 3.5f);
-        var plyColW = (HistoryPanelWidth - idxColW) / 2;
-        var midX = boardW + idxColW + plyColW;
-        if (px >= midX && whitePlyIdx + 1 < plyCount)
-            return whitePlyIdx + 1;
-
-        return whitePlyIdx;
+        return null;
     }
 }
