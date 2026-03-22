@@ -3,7 +3,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Console.Lib" Version="1.4.96" />
+    <PackageVersion Include="Console.Lib" Version="1.4.97" />
     <PackageVersion Include="coverlet.collector" Version="8.0.1" />
     <PackageVersion Include="DIR.Lib" Version="1.3.72" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.4.0" />

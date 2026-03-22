@@ -52,13 +52,13 @@ rootCommand.Validators.Add(result =>
 
 rootCommand.SetAction(async (parseResult, cancellationToken) =>
 {
-    bool forceAscii = parseResult.GetValue(noColorOption)
-        || Environment.GetEnvironmentVariable("NO_COLOR") is "1"
-        || Environment.GetEnvironmentVariable("NOCOLOR") is "1";
-
     var timeProvider = TimeProvider.System;
     await using var terminal = new VirtualTerminal();
     await terminal.InitAsync();
+
+    // Console.Lib 1.4.97+ handles NO_COLOR env var and output redirection
+    // in HasSixelSupport and ColorMode. --no-color CLI flag forces ASCII.
+    var forceAscii = parseResult.GetValue(noColorOption);
     var hasSixel = !forceAscii && terminal.HasSixelSupport;
 
     if (hasSixel)

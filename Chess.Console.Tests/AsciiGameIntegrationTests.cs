@@ -228,6 +228,8 @@ public class AsciiGameIntegrationTests
         public Task InitAsync() => Task.CompletedTask;
         public bool HasSixelSupport => false;
         public bool HasColorSupport => false;
+        public bool IsInputRedirected => true;
+        public bool IsOutputRedirected => false;
         public void EnterAlternateScreen() { }
         public bool IsAlternateScreen => false;
         public void Clear() => _output.Clear();
