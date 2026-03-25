@@ -26,24 +26,11 @@ internal sealed class VkStartupMenu : IWidget
 
     public void Render(VkRenderer renderer) => _menu.Render(renderer);
 
-    public bool HandleKeyDown(InputKey key, InputModifier modifiers)
+    public bool HandleInput(InputEvent evt)
     {
         if (IsComplete) return false;
 
-        if (!_menu.HandleKeyDown(key, modifiers))
-            return false;
-
-        if (_menu.IsConfirmed)
-            Confirm();
-
-        return true;
-    }
-
-    public bool HandleMouseDown(float x, float y)
-    {
-        if (IsComplete) return false;
-
-        if (!_menu.HandleMouseDown(x, y))
+        if (!_menu.HandleInput(evt))
             return false;
 
         if (_menu.IsConfirmed)

@@ -44,18 +44,18 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             return true;
         }
         IWidget activeWidget = menu is { IsComplete: false } ? menu : player;
-        return activeWidget.HandleKeyDown(inputKey, inputMod);
+        return activeWidget.HandleInput(new InputEvent.KeyDown(inputKey, inputMod));
     },
 
-    OnMouseDown = (button, x, y, _) =>
+    OnMouseDown = (button, x, y, _, _) =>
     {
         if (button != 1) return false;
         IWidget clickTarget = menu is { IsComplete: false } ? menu : player;
-        return clickTarget.HandleMouseDown(x, y);
+        return clickTarget.HandleInput(new InputEvent.MouseDown(x, y));
     },
 
     OnMouseWheel = (scrollY, _, _) =>
-        player.HandleMouseWheel(scrollY, 0, 0),
+        player.HandleInput(new InputEvent.Scroll(scrollY, 0, 0)),
 
     OnResize = (rw, rh) =>
         display?.OnResize((int)rw, (int)rh),

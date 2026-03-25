@@ -9,23 +9,11 @@ public sealed class HumanPlayer : IGamePlayer, IWidget
     private readonly ConcurrentQueue<InputEvent> _eventQueue = new();
     private int _lastKnownPlyCount = -1;
 
-    public bool HandleKeyDown(InputKey key, InputModifier modifiers)
+    public bool HandleInput(InputEvent evt)
     {
-        if (key == InputKey.F11) return false;
+        if (evt is InputEvent.KeyDown(InputKey.F11, _)) return false;
 
-        _eventQueue.Enqueue(new InputEvent.KeyDown(key, modifiers));
-        return true;
-    }
-
-    public bool HandleMouseDown(float x, float y)
-    {
-        _eventQueue.Enqueue(new InputEvent.MouseDown(x, y));
-        return true;
-    }
-
-    public bool HandleMouseWheel(float scrollY, float mouseX, float mouseY)
-    {
-        _eventQueue.Enqueue(new InputEvent.Scroll(scrollY, mouseX, mouseY));
+        _eventQueue.Enqueue(evt);
         return true;
     }
 
