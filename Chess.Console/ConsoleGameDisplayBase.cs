@@ -28,7 +28,8 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
     private const int StatusBarRows = 1;
 
     private readonly Panel _panel;
-    private readonly Canvas<TSurface> _boardCanvas;
+    private readonly Canvas _boardCanvas;
+    private readonly Renderer<TSurface> _renderer;
     private readonly TextBar _statusBar;
     private readonly ScrollableList<HistoryMoveRow> _historyList;
 
@@ -53,13 +54,14 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
         var boardViewport = _panel.Fill();
         var (width, height) = boardViewport.PixelSize;
-        var renderer = CreateRenderer(width, height);
-        _boardCanvas = new Canvas<TSurface>(boardViewport, renderer);
+        var (renderer, encoder) = CreateRenderer(width, height);
+        _renderer = renderer;
+        _boardCanvas = new Canvas(boardViewport, encoder);
 
         _panel.Add(_statusBar).Add(_historyList).Add(_boardCanvas);
     }
 
-    protected abstract SixelRenderer<TSurface> CreateRenderer(uint width, uint height);
+    protected abstract (Renderer<TSurface> Renderer, ISixelEncoder Encoder) CreateRenderer(uint width, uint height);
 
     private RenderStats? Stats =>
 #if DEBUG
@@ -177,7 +179,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
             return;
 
         var (width, height) = _boardCanvas.PixelSize;
-        _boardCanvas.Renderer.Resize(width, height);
+        _renderer.Resize(width, height);
         _gameUI = UI.Resize(width, height);
 
         UI.HistoryViewportRows = _historyList.VisibleRows;
@@ -190,7 +192,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
     public void ResetGame(Game game)
     {
         var cell = _boardCanvas.Viewport.CellSize;
-        _gameUI = new GameUI(game, _boardCanvas.Renderer.Width, _boardCanvas.Renderer.Height,
+        _gameUI = new GameUI(game, _renderer.Width, _renderer.Height,
             mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
             backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff),
             alignment: (cell.Width, cell.Height),
@@ -203,7 +205,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         _stopwatch.Restart();
 #endif
 
-        var renderer = _boardCanvas.Renderer;
+        var renderer = _renderer;
         RectInt clip;
         bool isPartial;
         if (!clipRects.IsDefault && clipRects.Length > 0)
@@ -237,6 +239,6 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
     public void Dispose()
     {
-        _boardCanvas.Renderer.Dispose();
+        _renderer.Dispose();
     }
 }

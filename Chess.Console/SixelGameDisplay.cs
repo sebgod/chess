@@ -8,6 +8,9 @@ namespace Chess.Console;
 /// </summary>
 internal sealed class SixelGameDisplay(IVirtualTerminal terminal) : ConsoleGameDisplayBase<RgbaImage>(terminal)
 {
-    protected override SixelRenderer<RgbaImage> CreateRenderer(uint width, uint height)
-        => new RgbaImageRenderer(width, height);
+    protected override (Renderer<RgbaImage> Renderer, ISixelEncoder Encoder) CreateRenderer(uint width, uint height)
+    {
+        var renderer = new SixelRgbaImageRenderer(width, height);
+        return (renderer, renderer);
+    }
 }

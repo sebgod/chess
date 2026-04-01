@@ -3,14 +3,14 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Console.Lib" Version="1.5.181" />
+    <PackageVersion Include="Console.Lib" Version="1.8.211" />
     <PackageVersion Include="coverlet.collector" Version="8.0.1" />
-    <PackageVersion Include="DIR.Lib" Version="1.6.141" />
+    <PackageVersion Include="DIR.Lib" Version="1.7.271" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.4.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
     <PackageVersion Include="SDL3-CS" Version="3.5.0-preview.20260213-150035" />
-    <PackageVersion Include="SdlVulkan.Renderer" Version="1.5.161" />
+    <PackageVersion Include="SdlVulkan.Renderer" Version="1.6.261" />
     <PackageVersion Include="SDL3-CS.Native" Version="3.5.0-preview.20260205-174353" />
     <PackageVersion Include="Vortice.Vulkan" Version="3.2.1" />
     <PackageVersion Include="Vortice.VulkanMemoryAllocator" Version="1.7.0" />
