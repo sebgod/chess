@@ -56,12 +56,11 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
     await using var terminal = new VirtualTerminal();
     await terminal.InitAsync();
 
-    // Console.Lib 1.4.97+ handles NO_COLOR env var and output redirection
-    // in HasSixelSupport and ColorMode. --no-color CLI flag forces ASCII.
-    var forceAscii = parseResult.GetValue(noColorOption);
-    var hasSixel = !forceAscii && terminal.HasSixelSupport;
+    var imageCapability = parseResult.GetValue(noColorOption)
+        ? ImageDisplayCapability.NoColor
+        : terminal.ImageDisplayCapability;
 
-    if (hasSixel)
+    if (imageCapability is ImageDisplayCapability.Sixel)
     {
         terminal.EnterAlternateScreen();
     }
@@ -102,7 +101,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
 
         var gameLoop = new GameLoop(
             timeProvider,
-            () => hasSixel  ? new SixelGameDisplay(terminal) : new AsciiDisplay(terminal),
+            () => imageCapability is ImageDisplayCapability.Sixel ? new SixelGameDisplay(terminal) : new AsciiDisplay(terminal),
             () => new HumanPlayer(terminal),
             (computerSide, tp) => new UciPlayer(Path.Combine(AppContext.BaseDirectory, "chess-engine" + (OperatingSystem.IsWindows() ? ".exe" : "")), computerSide, tp)
         );
