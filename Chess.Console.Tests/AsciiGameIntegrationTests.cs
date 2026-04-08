@@ -226,6 +226,7 @@ public class AsciiGameIntegrationTests
 
         // IVirtualTerminal
         public Task InitAsync() => Task.CompletedTask;
+        public ImageDisplayCapability ImageDisplayCapability => ImageDisplayCapability.NoColor;
         public bool HasSixelSupport => false;
         public bool HasColorSupport => false;
         public bool IsInputRedirected => true;
