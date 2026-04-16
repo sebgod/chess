@@ -29,7 +29,8 @@ public class GameUITests
 
         response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
         ui.Selected.ShouldBe(E2);
-        clips.ShouldContain(ui.SquareRect(E2));
+        // Empty clips = full board redraw (legal-move dots span multiple squares)
+        clips.ShouldBeEmpty();
     }
 
     [Fact]
@@ -77,7 +78,8 @@ public class GameUITests
 
         response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
         ui.Selected.ShouldBeNull();
-        clips.ShouldContain(ui.SquareRect(E2));
+        // Empty clips = full board redraw (erase legal-move dots from all target squares)
+        clips.ShouldBeEmpty();
     }
 
     [Fact]

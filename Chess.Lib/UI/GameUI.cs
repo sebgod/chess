@@ -19,6 +19,16 @@ public class GameUI
     private static readonly RGBAColor32 LastMoveBorderColor = new RGBAColor32(0x48, 0xA0, 0x48, 0xff);
     private static readonly RGBAColor32 RedCrossFill        = new RGBAColor32(0xDD, 0x00, 0x00, 0xFF);
 
+    // Drawing primitive overlay colors
+    private static readonly RGBAColor32 LegalMoveDotColor     = new RGBAColor32(0x00, 0x00, 0x00, 0x60);
+    private static readonly RGBAColor32 LegalCaptureRingColor = new RGBAColor32(0x00, 0x00, 0x00, 0x80);
+    private static readonly RGBAColor32 LastMoveArrowColor    = new RGBAColor32(0x48, 0xA0, 0x48, 0xCC);
+    private static readonly RGBAColor32 CheckRingColor        = new RGBAColor32(0xFF, 0xA5, 0x00, 0xFF);
+    private static readonly RGBAColor32 SelectionRingColor    = new RGBAColor32(0xCD, 0x5C, 0x5C, 0xFF);
+
+    private const float LegalDotRadiusFraction = 0.22f;
+    private const float OverlayStrokeWidth = 3f;
+
     private readonly int _margin;
     private readonly int _squareSize;
     private readonly int _topMargin;
@@ -189,6 +199,26 @@ public class GameUI
             }
             return plies is [.., var last]
                 ? (last.To, last.Result.IsCapture())
+                : null;
+        }
+    }
+
+    /// <summary>
+    /// Returns both the source and destination of the last completed move.
+    /// During playback, returns the ply at the current playback index.
+    /// </summary>
+    private (Position From, Position To, bool IsCapture)? LastMoveFull
+    {
+        get
+        {
+            var plies = Game.Plies;
+            if (Mode == GameUIMode.Playback && PlaybackPlyIndex >= 0 && PlaybackPlyIndex < plies.Count)
+            {
+                var ply = plies[PlaybackPlyIndex];
+                return (ply.From, ply.To, ply.Result.IsCapture());
+            }
+            return plies is [.., var last]
+                ? (last.From, last.To, last.Result.IsCapture())
                 : null;
         }
     }
@@ -446,18 +476,46 @@ public class GameUI
         // Batch draw all squares in a single call
         renderer.FillRectangles(squaresToDraw[..squareCount]);
 
-        // Draw pieces after squares (pieces must be on top)
+        // Last-move arrow (drawn before pieces, so pieces appear on top)
+        if (LastMoveFull is (var arrowFrom, var arrowTo, var arrowIsCapture))
+        {
+            var arrowColor = arrowIsCapture ? SelectedSquareFill : LastMoveArrowColor;
+            DrawLastMoveArrow<TRenderer, TSurface>(renderer, arrowFrom, arrowTo, arrowColor);
+        }
+
+        // Draw pieces after squares and arrow (pieces must be on top)
         for (var i = 0; i < pieceCount; i++)
         {
             var (position, piece, rect) = piecesToDraw[i];
             DrawPiece<TRenderer, TSurface>(renderer, piece, rect, _pieceFontSize);
         }
 
-        // Draw last-move highlight border on the destination square
+        // Legal move dots (on top of pieces so dots and capture rings are visible)
+        if (Mode == GameUIMode.Playing && Selected is { } selectedPos)
+        {
+            DrawLegalMoveDots<TRenderer, TSurface>(renderer, selectedPos);
+        }
+
+        // Last-move highlight border on the destination square
         if (LastMove is (var lastMoveTo, var lastMoveIsCapture))
         {
             var borderColor = lastMoveIsCapture ? SelectedSquareFill : LastMoveBorderColor;
             DrawLastMoveBorder<TRenderer, TSurface>(renderer, lastMoveTo, borderColor);
+        }
+
+        // Selection ring around selected piece
+        if (Selected is { } selPos)
+        {
+            DrawSelectionRing<TRenderer, TSurface>(renderer, selPos);
+        }
+
+        // Check ring around king when in check
+        if (Mode != GameUIMode.Playback && Game is { GameStatus: GameStatus.Check })
+        {
+            if (Game.Board.KingPosition(Game.CurrentSide) is { } kingPos)
+            {
+                DrawCheckRing<TRenderer, TSurface>(renderer, kingPos);
+            }
         }
     }
 
@@ -466,6 +524,69 @@ public class GameUI
     {
         var inset = SquareRect(position).Inflate(-LastMoveBorderWidth);
         renderer.DrawRectangle(inset, color, LastMoveBorderWidth);
+    }
+
+    private (float X, float Y) SquareCenter(Position position)
+    {
+        var rect = SquareRect(position);
+        return (
+            (rect.UpperLeft.X + rect.LowerRight.X) / 2f,
+            (rect.UpperLeft.Y + rect.LowerRight.Y) / 2f
+        );
+    }
+
+    private void DrawLegalMoveDots<TRenderer, TSurface>(TRenderer renderer, Position selected)
+        where TRenderer : Renderer<TSurface>
+    {
+        var dotRadius = Math.Max(1, (int)(_squareSize * LegalDotRadiusFraction));
+        var strokeWidth = Math.Max(2f, _squareSize * 0.05f);
+
+        foreach (var action in DisplayBoard.ValidMoves(Game.Plies, selected, Game.CurrentSide))
+        {
+            var (cx, cy) = SquareCenter(action.To);
+            var isOccupied = DisplayBoard[action.To].PieceType is not PieceType.None;
+
+            if (isOccupied)
+            {
+                // Outline ring around capturable piece
+                var inset = (int)(_squareSize * 0.1f);
+                var ringRect = SquareRect(action.To).Inflate(-inset);
+                renderer.DrawEllipse(ringRect, LegalCaptureRingColor, strokeWidth);
+            }
+            else
+            {
+                // Filled dot at center of empty target square
+                var dotRect = new RectInt(
+                    new PointInt((int)(cx + dotRadius), (int)(cy + dotRadius)),
+                    new PointInt((int)(cx - dotRadius), (int)(cy - dotRadius)));
+                renderer.FillEllipse(dotRect, LegalMoveDotColor);
+            }
+        }
+    }
+
+    private void DrawLastMoveArrow<TRenderer, TSurface>(TRenderer renderer, Position from, Position to, RGBAColor32 color)
+        where TRenderer : Renderer<TSurface>
+    {
+        var (x0, y0) = SquareCenter(from);
+        var (x1, y1) = SquareCenter(to);
+        var thickness = Math.Max(2, (int)(_squareSize * 0.07f));
+        renderer.DrawLine(x0, y0, x1, y1, color, thickness);
+    }
+
+    private void DrawCheckRing<TRenderer, TSurface>(TRenderer renderer, Position kingPosition)
+        where TRenderer : Renderer<TSurface>
+    {
+        var inset = (int)(_squareSize * 0.08f);
+        var ringRect = SquareRect(kingPosition).Inflate(-inset);
+        renderer.DrawEllipse(ringRect, CheckRingColor, OverlayStrokeWidth);
+    }
+
+    private void DrawSelectionRing<TRenderer, TSurface>(TRenderer renderer, Position selected)
+        where TRenderer : Renderer<TSurface>
+    {
+        var inset = (int)(_squareSize * 0.08f);
+        var ringRect = SquareRect(selected).Inflate(-inset);
+        renderer.DrawEllipse(ringRect, SelectionRingColor, OverlayStrokeWidth);
     }
 
     private void DrawPiece<TRenderer, TSurface>(TRenderer renderer, Piece piece, RectInt rect, float fontSize)
@@ -812,7 +933,8 @@ public class GameUI
         if (Selected is { } prev)
         {
             Selected = default;
-            return (UIResponse.NeedsRefresh, [SquareRect(prev)]);
+            // Full redraw to erase legal-move dots from all target squares
+            return (UIResponse.NeedsRefresh, []);
         }
         return (UIResponse.None, []);
     }
@@ -822,8 +944,8 @@ public class GameUI
         if (!Game.IsFinished && Game.HasValidMoves(position))
         {
             Selected = position;
-
-            return (UIResponse.NeedsRefresh, [SquareRect(position)]);
+            // Full redraw so legal-move dots appear on all target squares
+            return (UIResponse.NeedsRefresh, []);
         }
 
         return (UIResponse.None, []);
