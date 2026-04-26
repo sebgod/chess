@@ -17,21 +17,6 @@ var cts = new CancellationTokenSource();
 VkGameDisplay? display = null;
 Task<bool>? gameTask = null;
 
-// Signal handlers
-bus.Subscribe<RequestRestartSignal>(_ =>
-{
-    display?.Dispose();
-    display = null;
-    gameTask = null;
-    menu = new VkStartupMenu();
-});
-
-bus.Subscribe<RequestResetSignal>(_ =>
-{
-    // Reset is handled inside GameLoop via UIResponse.NeedsReset;
-    // the signal is available for future decoupling if needed.
-});
-
 var loop = new SdlEventLoop(sdlWindow, renderer)
 {
     BackgroundColor = new RGBAColor32(0x1a, 0x1a, 0x2e, 0xff),
@@ -61,7 +46,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
         display?.OnResize((int)rw, (int)rh),
 
     CheckNeedsRedraw = () =>
-        display is { HasPendingUpdate: true },
+        display is { HasPendingUpdate: true } || gameTask is { IsCompleted: true },
 
     OnRender = () =>
     {
@@ -115,6 +100,25 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
         bus.ProcessPending();
     }
 };
+
+// Signal handlers (placed after `loop` so they can poke it for a redraw).
+bus.Subscribe<RequestRestartSignal>(_ =>
+{
+    display?.Dispose();
+    display = null;
+    gameTask = null;
+    menu = new VkStartupMenu();
+    // Display→menu state swap happens during OnPostFrame, after this frame's
+    // render. Without an explicit nudge, SDL would park in WaitEventTimeout
+    // until the next input event, leaving the menu invisible until then.
+    loop.RequestRedraw();
+});
+
+bus.Subscribe<RequestResetSignal>(_ =>
+{
+    // Reset is handled inside GameLoop via UIResponse.NeedsReset;
+    // the signal is available for future decoupling if needed.
+});
 
 loop.Run(cts.Token);
 
