@@ -110,4 +110,42 @@ public sealed class AiEngineTests
         result.BestMove.Value.To.ShouldBe(Position.H4);
         result.Score.ShouldBeGreaterThan(AiEngine.MateScore - 100);
     }
+
+    [Fact]
+    public void Search_FindsMateByKnightUnderpromotion()
+    {
+        // Puzzle 5 from "Checkmating Nets – Level 1"
+        // White: Kb7, Pe6; Black: Kh7, Qb2, Rh5, Rh8, Be5, Bf7, Nf6, Ng8, + pawns
+        // After exf7, white threatens f8=N# (king boxed in by own pieces)
+        var board = new Board
+        {
+            [Position.B7] = (Side.White, PieceType.King),
+            [Position.E6] = (Side.White, PieceType.Pawn),
+            [Position.H7] = (Side.Black, PieceType.King),
+            [Position.B2] = (Side.Black, PieceType.Queen),
+            [Position.H5] = (Side.Black, PieceType.Rook),
+            [Position.H8] = (Side.Black, PieceType.Rook),
+            [Position.E5] = (Side.Black, PieceType.Bishop),
+            [Position.F7] = (Side.Black, PieceType.Bishop),
+            [Position.F6] = (Side.Black, PieceType.Knight),
+            [Position.G8] = (Side.Black, PieceType.Knight),
+            [Position.A4] = (Side.Black, PieceType.Pawn),
+            [Position.B5] = (Side.Black, PieceType.Pawn),
+            [Position.C6] = (Side.Black, PieceType.Pawn),
+            [Position.D7] = (Side.Black, PieceType.Pawn),
+            [Position.E7] = (Side.Black, PieceType.Pawn),
+            [Position.G6] = (Side.Black, PieceType.Pawn),
+            [Position.G7] = (Side.Black, PieceType.Pawn),
+            [Position.H6] = (Side.Black, PieceType.Pawn),
+        };
+
+        var game = new Game(board, Side.White, []);
+        var engine = new AiEngine(Side.White, maxDepth: 4);
+        var result = engine.Search(game);
+
+        // White should find exf7 (e6xf7) setting up unstoppable f8=N#
+        result.BestMove.ShouldNotBeNull();
+        result.BestMove.Value.From.ShouldBe(Position.E6);
+        result.BestMove.Value.To.ShouldBe(Position.F7);
+    }
 }

@@ -32,6 +32,7 @@ public record struct Board()
     private static readonly ImmutableArray<File> CastlingKingSideFiles  = [File.E, File.F, File.G];
     private static readonly ImmutableArray<File> CastlingQueenSideFiles = [File.C, File.D, File.E];
 
+    private static readonly PieceType[] _promotionTypes = [PieceType.Queen, PieceType.Knight, PieceType.Rook, PieceType.Bishop];
     private static readonly Board _standardGameBoard = BuildStandardGame();
     private static Board BuildStandardGame()
     {
@@ -332,13 +333,27 @@ public record struct Board()
         var oppositeHomeRank = side.ToOpposite().HomeRank();
         foreach (var to in Position.AllPossibleActions(position, piece))
         {
-            var action = piece is { PieceType: PieceType.Pawn } && to.Rank == oppositeHomeRank
-                ? Action.Promote(position, to, PieceType.Queen)
-                : Action.DoMove(position, to);
-            var ((result, _), _, _) = EvaluateAction(plies, action, skipGameResultCheck: true);
-            if (result.IsMoveOrCapture())
+            if (piece is { PieceType: PieceType.Pawn } && to.Rank == oppositeHomeRank)
             {
-                yield return action;
+                // Generate all promotion types (Queen, Knight, Rook, Bishop)
+                foreach (var promoted in _promotionTypes)
+                {
+                    var action = Action.Promote(position, to, promoted);
+                    var ((result, _), _, _) = EvaluateAction(plies, action, skipGameResultCheck: true);
+                    if (result.IsMoveOrCapture())
+                    {
+                        yield return action;
+                    }
+                }
+            }
+            else
+            {
+                var action = Action.DoMove(position, to);
+                var ((result, _), _, _) = EvaluateAction(plies, action, skipGameResultCheck: true);
+                if (result.IsMoveOrCapture())
+                {
+                    yield return action;
+                }
             }
         }
     }
@@ -371,7 +386,7 @@ public record struct Board()
             foreach (var to in Position.AllPossibleActions(from, piece))
             {
                 var ((result, _), _, _) = EvaluateAction(plies, Action.DoMove(from, to), skipGameResultCheck: true);
-                if (result is not ActionResult.Impossible and not ActionResult.IllegalDueToInCheck and not ActionResult.Cover and not ActionResult.NeedsPromotionType)
+                if (result is not ActionResult.Impossible and not ActionResult.IllegalDueToInCheck and not ActionResult.Cover)
                 {
                     return isCheck ? GameStatus.Check : GameStatus.Ongoing;
                 }
