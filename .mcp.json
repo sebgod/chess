@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "chess": {
+      "type": "stdio",
+      "command": "dotnet",
+      "args": ["run", "--project", "Chess.MCP", "-c", "Release"]
+    }
+  }
+}
