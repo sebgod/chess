@@ -204,6 +204,12 @@ public class GameUI
     }
 
     /// <summary>
+    /// Explicit arrow overlay (from, to, isCapture). When set, takes precedence over game ply arrows.
+    /// Used by CLI rendering to show solution moves on the initial position.
+    /// </summary>
+    public (Position From, Position To, bool IsCapture)? ExplicitArrow { get; set; }
+
+    /// <summary>
     /// Returns both the source and destination of the last completed move.
     /// During playback, returns the ply at the current playback index.
     /// </summary>
@@ -211,6 +217,9 @@ public class GameUI
     {
         get
         {
+            if (ExplicitArrow is { } arrow)
+                return arrow;
+
             var plies = Game.Plies;
             if (Mode == GameUIMode.Playback && PlaybackPlyIndex >= 0 && PlaybackPlyIndex < plies.Count)
             {
