@@ -15,6 +15,8 @@
     <PackageVersion Include="Vortice.Vulkan" Version="3.2.1" />
     <PackageVersion Include="Vortice.VulkanMemoryAllocator" Version="1.7.0" />
     <PackageVersion Include="Vortice.ShaderCompiler" Version="1.9.0" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.4" />
+    <PackageVersion Include="ModelContextProtocol" Version="1.1.0" />
     <PackageVersion Include="System.CommandLine" Version="2.0.5" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
