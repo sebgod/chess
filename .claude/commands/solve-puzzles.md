@@ -3,6 +3,8 @@ Solve chess puzzles from a PDF file attached to the conversation.
 Usage: /solve-puzzles
 (Attach a PDF containing chess diagrams to the message)
 
+Note: MCP supports drawing boards — the command can render board images via MCP (e.g., using `chess-render_board_png`) and include them inline for visual verification.
+
 Steps:
 
 1. **Parse the PDF** — Extract chess positions from the PDF. Look for:
