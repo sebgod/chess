@@ -16,8 +16,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="DIR.Lib" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="ModelContextProtocol" />
+    <PackageReference Include="StbImageWriteSharp" />
   </ItemGroup>
 
 </Project>

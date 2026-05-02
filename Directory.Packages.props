@@ -12,6 +12,7 @@
     <PackageVersion Include="SDL3-CS" Version="3.5.0-preview.20260213-150035" />
     <PackageVersion Include="SdlVulkan.Renderer" Version="3.4.441" />
     <PackageVersion Include="SDL3-CS.Native" Version="3.5.0-preview.20260205-174353" />
+    <PackageVersion Include="StbImageWriteSharp" Version="1.16.7" />
     <PackageVersion Include="Vortice.Vulkan" Version="3.2.1" />
     <PackageVersion Include="Vortice.VulkanMemoryAllocator" Version="1.7.0" />
     <PackageVersion Include="Vortice.ShaderCompiler" Version="1.9.0" />
