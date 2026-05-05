@@ -5,7 +5,6 @@ using Chess.Lib.UI;
 using Chess.UCI;
 using DIR.Lib;
 using ModelContextProtocol.Server;
-using StbImageWriteSharp;
 
 using Action = Chess.Lib.Action;
 using File = Chess.Lib.File;
@@ -57,16 +56,8 @@ public class BoardTools
         var clip = new RectInt(((int)size, (int)size), PointInt.Origin);
         ui.Render<RgbaImage, RgbaImageRenderer>(renderer, clip);
 
-        using var output = new MemoryStream();
-        var writer = new ImageWriter();
-        writer.WritePng(renderer.Surface.Pixels, renderer.Surface.Width, renderer.Surface.Height, ColorComponents.RedGreenBlueAlpha, output);
-
-        if (output.TryGetBuffer(out var buffer) && buffer.Array is not null)
-        {
-            return $"data:image/png;base64,{Convert.ToBase64String(buffer.Array, buffer.Offset, buffer.Count)}";
-        }
-
-        return $"data:image/png;base64,{Convert.ToBase64String(output.ToArray())}";
+        var png = PngWriter.Encode(renderer.Surface.Pixels, renderer.Surface.Width, renderer.Surface.Height);
+        return $"data:image/png;base64,{Convert.ToBase64String(png)}";
     }
 
     [McpServerTool, Description("Get the piece at a specific square on the board.")]
