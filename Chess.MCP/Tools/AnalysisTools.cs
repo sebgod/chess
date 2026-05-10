@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.ComponentModel;
 using System.Text;
+using System.Text.Json;
 using Chess.Lib;
 using Chess.UCI;
 using ModelContextProtocol.Server;
@@ -161,11 +162,12 @@ public class AnalysisTools
             sb.AppendLine($"*** MATE FOUND in {actualMateIn} move(s)! ***");
             sb.AppendLine();
 
-            // Play out the mating sequence
+            // Play out the mating sequence — collect structured records alongside human-readable lines
             sb.AppendLine("Mating sequence:");
             var currentGame = new Game(board, moveSide, plies);
             var currentSide = moveSide;
             var moveNum = 1;
+            var sequence = new List<BoardTools.MateMove>(searchDepth);
 
             for (var i = 0; i < searchDepth && !currentGame.IsFinished; i++)
             {
@@ -175,13 +177,17 @@ public class AnalysisTools
                 if (moveResult.BestMove is not { } nextMove)
                     break;
 
-                var moveStr = UciMove.Format(nextMove);
+                var uci = UciMove.Format(nextMove);
+                var preBoard = currentGame.Board;
+                var prePlies = currentGame.Plies;
+                var san = nextMove.ToSan(preBoard, prePlies);
                 var prefix = currentSide == moveSide
-                    ? $"  {moveNum}. {moveStr}"
-                    : $"  {moveNum}... {moveStr}";
+                    ? $"  {moveNum}. {uci}"
+                    : $"  {moveNum}... {uci}";
 
                 currentGame.TryMove(nextMove);
                 sb.AppendLine($"{prefix} ({currentGame.GameStatus})");
+                sequence.Add(new BoardTools.MateMove(i + 1, currentSide.ToString(), uci, san, currentGame.GameStatus.ToString()));
 
                 if (currentSide != moveSide)
                     moveNum++;
@@ -190,6 +196,11 @@ public class AnalysisTools
 
             if (currentGame.GameStatus == GameStatus.Checkmate)
                 sb.AppendLine($"\n  Checkmate! {moveSide} wins.");
+
+            // Structured tail — callers can split on the "---" delimiter and parse the JSON.
+            sb.AppendLine();
+            sb.AppendLine("---");
+            sb.Append(JsonSerializer.Serialize(sequence, SequenceJsonContext.Default.ListMateMove));
         }
         else
         {

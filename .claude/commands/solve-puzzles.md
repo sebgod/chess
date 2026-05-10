@@ -1,57 +1,108 @@
 Solve chess puzzles from a PDF file attached to the conversation.
 
-Usage: /solve-puzzles
+Usage: /solve-puzzles [--output DIR]
 (Attach a PDF containing chess diagrams to the message)
 
-Note: MCP supports drawing boards — the command can render board images via MCP (e.g., using `chess-render_board_png`) and include them inline for visual verification.
+Note: MCP supports drawing boards — use `chess-render_board_png` with `savePath` to save images directly.
 
 Steps:
 
-1. **Parse the PDF** — Extract chess positions from the PDF. Look for:
-   - XABCDEFGHY diagram notation (common in chess puzzle books)
-   - FEN strings if provided directly
-   - Diagram images with piece placement indicators
-   - Side-to-move indicators (e.g. "White to play", "Black to play", "w" or "b")
-   - Puzzle type indicators (e.g. "Mate in 3", "Checkmating Nets")
+1. **Extract PDF text** — Use `pdftotext` or `python -c "import PyPDF2; ..."` to get plaintext:
+   ```bash
+   pdftotext "file.pdf" -
+   # or:
+   python -c "import PyPDF2; r = PyPDF2.PdfReader('file.pdf'); print('\n'.join(p.extract_text() or '' for p in r.pages))"
+   ```
 
-2. **Convert to FEN** — For each puzzle, construct the FEN placement string:
-   - XABCDEFGHY notation: ranks go from 8 (top) to 1 (bottom)
-   - Piece codes: K=king, Q=queen, R=rook, B=bishop, N=knight, P=pawn
-   - In XABCDEFGHY: uppercase = White, lowercase = Black (but `0` prefix = White, no prefix = Black in some encodings)
-   - Verify piece counts are reasonable (max 16 per side, max 8 pawns)
-   - Note: puzzle positions do NOT need to be reachable from a legal game
+2. **Parse XABCDEFGHY notation** — Convert board diagrams to FEN. The format is:
 
-3. **Determine puzzle parameters**:
-   - Which side moves first (from PDF context or explicit marking)
-   - Puzzle goal: mate-in-N, best move, mating net, etc.
-   - If unclear, default to "find best move" analysis
+   **Board lines:** Each line is `RANK_LABEL + INNER + BORDER_CHAR(s)` where `INNER` contains 8 squares' worth of glyphs, possibly mixed with decorative markers and spaces.
+   - `+` and `-` are empty squares (alternate for visual contrast)
+   - Pieces are encoded as a piece letter (`KQRBNPLkqrbnpl`) plus 0+ decorative markers (any of `mwtvz` and ASCII space) appearing before AND/OR after the piece letter. Piece tokens may even straddle a space (e.g. `pz k` = pawn + space + king markers).
 
-4. **Solve each puzzle** using the chess MCP tools in this order:
-   a. `chess-display_board` — show the position visually for verification
-   b. `chess-analyze_position` — get initial assessment (checks, threats)
-   c. `chess-solve_mate_in` — if puzzle is "mate in N", try solving directly (mateIn: N)
-   d. `chess-find_best_move` — find the engine's best move at depth 5+
-   e. If mate not found at expected depth, try deeper (up to depth 8)
-   f. For "mating net" puzzles: the first move may set up an unstoppable promotion
-      or forced sequence — analyze the resulting position after the best move
+   **Piece decoding:**
+   - `K/k`=King, `Q/q`=Queen, `R/r`=Rook, `L/l`=Bishop (German "Läufer" → FEN B/b), `N/n`=Knight, `P/p`=Pawn
+   - Uppercase = White, lowercase = Black. Decorative markers (m, w, t, v, z, space) carry no meaning — discard them.
 
-5. **Report solutions** in a formatted table:
-   | # | Position (White/Black) | Side | Solution | Type |
-   Include:
-   - The key first move in algebraic notation (e.g. "Nf6", "exf7")
-   - UCI format in parentheses (e.g. "d5f6", "e6f7")
-   - Brief explanation of the mating mechanism
-   - Evaluation score or "Mate in N"
+   **Parsing algorithm — keep it dumb and filter:**
 
-6. **Handle edge cases**:
-   - If engine can't find forced mate, report best move with evaluation
-   - For underpromotion puzzles (f8=N#, etc.), the engine now generates all
-     promotion types — verify the mating line includes the correct piece
-   - If a position seems invalid, flag it but still attempt to solve
+   The original "tokenize markers" approach is fragile because pieces have markers as both prefix (`mK`, `vL`, `tR`) and suffix (`pz`, `kv`), and tokens can be split by spaces (`pz k`). The robust algorithm: **filter the inner string to keep only `+`, `-`, and piece chars; everything else is a marker.** Each kept char is exactly one square.
 
-7. **Verify solutions** — For each "mate in N" solution:
-   - Use `chess-make_move` to play the first move
-   - Confirm the resulting position maintains the mating threat
-   - For mating nets, verify the opponent cannot prevent the threat
+   ```python
+   PIECE_CHARS = set('KQRBNPLkqrbnpl')
+   EMPTY_CHARS = set('+-')
+   BORDER_CHARS = set("()'&%$#\"!")  # one per rank: 8→( 7→' 6→& 5→% 4→$ 3→# 2→" 1→!
+
+   def parse_rank(line):
+       """line is like '8-+-+-+-Rt (' — extract 8 squares."""
+       line = line.strip()
+       rank_label = line[0]
+       inner = line[1:].rstrip()
+       # drop trailing border char(s)
+       while inner and inner[-1] in BORDER_CHARS:
+           inner = inner[:-1].rstrip()
+       squares = []
+       for c in inner:
+           if c in EMPTY_CHARS:
+               squares.append(None)
+           elif c in PIECE_CHARS:
+               squares.append(c)
+           # else: marker, ignore
+       assert len(squares) == 8, f"rank {rank_label}: got {len(squares)} squares from {inner!r}"
+       return rank_label, squares
+
+   def squares_to_fen_rank(squares):
+       out, empty = '', 0
+       for s in squares:
+           if s is None:
+               empty += 1
+           else:
+               if empty: out += str(empty); empty = 0
+               out += {'L':'B','l':'b'}.get(s, s)
+       if empty: out += str(empty)
+       return out
+   ```
+
+   PDFs often emit all 8 ranks of a diagram on one line. Split with regex `([1-8][^()'&%$#"!]*[()'&%$#"!])` to recover individual rank chunks.
+
+3. **Extract puzzle metadata** — From surrounding text, find:
+   - Puzzle number (`Puzzle (\d+)`)
+   - Side to move (`(White|Black) to play`)
+   - Mate-in-N count (`\((\d+) move`)
+
+4. **Solve each puzzle** — Use MCP tools efficiently:
+   a. `chess-solve_mate_in` with the parsed mateIn value, side, and FEN
+   b. If no mate found, try `chess-find_best_move` at depth 6+
+
+   `solve_mate_in` returns the human-readable text plus a `---`-delimited JSON tail. Parse it by normalizing line endings and splitting:
+   ```python
+   import re, json
+   m = re.search(r'\n---\n(.+)$', text.replace('\r\n', '\n'), re.DOTALL)
+   sequence = json.loads(m.group(1)) if m else []
+   ```
+   Each entry is `{ply, side, uci, san, status}`. Use `uci` for rendering, `san` for display.
+
+5. **Render and save solution images** — One call per puzzle:
+
+   **Mate-in-1:** use `chess-render_board_png` with `move` for a single arrow. Omit `annotation` to auto-derive SAN.
+   ```
+   chess-render_board_png(fen=FEN, move=KEY_UCI, savePath="OUT/puzzle-NN.png")
+   ```
+
+   **Mate-in-N (N≥2):** use the new `chess-render_sequence` tool — one call writes all N PNGs.
+   ```
+   chess-render_sequence(
+       fen=FEN, startingSide="white", moves="h2h8,f8g7,d8f6",
+       outDir="OUT", baseName="puzzle-07",
+       annotationPrefix="Puzzle 7")
+   ```
+   Returns JSON `[{ply, file, san, fenBefore}, ...]`. File naming: `{baseName}-move{round}{w|b}.png` where the `w/b` suffix marks which side made the move in the sequence ordering — for "Black to play" the first ply is `move1b`.
+
+   You can also overlay multiple arrows on a *single* board with `chess-render_board_png(moves="...")` (comma-separated UCI list). Useful for a summary thumbnail of a whole tactical line.
+
+6. **Report solutions** in a formatted table:
+   | # | Side | Mate in | Key Move | Sequence |
+   |---|------|---------|----------|----------|
+   Include UCI and algebraic notation, plus brief explanation.
 
 Present all solutions together at the end in a clear summary.

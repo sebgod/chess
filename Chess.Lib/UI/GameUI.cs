@@ -23,6 +23,12 @@ public class GameUI
     private static readonly RGBAColor32 LegalMoveDotColor     = new RGBAColor32(0x00, 0x00, 0x00, 0x60);
     private static readonly RGBAColor32 LegalCaptureRingColor = new RGBAColor32(0x00, 0x00, 0x00, 0x80);
     private static readonly RGBAColor32 LastMoveArrowColor    = new RGBAColor32(0x48, 0xA0, 0x48, 0xCC);
+    private static readonly RGBAColor32[] SequenceArrowColors = [
+        new RGBAColor32(0x48, 0xA0, 0x48, 0xCC), // green   (1st ply)
+        new RGBAColor32(0x30, 0x80, 0xE0, 0xCC), // blue    (2nd ply)
+        new RGBAColor32(0xE0, 0x90, 0x20, 0xCC), // orange  (3rd ply)
+        new RGBAColor32(0xC0, 0x40, 0xC0, 0xCC), // magenta (4th ply)
+    ];
     private static readonly RGBAColor32 CheckRingColor        = new RGBAColor32(0xFF, 0xA5, 0x00, 0xFF);
     private static readonly RGBAColor32 SelectionRingColor    = new RGBAColor32(0xCD, 0x5C, 0x5C, 0xFF);
 
@@ -204,10 +210,19 @@ public class GameUI
     }
 
     /// <summary>
-    /// Explicit arrow overlay (from, to, isCapture). When set, takes precedence over game ply arrows.
-    /// Used by CLI rendering to show solution moves on the initial position.
+    /// Explicit arrow overlays (from, to, isCapture). When non-empty, takes precedence over game ply arrows.
+    /// Used by CLI/MCP rendering to show solution moves — multiple arrows render as a sequence with cycling colors.
     /// </summary>
-    public (Position From, Position To, bool IsCapture)? ExplicitArrow { get; set; }
+    public IReadOnlyList<(Position From, Position To, bool IsCapture)> ExplicitArrows { get; set; } = [];
+
+    /// <summary>
+    /// Convenience setter for a single arrow. Replaces <see cref="ExplicitArrows"/> with a one-element list.
+    /// </summary>
+    public (Position From, Position To, bool IsCapture)? ExplicitArrow
+    {
+        get => ExplicitArrows.Count > 0 ? ExplicitArrows[0] : null;
+        set => ExplicitArrows = value is { } arrow ? [arrow] : [];
+    }
 
     /// <summary>
     /// Returns both the source and destination of the last completed move.
@@ -217,8 +232,8 @@ public class GameUI
     {
         get
         {
-            if (ExplicitArrow is { } arrow)
-                return arrow;
+            if (ExplicitArrows.Count > 0)
+                return ExplicitArrows[0];
 
             var plies = Game.Plies;
             if (Mode == GameUIMode.Playback && PlaybackPlyIndex >= 0 && PlaybackPlyIndex < plies.Count)
@@ -485,8 +500,18 @@ public class GameUI
         // Batch draw all squares in a single call
         renderer.FillRectangles(squaresToDraw[..squareCount]);
 
-        // Last-move arrow (drawn before pieces, so pieces appear on top)
-        if (LastMoveFull is (var arrowFrom, var arrowTo, var arrowIsCapture))
+        // Last-move arrow(s) — drawn before pieces so pieces appear on top.
+        // Multiple ExplicitArrows render as a sequence with cycling palette to show move order.
+        if (ExplicitArrows.Count > 0)
+        {
+            for (var i = 0; i < ExplicitArrows.Count; i++)
+            {
+                var (from, to, isCapture) = ExplicitArrows[i];
+                var color = isCapture ? SelectedSquareFill : SequenceArrowColors[i % SequenceArrowColors.Length];
+                DrawLastMoveArrow<TRenderer, TSurface>(renderer, from, to, color);
+            }
+        }
+        else if (LastMoveFull is (var arrowFrom, var arrowTo, var arrowIsCapture))
         {
             var arrowColor = arrowIsCapture ? SelectedSquareFill : LastMoveArrowColor;
             DrawLastMoveArrow<TRenderer, TSurface>(renderer, arrowFrom, arrowTo, arrowColor);

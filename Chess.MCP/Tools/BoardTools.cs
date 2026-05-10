@@ -1,5 +1,8 @@
+using System.Collections.Immutable;
 using System.ComponentModel;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Chess.Lib;
 using Chess.Lib.UI;
 using Chess.UCI;
@@ -32,32 +35,163 @@ public class BoardTools
         return sb.ToString();
     }
 
-    [McpServerTool, Description("Render a board as PNG and return a base64 data URL. Uses DIR RGBA rendering for board drawing.")]
+    [McpServerTool, Description("Render a board as PNG and return a base64 data URL. Uses DIR RGBA rendering for board drawing. If savePath is provided, the PNG is written to disk and the return value is the file path.")]
     public static string RenderBoardPng(
         [Description("FEN placement string or 'startpos'")] string fen,
         [Description("Image size in pixels (default: 480)")] uint size = 480,
-        [Description("Optional UCI move arrow overlay (e.g. 'e2e4')")] string? move = null)
+        [Description("Optional UCI move arrow overlay (e.g. 'e2e4'). For multiple arrows, use 'moves' instead.")] string? move = null,
+        [Description("Optional comma-separated UCI move list to overlay multiple arrows on a single board (e.g. 'e2e4,e7e5,g1f3'). Mutually exclusive with 'move'; if both are given, 'moves' wins.")] string? moves = null,
+        [Description("Optional file path to save the PNG to disk")] string? savePath = null,
+        [Description("Optional annotation text. When omitted and a move is given, defaults to SAN (e.g. 'Bd5#').")] string? annotation = null)
     {
         var board = ParseBoard(fen);
+        var moveList = ParseUciList(moves) ?? (string.IsNullOrWhiteSpace(move) ? [] : [UciMove.Parse(move)]);
+
+        var resolvedAnnotation = annotation;
+        if (string.IsNullOrWhiteSpace(resolvedAnnotation) && moveList.Count > 0)
+        {
+            resolvedAnnotation = BuildSequenceAnnotation(board, moveList);
+        }
+
+        var png = RenderToPng(board, size, moveList, resolvedAnnotation);
+
+        if (!string.IsNullOrWhiteSpace(savePath))
+        {
+            var dir = Path.GetDirectoryName(savePath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+            System.IO.File.WriteAllBytes(savePath, png);
+            return savePath;
+        }
+
+        return $"data:image/png;base64,{Convert.ToBase64String(png)}";
+    }
+
+    [McpServerTool, Description("Render one PNG per ply for a UCI move sequence. Each PNG shows the position before that move with the move arrow and a SAN annotation. Returns JSON [{ply, file, san, fenBefore}, ...].")]
+    public static string RenderSequence(
+        [Description("FEN placement string or 'startpos'")] string fen,
+        [Description("Side that plays the first move: 'white' or 'black'")] string startingSide,
+        [Description("Comma-separated UCI moves (e.g. 'h2h8,f8g7,d8f6')")] string moves,
+        [Description("Output directory for the PNG files. Created if missing.")] string outDir,
+        [Description("Filename prefix; files are named '{baseName}-move{round}{w|b}.png'")] string baseName,
+        [Description("Image size in pixels (default: 480)")] uint size = 480,
+        [Description("Optional annotation prefix appended before SAN (e.g. 'Puzzle 7' → 'Puzzle 7 - 1.Rh8+')")] string? annotationPrefix = null)
+    {
+        var board = ParseBoard(fen);
+        var firstSide = ParseSide(startingSide);
+        var actions = ParseUciList(moves) ?? throw new ArgumentException("moves cannot be empty.", nameof(moves));
+
+        if (!Directory.Exists(outDir))
+            Directory.CreateDirectory(outDir);
+
+        var plies = ImmutableList<RecordedPly>.Empty;
+        var current = board;
+        var currentSide = firstSide;
+        var moveNum = 1;
+
+        var entries = new List<SequenceEntry>(actions.Count);
+
+        for (var i = 0; i < actions.Count; i++)
+        {
+            var action = actions[i];
+            var fenBefore = current.ToFEN();
+            var san = action.ToSan(current, plies);
+
+            var isWhite = currentSide == Side.White;
+            var sideTag = isWhite ? "w" : "b";
+            var fileName = $"{baseName}-move{moveNum}{sideTag}.png";
+            var filePath = Path.Combine(outDir, fileName);
+
+            var moveLabel = isWhite ? $"{moveNum}.{san}" : $"{moveNum}...{san}";
+            var fullAnnotation = string.IsNullOrWhiteSpace(annotationPrefix)
+                ? moveLabel
+                : $"{annotationPrefix} - {moveLabel}";
+
+            var png = RenderToPng(current, size, [action], fullAnnotation);
+            System.IO.File.WriteAllBytes(filePath, png);
+
+            entries.Add(new SequenceEntry(i + 1, filePath, san, fenBefore));
+
+            var (evalResult, newBoard, newPlies) = current.EvaluateAction(plies, action);
+            if (!evalResult.Result.IsMoveOrCapture())
+            {
+                throw new InvalidOperationException($"Illegal move at ply {i + 1}: {UciMove.Format(action)} ({evalResult.Result})");
+            }
+            current = newBoard;
+            plies = newPlies;
+            currentSide = currentSide.ToOpposite();
+            // Move number increments after black plays.
+            if (!isWhite) moveNum++;
+        }
+
+        return JsonSerializer.Serialize(entries, SequenceJsonContext.Default.ListSequenceEntry);
+    }
+
+    private static List<Action>? ParseUciList(string? moves)
+    {
+        if (string.IsNullOrWhiteSpace(moves)) return null;
+        var parts = moves.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var list = new List<Action>(parts.Length);
+        foreach (var p in parts) list.Add(UciMove.Parse(p));
+        return list;
+    }
+
+    private static string BuildSequenceAnnotation(Board board, IReadOnlyList<Action> actions)
+    {
+        var sb = new StringBuilder();
+        var current = board;
+        var plies = ImmutableList<RecordedPly>.Empty;
+        for (var i = 0; i < actions.Count; i++)
+        {
+            if (i > 0) sb.Append(' ');
+            var san = actions[i].ToSan(current, plies);
+            if (i % 2 == 0) sb.Append((i / 2) + 1).Append('.').Append(san);
+            else sb.Append(san);
+            var (evalResult, newBoard, newPlies) = current.EvaluateAction(plies, actions[i]);
+            if (!evalResult.Result.IsMoveOrCapture()) break;
+            current = newBoard;
+            plies = newPlies;
+        }
+        return sb.ToString();
+    }
+
+    private static byte[] RenderToPng(Board board, uint size, IReadOnlyList<Action> moveList, string? annotation)
+    {
         var game = new Game(board, Side.White, []);
 
-        using var renderer = new RgbaImageRenderer(size, size);
+        var hasAnnotation = !string.IsNullOrWhiteSpace(annotation);
+        var annotationHeight = hasAnnotation ? (uint)(size * 0.07f) : 0u;
+        var totalHeight = size + annotationHeight;
+
+        using var renderer = new RgbaImageRenderer(size, totalHeight);
         var ui = new GameUI(game, size, size,
             mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
             backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff));
 
-        if (!string.IsNullOrWhiteSpace(move))
+        if (moveList.Count > 0)
         {
-            var action = UciMove.Parse(move);
-            var targetPiece = board[action.To];
-            ui.ExplicitArrow = (action.From, action.To, targetPiece != Piece.None);
+            var arrows = new List<(Position From, Position To, bool IsCapture)>(moveList.Count);
+            foreach (var action in moveList)
+            {
+                var targetPiece = board[action.To];
+                arrows.Add((action.From, action.To, targetPiece != Piece.None));
+            }
+            ui.ExplicitArrows = arrows;
         }
 
-        var clip = new RectInt(((int)size, (int)size), PointInt.Origin);
-        ui.Render<RgbaImage, RgbaImageRenderer>(renderer, clip);
+        var boardClip = new RectInt(((int)size, (int)size), PointInt.Origin);
+        ui.Render<RgbaImage, RgbaImageRenderer>(renderer, boardClip);
 
-        var png = PngWriter.Encode(renderer.Surface.Pixels, renderer.Surface.Width, renderer.Surface.Height);
-        return $"data:image/png;base64,{Convert.ToBase64String(png)}";
+        if (hasAnnotation)
+        {
+            var fontPath = Path.Combine(AppContext.BaseDirectory, "Fonts", "DejaVuSans.ttf");
+            var fontSize = size * 0.04f;
+            var annotationRect = new RectInt(((int)size, (int)annotationHeight), new PointInt(0, (int)size));
+            var textColor = new RGBAColor32(0xff, 0xff, 0xff, 0xff);
+            renderer.DrawText(annotation!, fontPath, fontSize, textColor, annotationRect, vertAlignment: TextAlign.Center);
+        }
+
+        return PngWriter.Encode(renderer.Surface.Pixels, renderer.Surface.Width, renderer.Surface.Height);
     }
 
     [McpServerTool, Description("Get the piece at a specific square on the board.")]
@@ -157,4 +291,17 @@ public class BoardTools
             .ToList();
         sb.AppendLine(string.Join(", ", pieces));
     }
+
+    public sealed record SequenceEntry(int Ply, string File, string San, string FenBefore);
+
+    public sealed record MateMove(int Ply, string Side, string Uci, string San, string Status);
+}
+
+[JsonSourceGenerationOptions(
+    WriteIndented = false,
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSerializable(typeof(List<BoardTools.SequenceEntry>))]
+[JsonSerializable(typeof(List<BoardTools.MateMove>))]
+internal partial class SequenceJsonContext : JsonSerializerContext
+{
 }
