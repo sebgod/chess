@@ -8,6 +8,7 @@ using Chess.Lib.UI;
 using Chess.UCI;
 using DIR.Lib;
 using ModelContextProtocol.Server;
+using SharpAstro.Png;
 
 using Action = Chess.Lib.Action;
 using File = Chess.Lib.File;

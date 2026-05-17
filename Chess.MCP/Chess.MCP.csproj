@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <PackageReference Include="DIR.Lib" />
+    <PackageReference Include="SharpAstro.Png" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="ModelContextProtocol" />
   </ItemGroup>
