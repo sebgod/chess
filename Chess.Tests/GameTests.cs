@@ -135,7 +135,33 @@ public class GameTests
         FromPlies([
             new RecordedPly(E2, E4, Move, Pawn), new RecordedPly(G7, G5, Move, Pawn),
             new RecordedPly(B1, C3, Move, Knight), new RecordedPly(F7, F5, Move, Pawn)
-        ], new RecordedPly(D1, H5, Move, Queen, Status: Checkmate))
+        ], new RecordedPly(D1, H5, Move, Queen, Status: Checkmate)),
+        // Regression: Ba3-e7 is mate. Black has a pawn on e2 that can pseudo-promote on e1,
+        // but that promotion does not block the e7→g5 bishop check. EvaluateAction returns
+        // NeedsPromotionType for DoMove(e2,e1) without running the in-check legality test,
+        // so DetermineGameResult must enumerate via ValidMoves (which tries real promotions)
+        // to detect that black has zero legal replies.
+        Custom(
+            new Board {
+                [C8] = (Black, Rook),
+                [A3] = (White, Bishop), [H7] = (White, Rook),
+                [E5] = (White, King), [G5] = (Black, King),
+                [E4] = (White, Bishop), [G4] = (Black, Pawn),
+                [E2] = (Black, Pawn)
+            },
+            White,
+            [],
+            DoMove(A3, E7),
+            Move,
+            new Board {
+                [C8] = (Black, Rook),
+                [E7] = (White, Bishop), [H7] = (White, Rook),
+                [E5] = (White, King), [G5] = (Black, King),
+                [E4] = (White, Bishop), [G4] = (Black, Pawn),
+                [E2] = (Black, Pawn)
+            },
+            Checkmate
+        )
     ];
 
     public static object[] FromPlies(ImmutableList<RecordedPly> plies, RecordedPly move)

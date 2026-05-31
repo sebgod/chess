@@ -380,16 +380,15 @@ public record struct Board()
     public readonly GameStatus DetermineGameResult(ImmutableList<RecordedPly> plies, Side side)
     {
         var isCheck = IsCheck(side);
-        // find a legal move, otherwise checkmate
-        foreach (var (from, piece) in AllPiecesOfSide(side))
+        // find a legal move, otherwise checkmate / stalemate.
+        // Delegate to ValidMoves so pawn-promotion candidates are tested with an actual
+        // promotion type — otherwise EvaluateAction short-circuits with NeedsPromotionType
+        // and the in-check legality test is skipped.
+        foreach (var (from, _) in AllPiecesOfSide(side))
         {
-            foreach (var to in Position.AllPossibleActions(from, piece))
+            if (ValidMoves(plies, from, side).Any())
             {
-                var ((result, _), _, _) = EvaluateAction(plies, Action.DoMove(from, to), skipGameResultCheck: true);
-                if (result is not ActionResult.Impossible and not ActionResult.IllegalDueToInCheck and not ActionResult.Cover)
-                {
-                    return isCheck ? GameStatus.Check : GameStatus.Ongoing;
-                }
+                return isCheck ? GameStatus.Check : GameStatus.Ongoing;
             }
         }
 
