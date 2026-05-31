@@ -198,8 +198,11 @@ public class GameUI
         get
         {
             var plies = Game.Plies;
-            if (Mode == GameUIMode.Playback && PlaybackPlyIndex >= 0 && PlaybackPlyIndex < plies.Count)
+            if (Mode == GameUIMode.Playback)
             {
+                // In playback, only show the marker for the ply at the current index.
+                // PlaybackPlyIndex == -1 means "before the first move" — no marker.
+                if (PlaybackPlyIndex < 0 || PlaybackPlyIndex >= plies.Count) return null;
                 var ply = plies[PlaybackPlyIndex];
                 return (ply.To, ply.Result.IsCapture());
             }
@@ -236,8 +239,11 @@ public class GameUI
                 return ExplicitArrows[0];
 
             var plies = Game.Plies;
-            if (Mode == GameUIMode.Playback && PlaybackPlyIndex >= 0 && PlaybackPlyIndex < plies.Count)
+            if (Mode == GameUIMode.Playback)
             {
+                // In playback, only show the arrow for the ply at the current index.
+                // PlaybackPlyIndex == -1 means "before the first move" — no arrow.
+                if (PlaybackPlyIndex < 0 || PlaybackPlyIndex >= plies.Count) return null;
                 var ply = plies[PlaybackPlyIndex];
                 return (ply.From, ply.To, ply.Result.IsCapture());
             }
