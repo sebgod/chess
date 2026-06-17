@@ -25,9 +25,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Console.Lib" />
     <ProjectReference Include="..\Chess.Lib\Chess.Lib.csproj" />
     <ProjectReference Include="..\Chess.UCI\Chess.UCI.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
+    <PackageReference Include="Console.Lib" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseLocalSiblings)' == 'true'">
+    <ProjectReference Include="..\..\Console.Lib\src\Console.Lib\Console.Lib.csproj" />
   </ItemGroup>
 
 </Project>

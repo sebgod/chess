@@ -16,10 +16,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="DIR.Lib" />
     <PackageReference Include="SharpAstro.Png" />
     <PackageReference Include="Microsoft.Extensions.Hosting" />
     <PackageReference Include="ModelContextProtocol" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
+    <PackageReference Include="DIR.Lib" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseLocalSiblings)' == 'true'">
+    <ProjectReference Include="..\..\DIR.Lib\src\DIR.Lib\DIR.Lib.csproj" />
   </ItemGroup>
 
 </Project>
