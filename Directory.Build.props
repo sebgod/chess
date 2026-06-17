@@ -4,4 +4,20 @@
     <DebugType>none</DebugType>
   </PropertyGroup>
 
+  <!--
+    Auto-detect sibling SharpAstro working copies for fast in-tree iteration.
+    When DIR.Lib, Console.Lib, and SdlVulkan.Renderer are checked out next to
+    this repo, their projects are used via ProjectReference (see each .csproj's
+    UseLocalSiblings branch); CI and package-only clones fall through to the
+    PackageReference branch automatically. Mirrors the same switch in
+    ../../sharpastro/tianwen/src/Directory.Build.props.
+    Override: dotnet build -p:UseLocalSiblings=false
+  -->
+  <PropertyGroup>
+    <UseLocalSiblings Condition="'$(UseLocalSiblings)' == ''
+      AND Exists('$(MSBuildThisFileDirectory)..\DIR.Lib\src\DIR.Lib\DIR.Lib.csproj')
+      AND Exists('$(MSBuildThisFileDirectory)..\Console.Lib\src\Console.Lib\Console.Lib.csproj')
+      AND Exists('$(MSBuildThisFileDirectory)..\SdlVulkan.Renderer\src\SdlVulkan.Renderer\SdlVulkan.Renderer.csproj')">true</UseLocalSiblings>
+  </PropertyGroup>
+
 </Project>
