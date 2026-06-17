@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Chess.Lib;
 using DIR.Lib;
 using SdlVulkan.Renderer;
@@ -8,7 +9,15 @@ internal sealed class VkStartupMenu : IWidget
 {
     private enum Phase { GameMode, PlayAs, BoardType, SideToMove, HumanSide }
 
-    private readonly VkMenuWidget _menu;
+    // Lazy: PixelMenuWidget<VulkanContext> is constructed on first Render call so we have a
+    // VkRenderer instance to pass to the PixelWidgetBase ctor. Until then, pending content is
+    // stored as plain fields and flushed in the first Render invocation.
+    private PixelMenuWidget<VulkanContext>? _menu;
+    private readonly string _fontPath;
+    private string _pendingTitle;
+    private string _pendingPrompt;
+    private ImmutableArray<string> _pendingItems;
+
     private Phase _phase = Phase.GameMode;
     private GameMode _gameMode;
     private Side _computerSide;
@@ -19,16 +28,26 @@ internal sealed class VkStartupMenu : IWidget
 
     public VkStartupMenu()
     {
-        var fontPath = Path.Combine(AppContext.BaseDirectory, "Fonts", "DejaVuSans.ttf");
+        _fontPath = Path.Combine(AppContext.BaseDirectory, "Fonts", "DejaVuSans.ttf");
         var (title, prompt, items) = MenuContent(Phase.GameMode);
-        _menu = new VkMenuWidget(fontPath, title, prompt, items);
+        _pendingTitle = title;
+        _pendingPrompt = prompt;
+        _pendingItems = [..items];
     }
 
-    public void Render(VkRenderer renderer) => _menu.Render(renderer);
+    public void Render(VkRenderer renderer)
+    {
+        if (_menu is null)
+        {
+            _menu = new PixelMenuWidget<VulkanContext>(renderer, _fontPath);
+            _menu.Reset(_pendingTitle, _pendingPrompt, _pendingItems);
+        }
+        _menu.Render();
+    }
 
     public bool HandleInput(InputEvent evt)
     {
-        if (IsComplete) return false;
+        if (IsComplete || _menu is null) return false;
 
         if (!_menu.HandleInput(evt))
             return false;
@@ -41,7 +60,7 @@ internal sealed class VkStartupMenu : IWidget
 
     private void Confirm()
     {
-        var selected = _menu.SelectedIndex;
+        var selected = _menu!.SelectedIndex;
 
         switch (_phase)
         {
@@ -89,16 +108,20 @@ internal sealed class VkStartupMenu : IWidget
     {
         _phase = phase;
         var (title, prompt, items) = MenuContent(phase);
-        _menu.Reset(title, prompt, items);
+        _pendingTitle = title;
+        _pendingPrompt = prompt;
+        _pendingItems = [..items];
+        if (_menu is not null)
+            _menu.Reset(_pendingTitle, _pendingPrompt, _pendingItems);
     }
 
     private static (string Title, string Prompt, string[] Items) MenuContent(Phase phase) => phase switch
     {
-        Phase.GameMode => ("\u265a Chess \u2654", "Select game mode:", ["Player vs Player", "Player vs Computer", "Custom Game"]),
-        Phase.PlayAs => ("\u265a Chess \u2654", "Play as:", ["White", "Black"]),
-        Phase.BoardType => ("\u265a Chess \u2654", "Starting board:", ["Empty Board", "Standard Board"]),
-        Phase.SideToMove => ("\u265a Chess \u2654", "Side to move first:", ["White", "Black"]),
-        Phase.HumanSide => ("\u265a Chess \u2654", "Play as:", ["White", "Black"]),
+        Phase.GameMode => ("♚ Chess ♔", "Select game mode:", ["Player vs Player", "Player vs Computer", "Custom Game"]),
+        Phase.PlayAs => ("♚ Chess ♔", "Play as:", ["White", "Black"]),
+        Phase.BoardType => ("♚ Chess ♔", "Starting board:", ["Empty Board", "Standard Board"]),
+        Phase.SideToMove => ("♚ Chess ♔", "Side to move first:", ["White", "Black"]),
+        Phase.HumanSide => ("♚ Chess ♔", "Play as:", ["White", "Black"]),
         _ => ("", "", [])
     };
 }
