@@ -358,7 +358,7 @@ public class GameUI
         // keymap overlay (F1)
         if (ShowingKeymap)
         {
-            renderer.FillRectangle(boardRect, OverlayFill);
+            renderer.DrawScrim(boardRect, OverlayFill);
 
             renderer.DrawText(KeymapText, _labelFont, _keymapFontSize, FontColorBlack, boardRect,
                 horizAlignment: TextAlign.Near, vertAlignment: TextAlign.Far);
@@ -366,7 +366,7 @@ public class GameUI
         // piece placement selection box (setup mode)
         else if (PendingPlacement is { } placementPos)
         {
-            renderer.FillRectangle(boardRect, OverlayFill);
+            renderer.DrawScrim(boardRect, OverlayFill);
 
             var box = PieceTypeSelectionBox(placementPos);
             var offX = box.UpperLeft.X;
@@ -398,7 +398,7 @@ public class GameUI
         // promote piece type selection box
         else if (PendingPromotion is { })
         {
-            renderer.FillRectangle(boardRect, OverlayFill);
+            renderer.DrawScrim(boardRect, OverlayFill);
 
             var box = PromotePieceTypeSelectionBox(currentSide);
             var offX = box.UpperLeft.X;
@@ -412,9 +412,9 @@ public class GameUI
                 DrawPiece<TRenderer, TSurface>(renderer, new Piece((PieceType)(i + (int)PieceType.Knight), currentSide), squareRect, _pieceFontSize);
             }
         }
-        else if (Mode != GameUIMode.Playback && Game is { GameStatus: GameStatus.Checkmate or GameStatus.Checkmate })
+        else if (Mode != GameUIMode.Playback && Game is { GameStatus: GameStatus.Checkmate or GameStatus.Stalemate })
         {
-            renderer.FillRectangle(boardRect, OverlayFill);
+            renderer.DrawScrim(boardRect, OverlayFill);
 
             var message = Game.GameStatus.ToMessage(Game.IsFinished ? Game.Winner : Game.CurrentSide);
             renderer.DrawText(message, _labelFont, _capturedFontSize, _mainFontColor, boardRect, vertAlignment: TextAlign.Center);
