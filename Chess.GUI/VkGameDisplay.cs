@@ -205,7 +205,6 @@ public sealed class VkGameDisplay : PixelWidgetBase<VulkanContext>, IGameDisplay
     private void RenderStatusBar(RectF32 rect)
     {
         var fontSize = ChromeFontSize;
-        FillRect(rect.X, rect.Y, rect.Width, rect.Height, StatusBarBg);
 
         string status;
         if (_game is null)
@@ -230,9 +229,10 @@ public sealed class VkGameDisplay : PixelWidgetBase<VulkanContext>, IGameDisplay
             status = $"{_game.GameStatus.ToMessage(_game.CurrentSide)}{fileInfo}";
         }
 
-        DrawText(status, _labelFont,
-            rect.X + 8, rect.Y, rect.Width - 16, rect.Height,
-            fontSize, FontColor, TextAlign.Near, TextAlign.Center);
+        RenderTextBar(status, _labelFont,
+            rect.X, rect.Y, rect.Width, rect.Height,
+            fontSize, StatusBarBg, FontColor,
+            horizontalPadding: 8f, alignX: TextAlign.Near, alignY: TextAlign.Center);
     }
 
     private int? ResolveHistoryClick(int px, int py)
