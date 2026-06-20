@@ -3,6 +3,7 @@ using Chess.Lib;
 using Chess.Lib.UI;
 using DIR.Lib;
 using SdlVulkan.Renderer;
+using Layout = DIR.Lib.Layout;
 
 namespace Chess.GUI;
 
@@ -147,59 +148,49 @@ public sealed class VkGameDisplay : PixelWidgetBase<VulkanContext>, IGameDisplay
         var startMove = _gameUI.HistoryScrollStart ?? Math.Max(0, moveCount - visibleRows);
         var highlightPly = _gameUI.Mode == GameUIMode.Playback ? _gameUI.PlaybackPlyIndex : (int?)null;
 
-        var contentY = rect.Y + headerH + 4;
-        var idxColW = fontSize * 3.5f;
-        var plyColW = (rect.Width - idxColW) / 2;
+        var rowCount = Math.Min(visibleRows, moveCount - startMove);
+        if (rowCount <= 0) return;
 
-        for (var i = 0; i < visibleRows && startMove + i < moveCount; i++)
+        // Build the rows as a declarative Layout tree: an idx column + two proportional
+        // ply columns per row. RenderLayout draws each cell AND auto-binds its click region
+        // from the same arranged rect, so the history hit-targets cannot drift from what's
+        // drawn (replacing the previous hand-mirrored RegisterClickable coordinates).
+        var idxColW = fontSize * 3.5f;
+        var rows = new Layout.Node[rowCount];
+        for (var i = 0; i < rowCount; i++)
         {
             var moveIdx = startMove + i;
             var whitePlyIdx = moveIdx * 2;
             var (idxStr, whitePly) = plies.GetRecordAndPGNIdx(whitePlyIdx);
-            var blackPlyStr = whitePlyIdx + 1 < plyCount
-                ? plies.GetRecordAndPGNIdx(whitePlyIdx + 1).Ply.ToString()
-                : "";
+            var hasBlack = whitePlyIdx + 1 < plyCount;
 
-            var rowY = contentY + i * rowH;
+            var idxCell = Layout.Builder
+                .Text(idxStr.Trim(), fontSize, HistoryIndexColor, TextAlign.Far, TextAlign.Center)
+                .WFixed(idxColW).HStar();
 
-            DrawText(idxStr.AsSpan().Trim(), _labelFont,
-                rect.X + 4, rowY, idxColW - 4, rowH,
-                fontSize, HistoryIndexColor, TextAlign.Far, TextAlign.Center);
+            var whiteCell = HistoryPlyCell(whitePly.ToString(), whitePlyIdx, highlightPly == whitePlyIdx);
 
-            var whiteX = rect.X + idxColW + 4;
+            var blackCell = hasBlack
+                ? HistoryPlyCell(plies.GetRecordAndPGNIdx(whitePlyIdx + 1).Ply.ToString(),
+                    whitePlyIdx + 1, highlightPly == whitePlyIdx + 1)
+                : Layout.Builder.Spacer().Stretch();
 
-            var isHighlightWhite = highlightPly == whitePlyIdx;
-            if (isHighlightWhite)
-                FillRect(whiteX, rowY, plyColW, rowH, PlaybackHighlightBg);
-            DrawText(whitePly.ToString(), _labelFont,
-                whiteX, rowY, plyColW, rowH,
-                fontSize, isHighlightWhite ? PlaybackHighlightText : FontColor,
-                TextAlign.Near, TextAlign.Center);
-
-            // Register clickable region for white ply
-            var capturedWhitePly = whitePlyIdx;
-            RegisterClickable(whiteX, rowY, plyColW, rowH,
-                new HitResult.ListItemHit("History", capturedWhitePly));
-
-            if (blackPlyStr.Length > 0)
-            {
-                var blackX = whiteX + plyColW + 2;
-                var blackW = rect.Width - idxColW - plyColW - 6;
-
-                var isHighlightBlack = highlightPly == whitePlyIdx + 1;
-                if (isHighlightBlack)
-                    FillRect(blackX, rowY, blackW, rowH, PlaybackHighlightBg);
-                DrawText(blackPlyStr, _labelFont,
-                    blackX, rowY, blackW, rowH,
-                    fontSize, isHighlightBlack ? PlaybackHighlightText : FontColor,
-                    TextAlign.Near, TextAlign.Center);
-
-                // Register clickable region for black ply
-                var capturedBlackPly = whitePlyIdx + 1;
-                RegisterClickable(blackX, rowY, blackW, rowH,
-                    new HitResult.ListItemHit("History", capturedBlackPly));
-            }
+            rows[i] = Layout.Builder.HStack(idxCell, whiteCell, blackCell).RowH(rowH);
         }
+
+        var contentY = rect.Y + headerH + 4;
+        var rowsRect = new RectF32(rect.X, contentY, rect.Width, rect.Height - (contentY - rect.Y));
+        RenderLayout(Layout.Builder.VStack(rows), rowsRect, _labelFont, dpiScale: 1f);
+    }
+
+    /// <summary>Builds one clickable ply cell for the history tree, highlighting it during playback.</summary>
+    private Layout.Node HistoryPlyCell(string ply, int plyIndex, bool highlight)
+    {
+        var cell = Layout.Builder
+            .Text(ply, ChromeFontSize, highlight ? PlaybackHighlightText : FontColor, TextAlign.Near, TextAlign.Center)
+            .Stretch()
+            .Clickable(new HitResult.ListItemHit("History", plyIndex));
+        return highlight ? cell.Bg(PlaybackHighlightBg) : cell;
     }
 
     private void RenderStatusBar(RectF32 rect)
