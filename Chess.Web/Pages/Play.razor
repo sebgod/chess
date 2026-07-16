@@ -2,19 +2,25 @@
 @using Chess.Lib
 @using Chess.Lib.UI
 @using DIR.Lib
+@using WebGl.Renderer
 @using Action = Chess.Lib.Action
 @inject IJSRuntime JS
 @inject HttpClient Http
+@inject NavigationManager Nav
 
 <PageTitle>Chess — Blazor/WASM</PageTitle>
 
 <div class="app">
     <header>
-        <h1>Chess <span class="tag">web</span></h1>
+        <h1>Chess <span class="tag">@(_backend == RenderBackend.WebGl ? "webgl" : "cpu")</span></h1>
         <p class="blurb">
-            The full chess engine (<code>Chess.Lib</code>) and the software renderer
-            (<code>DIR.Lib</code>) compiled to WebAssembly — board, rules, and the
-            negamax AI all running <em>entirely in this tab</em>.
+            The full chess engine (<code>Chess.Lib</code>) compiled to WebAssembly — board, rules,
+            and the negamax AI all running <em>entirely in this tab</em>. Rendering:
+            @(_backend == RenderBackend.WebGl
+                ? "GPU via WebGl.Renderer — MSDF text from a pre-baked atlas, our own rasterizer end to end."
+                : "software (DIR.Lib RgbaImageRenderer) blitted to a 2D canvas.")
+            <a href="@(_backend == RenderBackend.WebGl ? "?renderer=cpu" : "?renderer=webgl")">
+                switch to @(_backend == RenderBackend.WebGl ? "CPU" : "WebGL")</a>
         </p>
     </header>
 
@@ -45,29 +51,71 @@
     const int BoardW = 760;
     const int BoardH = 840;
 
+    enum RenderBackend { WebGl, Cpu }
+
     Game _game = null!;
     GameUI _ui = null!;
-    RgbaImageRenderer _renderer = null!;
+    RenderBackend _backend = RenderBackend.WebGl;
+    WebGlRenderer? _webGl;
+    RgbaImageRenderer? _cpu;
 
     Side _humanSide = Side.White;
     int _aiDepth = 3;
     bool _busy;
-    bool _fontsReady;
+    bool _ready;
     string _status = "Loading…";
 
     static readonly RGBAColor32 Background = new(0x20, 0x24, 0x28, 0xff);
     static readonly RGBAColor32 Foreground = new(0xff, 0xff, 0xff, 0xff);
 
+    static string SdfCacheDir => System.IO.Path.Combine(AppContext.BaseDirectory, "sdfcache");
+
     protected override async Task OnInitializedAsync()
     {
+        // Default WebGL; ?renderer=cpu forces the software path (also the A/B reference
+        // for verifying MSDF output, and the fallback for devices without WebGL2).
+        if (new Uri(Nav.Uri).Query.Contains("renderer=cpu", StringComparison.OrdinalIgnoreCase))
+            _backend = RenderBackend.Cpu;
+
         await LoadFontsAsync();
-        _fontsReady = true;
+
+        if (_backend == RenderBackend.WebGl)
+        {
+            try
+            {
+                await LoadSdfCacheAsync(); // best-effort; a miss only costs runtime rasterization
+                // readOnly: single-threaded WASM has no writer thread; the pre-baked cache is
+                // load-only. Raster size/spread must match the bake (the shared atlas constants).
+                _webGl = await WebGlRenderer.CreateAsync("board", BoardW, BoardH,
+                    diskCache: new SdfGlyphDiskCache(SdfCacheDir,
+                        SdfFontAtlas.SdfRasterSize, SdfFontAtlas.SdfSpread, readOnly: true));
+                // Pull the pre-baked glyphs into the atlas NOW, while "Loading…" shows —
+                // otherwise the first frame rasterizes every visible glyph inline (seconds on
+                // an interpreted WASM host).
+                _status = "Preparing glyphs…";
+                StateHasChanged();
+                _webGl.PrimeFonts(
+                    System.IO.Path.Combine(AppContext.BaseDirectory, "Fonts", "Merida.ttf"),
+                    System.IO.Path.Combine(AppContext.BaseDirectory, "Fonts", "DejaVuSans.ttf"));
+                Console.WriteLine($"[chess-web] webgl ready — atlas: {_webGl.Atlas.FrameStats}");
+            }
+            catch (Exception ex)
+            {
+                // WebGL2 unavailable (or the module failed to load): fall back to software.
+                Console.Error.WriteLine($"[chess-web] WebGL init failed, using CPU renderer: {ex}");
+                _backend = RenderBackend.Cpu;
+            }
+        }
+        if (_backend == RenderBackend.Cpu)
+            _cpu = new RgbaImageRenderer(BoardW, BoardH);
+
+        _ready = true;
         StartNewGame();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && _fontsReady)
+        if (firstRender && _ready)
         {
             await RenderBoardAsync();
             // If the human chose Black, White (the AI) opens.
@@ -94,11 +142,44 @@
         }
     }
 
+    // Same trick for the pre-baked MSDF atlas: fetch each .sdfg (content-hash names come from
+    // manifest.txt, one per line) into the in-memory FS dir the read-only SdfGlyphDiskCache
+    // points at. Missing cache (e.g. a dev run without a bake) is fine — glyphs rasterize
+    // inline on first use instead; only startup speed differs.
+    async Task LoadSdfCacheAsync()
+    {
+        // Fully best-effort: any miss (no bake in a dev run, a blocked fetch, …) must degrade to
+        // runtime rasterization, never take down the WebGL path itself.
+        try
+        {
+            var manifest = await Http.GetStringAsync("sdfcache/manifest.txt");
+            System.IO.Directory.CreateDirectory(SdfCacheDir);
+            var loaded = 0;
+            foreach (var line in manifest.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                // Files ship as {hash}.sdfg.bin (static hosts need a known MIME extension);
+                // SdfGlyphDiskCache expects {hash}.sdfg on disk, so strip the suffix here.
+                var destName = line.EndsWith(".bin", StringComparison.Ordinal) ? line[..^4] : line;
+                var dest = System.IO.Path.Combine(SdfCacheDir, destName);
+                if (!System.IO.File.Exists(dest))
+                {
+                    var bytes = await Http.GetByteArrayAsync($"sdfcache/{line}");
+                    await System.IO.File.WriteAllBytesAsync(dest, bytes);
+                }
+                loaded++;
+            }
+            Console.WriteLine($"[chess-web] sdf cache: {loaded} file(s) staged");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[chess-web] no pre-baked sdf cache ({ex.Message}) — rasterizing at runtime");
+        }
+    }
+
     void StartNewGame()
     {
         _game = new Game();
         _ui = new GameUI(_game, BoardW, BoardH, mainFontColor: Foreground, backgroundColor: Background);
-        _renderer = new RgbaImageRenderer(BoardW, BoardH);
         _busy = false;
         _status = StatusText();
     }
@@ -112,7 +193,7 @@
 
     async Task OnClickAsync(MouseEventArgs e)
     {
-        if (_busy || !_fontsReady || _game.IsFinished) return;
+        if (_busy || !_ready || _game.IsFinished) return;
 
         var (response, _) = _ui.HandleMouseDown((int)e.OffsetX, (int)e.OffsetY);
         await RenderBoardAsync();
@@ -150,15 +231,25 @@
 
     async Task RenderBoardAsync()
     {
-        _renderer.Surface.Clear(Background);
         // Locals (not consts) so the tuple->PointInt conversion isn't ambiguous between
         // the (int,int) and (uint,uint) operators — const 760/840 both fit in uint.
         int w = BoardW, h = BoardH;
         var clip = new RectInt((w, h), PointInt.Origin);
-        _ui.Render<RgbaImage, RgbaImageRenderer>(_renderer, clip);
-        // Blazor marshals a byte[] argument to JS as a Uint8Array; the buffer is
-        // already tightly-packed RGBA, exactly what ImageData wants.
-        await JS.InvokeVoidAsync("chessCanvas.blit", "board", BoardW, BoardH, _renderer.Surface.Pixels);
+
+        if (_backend == RenderBackend.WebGl)
+        {
+            _webGl!.Clear(Background);
+            _ui.Render<WebGlContext, WebGlRenderer>(_webGl, clip);
+            _webGl.Present(); // synchronous [JSImport] flush — one interop call per frame
+        }
+        else
+        {
+            _cpu!.Surface.Clear(Background);
+            _ui.Render<RgbaImage, RgbaImageRenderer>(_cpu, clip);
+            // Blazor marshals a byte[] argument to JS as a Uint8Array; the buffer is
+            // already tightly-packed RGBA, exactly what ImageData wants.
+            await JS.InvokeVoidAsync("chessCanvas.blit", "board", w, h, _cpu.Surface.Pixels);
+        }
     }
 
     void OnSideChanged(ChangeEventArgs e)

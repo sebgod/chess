@@ -27,6 +27,15 @@
     <ProjectReference Include="..\Chess.Lib\Chess.Lib.csproj" />
   </ItemGroup>
 
+  <!-- WebGL backend: sibling working copy for local iteration, NuGet in CI (same switch as
+       the other sibling references — Chess.Web opts out of CPM so the version rides inline). -->
+  <ItemGroup Condition="'$(UseLocalSiblings)' == 'true'">
+    <ProjectReference Include="..\..\WebGl.Renderer\src\WebGl.Renderer\WebGl.Renderer.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
+    <PackageReference Include="WebGl.Renderer" Version="1.0.*" />
+  </ItemGroup>
+
   <!-- The pure-managed render stack (board logic, DIR.Lib RgbaImageRenderer,
        ManagedFontRasterizer, SharpAstro.Fonts OpenType/MSDF tables) is reached
        structurally / via font-file parsing the trimmer can't follow. Root them. -->
@@ -34,6 +43,7 @@
     <TrimmerRootAssembly Include="Chess.Lib" />
     <TrimmerRootAssembly Include="DIR.Lib" />
     <TrimmerRootAssembly Include="SharpAstro.Fonts" />
+    <TrimmerRootAssembly Include="WebGl.Renderer" />
   </ItemGroup>
 
 </Project>

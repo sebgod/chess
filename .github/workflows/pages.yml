@@ -20,6 +20,7 @@ on:
     paths:
       - 'Chess.Web/**'
       - 'Chess.Lib/**'
+      - 'tools/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -50,7 +51,12 @@ jobs:
       - name: Install wasm-tools workload
         run: dotnet workload install wasm-tools
 
-      # No sibling checkout in CI: Chess.Lib -> DIR.Lib resolves from NuGet.
+      # Pre-bake the MSDF glyph atlas (.sdfg) for the chess charset so the WebGL renderer
+      # starts with zero runtime rasterization. Pure managed — no GPU on the runner needed.
+      - name: Bake SDF glyph atlas
+        run: dotnet run --project tools/BakeSdfAtlas -c Release -p:UseLocalSiblings=false -- Chess.Web/wwwroot/sdfcache Chess.Lib/Fonts/Merida.ttf Chess.Lib/Fonts/DejaVuSans.ttf
+
+      # No sibling checkout in CI: Chess.Lib -> DIR.Lib and WebGl.Renderer resolve from NuGet.
       - name: Publish Chess.Web (Release)
         run: dotnet publish Chess.Web/Chess.Web.csproj -c Release -o publish -p:UseLocalSiblings=false --nologo
 
