@@ -1,3 +1,8 @@
+---
+name: run-gui
+description: Build and launch the Chess GUI application (Vulkan/SDL3). Use when the user asks to run, start, or test the GUI.
+---
+
 Build and launch the Chess GUI application.
 
 Run with stderr redirected to a log file (captures font atlas diagnostics

@@ -1,3 +1,9 @@
+---
+name: tick-todo
+description: Mark a TODO item as done and update related documentation (TODO.md, CLAUDE.md, PLAN-*.md, memory files). Use when the user says a feature/task is done and wants the docs ticked off.
+argument-hint: <search text>
+---
+
 Mark a TODO item as done and update related documentation.
 
 Usage: /tick-todo <search text>

@@ -1,7 +1,14 @@
+---
+name: check-ci
+description: Check GitHub Actions CI status across all SharpAstro repos and the chess project. Use when the user asks "is CI green", "check the builds", or after pushing sibling-library releases.
+---
+
 Check GitHub Actions CI status across all SharpAstro repos and the chess project.
 
 Use `gh run list` to show the latest CI run status for each repo:
+- `SharpAstro/Fonts.Lib`
 - `SharpAstro/DIR.Lib`
+- `SharpAstro/Codecs`
 - `SharpAstro/Console.Lib`
 - `SharpAstro/SdlVulkan.Renderer`
 - `sebgod/chess`

@@ -1,3 +1,9 @@
+---
+name: solve-puzzles
+description: Solve chess puzzles from a PDF file attached to the conversation. Parses XABCDEFGHY diagram notation to FEN, solves with the chess MCP tools, and renders solution PNGs/GIFs. Use when the user attaches a puzzle worksheet PDF or asks to solve puzzles.
+argument-hint: [--output DIR]
+---
+
 Solve chess puzzles from a PDF file attached to the conversation.
 
 Usage: /solve-puzzles [--output DIR]
@@ -82,27 +88,42 @@ Steps:
    ```
    Each entry is `{ply, side, uci, san, status}`. Use `uci` for rendering, `san` for display.
 
-5. **Render and save solution images** — One call per puzzle:
+5. **Order multi-move frames by PLY, never by filename.** `chess-render_sequence` names files `{baseName}-move{round}{w|b}.png` where `{round}` is the full-move number. A plain alphabetical sort is **wrong**: within a round `b` sorts before `w`, but **White plays first**. So a White-to-move line `move1w, move1b, move2w` mis-sorts to `move1b, move1w, move2w` (black's reply jumps ahead of white's first move); a Black-to-move line `move1b, move2w, move2b` mis-sorts to `move1b, move2b, move2w`.
 
-   **Mate-in-1:** use `chess-render_board_png` with `move` for a single arrow. Omit `annotation` to auto-derive SAN.
+   The returned JSON array is already in play order — **drive ordering off its `file`/`ply` fields, never `sorted(os.listdir())`.** If you keep the frames on disk for browsing, rename with a zero-padded ply index so name-sort == play order: `{baseName}-ply{ply:02d}{w|b}.png`.
+
+6. **Render solution images — output format depends on mate length:**
+
+   **Mate-in-1 → ONE static PNG** (board + answer arrow). Do NOT animate single-move puzzles.
    ```
-   chess-render_board_png(fen=FEN, move=KEY_UCI, savePath="OUT/puzzle-NN.png")
+   chess-render_board_png(fen=FEN, move=KEY_UCI, annotation="Puzzle N: <SAN>", savePath="OUT/puzzle-NN.png")
    ```
 
-   **Mate-in-N (N≥2):** use the new `chess-render_sequence` tool — one call writes all N PNGs.
+   **Mate-in-N (N≥2) → frames for an animated GIF.** `chess-render_sequence` writes one PNG per ply (position *before* each move, with that move's arrow):
    ```
-   chess-render_sequence(
-       fen=FEN, startingSide="white", moves="h2h8,f8g7,d8f6",
-       outDir="OUT", baseName="puzzle-07",
-       annotationPrefix="Puzzle 7")
+   chess-render_sequence(fen=FEN, startingSide="white", moves="h2h8,f8g7,d8f6",
+                         outDir="OUT", baseName="puzzle-07", annotationPrefix="Puzzle 7")
    ```
-   Returns JSON `[{ply, file, san, fenBefore}, ...]`. File naming: `{baseName}-move{round}{w|b}.png` where the `w/b` suffix marks which side made the move in the sequence ordering — for "Black to play" the first ply is `move1b`.
+   Those frames END on "arrow not yet played", so add a closing frame that shows the executed mate: `chess-play_moves(fen, startingSide, moves)` → take its final FEN → `chess-render_board_png(finalFEN, move=LAST_UCI, annotation="Puzzle N: <SAN> — mate", savePath="OUT/pNN-final.png")`.
 
-   You can also overlay multiple arrows on a *single* board with `chess-render_board_png(moves="...")` (comma-separated UCI list). Useful for a summary thumbnail of a whole tactical line.
+   Optional: a single-board summary with every arrow overlaid — `chess-render_board_png(fen, moves="u1,u2,...")`.
 
-6. **Report solutions** in a formatted table:
+7. **Assemble the GIF (multi-move puzzles only).** Windows Explorer/Photos does NOT animate APNG — use **GIF**. With Pillow (installed; `pdftoppm`/`pymupdf` are NOT):
+   ```python
+   from PIL import Image
+   frames = [Image.open(p).convert("RGB") for p in ordered_paths]   # ply order + final mate frame
+   w, h = frames[0].size                                            # ONE shared palette across all
+   montage = Image.new("RGB", (w, h*len(frames)))                   # frames (same colour set, only
+   for i, f in enumerate(frames): montage.paste(f, (0, i*h))        # positions move) => no flicker
+   pal = montage.quantize(colors=256, method=Image.MEDIANCUT, dither=Image.NONE)
+   pf = [f.quantize(palette=pal, dither=Image.NONE) for f in frames]
+   durations = [1300]*(len(pf)-1) + [2600]                          # ms; hold longer on the mate
+   pf[0].save(out_gif, save_all=True, append_images=pf[1:], duration=durations, loop=0, disposal=1)
+   ```
+
+8. **Output layout.** Default to `C:/temp/chess/<pdf-stem>/` (or `--output DIR`); confirm the folder name with the user — they tweak it. Deliverables at top level: `puzzle-01.png … ` (mate-in-1 stills) and `puzzle-NN.gif` (mate-in-N animations). Tuck the per-ply stills + overlay summaries into a `frames/` subfolder.
+
+9. **Validate every parse** with `chess-solve_mate_in`: a *forced* mate of exactly the stated length confirms the diagram parsed correctly. If no mate is found, re-check the parse (or fall back to `chess-find_best_move` at depth 6+). Then report all solutions in a table:
    | # | Side | Mate in | Key Move | Sequence |
    |---|------|---------|----------|----------|
-   Include UCI and algebraic notation, plus brief explanation.
-
-Present all solutions together at the end in a clear summary.
+   Include UCI and algebraic notation, plus a brief explanation. Present all solutions together at the end.
