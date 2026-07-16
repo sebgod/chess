@@ -1,0 +1,174 @@
+@page "/"
+@using Chess.Lib
+@using Chess.Lib.UI
+@using DIR.Lib
+@using Action = Chess.Lib.Action
+@inject IJSRuntime JS
+@inject HttpClient Http
+
+<PageTitle>Chess — Blazor/WASM</PageTitle>
+
+<div class="app">
+    <header>
+        <h1>Chess <span class="tag">web</span></h1>
+        <p class="blurb">
+            The full chess engine (<code>Chess.Lib</code>) and the software renderer
+            (<code>DIR.Lib</code>) compiled to WebAssembly — board, rules, and the
+            negamax AI all running <em>entirely in this tab</em>.
+        </p>
+    </header>
+
+    <p class="status" aria-live="polite">@_status</p>
+
+    <canvas id="board" width="@BoardW" height="@BoardH" @onclick="OnClickAsync"></canvas>
+
+    <div class="controls">
+        <button class="new" @onclick="NewGameAsync" disabled="@_busy">↻ New game</button>
+        <label>You play
+            <select @onchange="OnSideChanged" disabled="@_busy">
+                <option value="white" selected="@(_humanSide == Side.White)">White</option>
+                <option value="black" selected="@(_humanSide == Side.Black)">Black</option>
+            </select>
+        </label>
+        <label>AI depth
+            <select @onchange="OnDepthChanged" disabled="@_busy">
+                <option value="2" selected="@(_aiDepth == 2)">2</option>
+                <option value="3" selected="@(_aiDepth == 3)">3</option>
+                <option value="4" selected="@(_aiDepth == 4)">4</option>
+            </select>
+        </label>
+    </div>
+</div>
+
+@code {
+    // 9.5 : 10.5 (SquaresNeededX : SquaresNeededY) -> a whole 80px square with no wasted space.
+    const int BoardW = 760;
+    const int BoardH = 840;
+
+    Game _game = null!;
+    GameUI _ui = null!;
+    RgbaImageRenderer _renderer = null!;
+
+    Side _humanSide = Side.White;
+    int _aiDepth = 3;
+    bool _busy;
+    bool _fontsReady;
+    string _status = "Loading…";
+
+    static readonly RGBAColor32 Background = new(0x20, 0x24, 0x28, 0xff);
+    static readonly RGBAColor32 Foreground = new(0xff, 0xff, 0xff, 0xff);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadFontsAsync();
+        _fontsReady = true;
+        StartNewGame();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _fontsReady)
+        {
+            await RenderBoardAsync();
+            // If the human chose Black, White (the AI) opens.
+            await MaybeAiMoveAsync();
+        }
+    }
+
+    // .NET's WASM runtime has a working in-memory filesystem, and GameUI resolves
+    // fonts as AppContext.BaseDirectory/Fonts/*.ttf. Fetch the bytes from wwwroot
+    // and drop them at that exact path so the managed rasterizer's LoadFromFile
+    // finds them — no library change needed.
+    async Task LoadFontsAsync()
+    {
+        var dir = System.IO.Path.Combine(AppContext.BaseDirectory, "Fonts");
+        System.IO.Directory.CreateDirectory(dir);
+        foreach (var name in new[] { "DejaVuSans.ttf", "Merida.ttf" })
+        {
+            var dest = System.IO.Path.Combine(dir, name);
+            if (!System.IO.File.Exists(dest))
+            {
+                var bytes = await Http.GetByteArrayAsync($"Fonts/{name}");
+                await System.IO.File.WriteAllBytesAsync(dest, bytes);
+            }
+        }
+    }
+
+    void StartNewGame()
+    {
+        _game = new Game();
+        _ui = new GameUI(_game, BoardW, BoardH, mainFontColor: Foreground, backgroundColor: Background);
+        _renderer = new RgbaImageRenderer(BoardW, BoardH);
+        _busy = false;
+        _status = StatusText();
+    }
+
+    async Task NewGameAsync()
+    {
+        StartNewGame();
+        await RenderBoardAsync();
+        await MaybeAiMoveAsync();
+    }
+
+    async Task OnClickAsync(MouseEventArgs e)
+    {
+        if (_busy || !_fontsReady || _game.IsFinished) return;
+
+        var (response, _) = _ui.HandleMouseDown((int)e.OffsetX, (int)e.OffsetY);
+        await RenderBoardAsync();
+
+        if (response.HasFlag(UIResponse.IsUpdate))
+        {
+            _status = StatusText();
+            await MaybeAiMoveAsync();
+        }
+    }
+
+    // Drives the AI while it is the computer's turn. Single-threaded WASM means the
+    // search blocks the UI thread; the short Delay lets the "thinking" state paint first.
+    async Task MaybeAiMoveAsync()
+    {
+        while (!_game.IsFinished && _game.CurrentSide != _humanSide)
+        {
+            _busy = true;
+            _status = $"{_game.CurrentSide} (AI) thinking…";
+            StateHasChanged();
+            await Task.Delay(20);
+
+            var ai = new AiEngine(_game.CurrentSide, maxDepth: _aiDepth);
+            var move = ai.PickMove(_game);
+            if (move is not { } mv) break;
+            _game.TryMove(mv);
+
+            _status = StatusText();
+            await RenderBoardAsync();
+        }
+        _busy = false;
+        _status = StatusText();
+        StateHasChanged();
+    }
+
+    async Task RenderBoardAsync()
+    {
+        _renderer.Surface.Clear(Background);
+        // Locals (not consts) so the tuple->PointInt conversion isn't ambiguous between
+        // the (int,int) and (uint,uint) operators — const 760/840 both fit in uint.
+        int w = BoardW, h = BoardH;
+        var clip = new RectInt((w, h), PointInt.Origin);
+        _ui.Render<RgbaImage, RgbaImageRenderer>(_renderer, clip);
+        // Blazor marshals a byte[] argument to JS as a Uint8Array; the buffer is
+        // already tightly-packed RGBA, exactly what ImageData wants.
+        await JS.InvokeVoidAsync("chessCanvas.blit", "board", BoardW, BoardH, _renderer.Surface.Pixels);
+    }
+
+    void OnSideChanged(ChangeEventArgs e)
+        => _humanSide = (string?)e.Value == "black" ? Side.Black : Side.White;
+
+    void OnDepthChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse((string?)e.Value, out var d)) _aiDepth = d;
+    }
+
+    string StatusText()
+        => _game.GameStatus.ToMessage(_game.IsFinished ? _game.Winner : _game.CurrentSide);
+}

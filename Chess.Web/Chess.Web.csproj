@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
+    <!-- The browser app is a consumer of Chess.Lib, not a shipped artifact and not
+         part of the test/desktop-release chain. It lives OUTSIDE Chess.sln and opts
+         out of the repo's Central Package Management so the Blazor deps carry their
+         own versions without touching Directory.Packages.props. Mirrors ../dotcc/DotCC.Web. -->
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <IsPackable>false</IsPackable>
+    <!-- A chess board doesn't need culture data; dropping ICU trims the payload. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Chess.Lib + the DIR.Lib managed rasterizer reach glyph/table data structurally;
+         keep trimming conservative and root the assemblies below so nothing needed is cut. -->
+    <TrimMode>partial</TrimMode>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.9" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.9" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Chess.Lib\Chess.Lib.csproj" />
+  </ItemGroup>
+
+  <!-- The pure-managed render stack (board logic, DIR.Lib RgbaImageRenderer,
+       ManagedFontRasterizer, SharpAstro.Fonts OpenType/MSDF tables) is reached
+       structurally / via font-file parsing the trimmer can't follow. Root them. -->
+  <ItemGroup>
+    <TrimmerRootAssembly Include="Chess.Lib" />
+    <TrimmerRootAssembly Include="DIR.Lib" />
+    <TrimmerRootAssembly Include="SharpAstro.Fonts" />
+  </ItemGroup>
+
+</Project>

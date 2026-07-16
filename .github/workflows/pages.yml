@@ -1,0 +1,89 @@
+name: pages
+
+# Deploy the Chess.Web in-browser app to GitHub Pages.
+#
+# Chess.Web is a standalone Blazor WebAssembly app that runs the chess engine
+# (Chess.Lib) and the DIR.Lib software renderer entirely in the browser — a fully
+# static site, no server. It lives OUTSIDE Chess.sln + CPM, so the desktop `CI`
+# workflow (dotnet-desktop.yml) never builds it; this workflow is its sole CI and
+# publishes it to https://sebgod.github.io/chess/.
+#
+# Runs on pushes to main that touch the app or the engine it embeds (so the live
+# site tracks the latest engine), and on manual dispatch for a forced redeploy.
+# Publish target is browser-wasm (OS-neutral), so ubuntu publishes fine.
+#
+# NOTE: enable Pages once in repo Settings -> Pages -> Source: "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'Chess.Web/**'
+      - 'Chess.Lib/**'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time; let an in-flight deploy finish rather than cancelling it.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Blazor WASM Release publish relinks the runtime natively (Emscripten) to
+      # tree-shake it smaller; the wasm-tools workload provides that toolchain.
+      - name: Install wasm-tools workload
+        run: dotnet workload install wasm-tools
+
+      # No sibling checkout in CI: Chess.Lib -> DIR.Lib resolves from NuGet.
+      - name: Publish Chess.Web (Release)
+        run: dotnet publish Chess.Web/Chess.Web.csproj -c Release -o publish -p:UseLocalSiblings=false --nologo
+
+      - name: Rewrite base href for the /chess/ project-site subpath
+        run: |
+          set -euo pipefail
+          idx="publish/wwwroot/index.html"
+          # github.io serves this project site under /chess/, not root. Local dev
+          # keeps <base href="/" />; patch only the published copy.
+          sed -i 's|<base href="/" />|<base href="/chess/" />|' "$idx"
+          grep -q '<base href="/chess/" />' "$idx" || { echo "base href not rewritten"; exit 1; }
+
+      - name: SPA 404 fallback + .nojekyll
+        run: |
+          set -euo pipefail
+          # Jekyll strips _framework/ (leading underscore) — .nojekyll disables Jekyll.
+          touch publish/wwwroot/.nojekyll
+          # Static hosts 404 on client-side deep links; GitHub Pages serves 404.html
+          # for unknown paths, so a copy of index.html makes routes resolve.
+          cp publish/wwwroot/index.html publish/wwwroot/404.html
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: publish/wwwroot
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
