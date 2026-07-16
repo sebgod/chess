@@ -14,5 +14,23 @@ window.chessCanvas = (function () {
     ctx.putImageData(new ImageData(rgba, width, height), 0, 0);
   }
 
-  return { blit };
+  // Menu keyboard support. The startup wizard is drawn into the canvas, so the canvas must be
+  // focused to receive keydown, and arrow/Enter/Space must not also scroll the page. We attach a
+  // single keydown listener (idempotent) that only calls preventDefault while the menu is active —
+  // so during gameplay it never swallows browser shortcuts. `active` also drives focus.
+  const NAV_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Enter"]);
+  function enableMenuKeys(canvasId, active) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    canvas._menuActive = active;
+    if (!canvas._navKeysHooked) {
+      canvas._navKeysHooked = true;
+      canvas.addEventListener("keydown", (e) => {
+        if (canvas._menuActive && NAV_KEYS.has(e.key)) e.preventDefault();
+      });
+    }
+    if (active) canvas.focus({ preventScroll: true });
+  }
+
+  return { blit, enableMenuKeys };
 })();

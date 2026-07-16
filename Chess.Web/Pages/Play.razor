@@ -1,4 +1,5 @@
 @page "/"
+@using System.Collections.Immutable
 @using Chess.Lib
 @using Chess.Lib.UI
 @using DIR.Lib
@@ -26,24 +27,32 @@
 
     <p class="status" aria-live="polite">@_status</p>
 
-    <canvas id="board" width="@BoardW" height="@BoardH" @onclick="OnClickAsync"></canvas>
+    <canvas id="board" tabindex="0" width="@BoardW" height="@BoardH"
+            @onclick="OnClickAsync" @onkeydown="OnKeyDownAsync"></canvas>
 
-    <div class="controls">
-        <button class="new" @onclick="NewGameAsync" disabled="@_busy">↻ New game</button>
-        <label>You play
-            <select @onchange="OnSideChanged" disabled="@_busy">
-                <option value="white" selected="@(_humanSide == Side.White)">White</option>
-                <option value="black" selected="@(_humanSide == Side.Black)">Black</option>
-            </select>
-        </label>
-        <label>AI depth
-            <select @onchange="OnDepthChanged" disabled="@_busy">
-                <option value="2" selected="@(_aiDepth == 2)">2</option>
-                <option value="3" selected="@(_aiDepth == 3)">3</option>
-                <option value="4" selected="@(_aiDepth == 4)">4</option>
-            </select>
-        </label>
-    </div>
+    @if (_screen == Screen.Setup)
+    {
+        <div class="controls">
+            <button class="new" @onclick="FinishSetupAsync" disabled="@_busy">▶ Start game</button>
+            <button @onclick="BackToMenuAsync" disabled="@_busy">↩ Menu</button>
+        </div>
+    }
+    else if (_screen == Screen.Playing)
+    {
+        <div class="controls">
+            <button class="new" @onclick="BackToMenuAsync" disabled="@_busy">↻ New game</button>
+            @if (_vsComputer)
+            {
+                <label>AI depth
+                    <select @onchange="OnDepthChanged" disabled="@_busy">
+                        <option value="2" selected="@(_aiDepth == 2)">2</option>
+                        <option value="3" selected="@(_aiDepth == 3)">3</option>
+                        <option value="4" selected="@(_aiDepth == 4)">4</option>
+                    </select>
+                </label>
+            }
+        </div>
+    }
 </div>
 
 @code {
@@ -53,22 +62,45 @@
 
     enum RenderBackend { WebGl, Cpu }
 
+    // The canvas shows one of three things: the startup wizard, board setup (custom game), or a
+    // live game.
+    enum Screen { Menu, Setup, Playing }
+
+    // Wizard steps. PlayAs is only visited for Player-vs-Computer; the three Custom* steps only for
+    // a Custom game (mirrors the desktop VkStartupMenu flow), and lead into the Setup screen.
+    enum MenuPhase { GameMode, PlayAs, CustomBoard, CustomSideToMove, CustomHumanSide }
+
     Game _game = null!;
     GameUI _ui = null!;
     RenderBackend _backend = RenderBackend.WebGl;
     WebGlRenderer? _webGl;
     RgbaImageRenderer? _cpu;
 
+    // The startup menu reuses DIR.Lib's backend-neutral PixelMenuWidget — the same widget the
+    // desktop Vulkan GUI draws. Only the one matching the active backend is constructed.
+    PixelMenuWidget<WebGlContext>? _webMenu;
+    PixelMenuWidget<RgbaImage>? _cpuMenu;
+
+    Screen _screen = Screen.Menu;
+    MenuPhase _menuPhase = MenuPhase.GameMode;
+    bool _vsComputer = true;
+
+    // Custom-game choices, gathered in the wizard before the Setup screen.
+    bool _customEmpty;
+    Side _customSideToMove = Side.White;
+
     Side _humanSide = Side.White;
     int _aiDepth = 3;
     bool _busy;
     bool _ready;
+    bool _pendingPaint;
     string _status = "Loading…";
 
     static readonly RGBAColor32 Background = new(0x20, 0x24, 0x28, 0xff);
     static readonly RGBAColor32 Foreground = new(0xff, 0xff, 0xff, 0xff);
 
     static string SdfCacheDir => System.IO.Path.Combine(AppContext.BaseDirectory, "sdfcache");
+    static string MenuFontPath => System.IO.Path.Combine(AppContext.BaseDirectory, "Fonts", "DejaVuSans.ttf");
 
     protected override async Task OnInitializedAsync()
     {
@@ -96,7 +128,7 @@
                 StateHasChanged();
                 _webGl.PrimeFonts(
                     System.IO.Path.Combine(AppContext.BaseDirectory, "Fonts", "Merida.ttf"),
-                    System.IO.Path.Combine(AppContext.BaseDirectory, "Fonts", "DejaVuSans.ttf"));
+                    MenuFontPath);
                 Console.WriteLine($"[chess-web] webgl ready — atlas: {_webGl.Atlas.FrameStats}");
             }
             catch (Exception ex)
@@ -109,17 +141,25 @@
         if (_backend == RenderBackend.Cpu)
             _cpu = new RgbaImageRenderer(BoardW, BoardH);
 
+        // Construct the menu widget for whichever renderer we ended up with.
+        if (_backend == RenderBackend.WebGl)
+            _webMenu = new PixelMenuWidget<WebGlContext>(_webGl!, MenuFontPath);
+        else
+            _cpuMenu = new PixelMenuWidget<RgbaImage>(_cpu!, MenuFontPath);
+
         _ready = true;
-        StartNewGame();
+        ShowMenu(MenuPhase.GameMode);
+        // Paint from OnAfterRenderAsync: OnInitializedAsync completes AFTER the first render (it
+        // awaits), so firstRender can't be relied on — a pending flag is drained on the next paint.
+        _pendingPaint = true;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && _ready)
+        if (_ready && _pendingPaint)
         {
-            await RenderBoardAsync();
-            // If the human chose Black, White (the AI) opens.
-            await MaybeAiMoveAsync();
+            _pendingPaint = false;
+            await RenderMenuAsync();
         }
     }
 
@@ -176,6 +216,175 @@
         }
     }
 
+    // ---- startup wizard -------------------------------------------------------------------------
+
+    static (string Title, string Prompt, string[] Items) MenuContent(MenuPhase phase) => phase switch
+    {
+        MenuPhase.GameMode => ("♚ Chess ♔", "Choose game mode:", ["Player vs Computer", "Player vs Player", "Custom Game"]),
+        MenuPhase.PlayAs => ("♚ Chess ♔", "Play as:", ["White", "Black"]),
+        MenuPhase.CustomBoard => ("♚ Chess ♔", "Starting board:", ["Empty board", "Standard board"]),
+        MenuPhase.CustomSideToMove => ("♚ Chess ♔", "Side to move first:", ["White", "Black"]),
+        MenuPhase.CustomHumanSide => ("♚ Chess ♔", "You play:", ["White", "Black"]),
+        _ => ("", "", []),
+    };
+
+    // Loads the given phase into whichever menu widget is live and clears the confirmed flag.
+    void ShowMenu(MenuPhase phase)
+    {
+        _menuPhase = phase;
+        var (title, prompt, items) = MenuContent(phase);
+        _webMenu?.Reset(title, prompt, [..items]);
+        _cpuMenu?.Reset(title, prompt, [..items]);
+        _status = "Choose how you'd like to play.";
+    }
+
+    // A click in menu mode: dispatch to the widget (a hit both selects and confirms the item),
+    // then advance the wizard or start the game.
+    async Task HandleMenuClickAsync(MouseEventArgs e)
+    {
+        var confirmed = DispatchMenu(new InputEvent.MouseDown((float)e.OffsetX, (float)e.OffsetY));
+        if (confirmed is { } sel)
+            await ConfirmMenuAsync(sel);
+        // A click that misses every item confirms nothing and changes nothing — no redraw needed.
+    }
+
+    // A key in menu mode: arrows move the highlight (redraw), Enter/digit confirms (advance).
+    async Task OnKeyDownAsync(KeyboardEventArgs e)
+    {
+        if (!_ready || _busy || _screen != Screen.Menu) return;
+        if (MapMenuKey(e.Key) is not { } key) return;
+
+        var confirmed = DispatchMenu(new InputEvent.KeyDown(key));
+        if (confirmed is { } sel)
+            await ConfirmMenuAsync(sel);
+        else
+            await RenderMenuAsync(); // selection moved — repaint the highlight
+    }
+
+    // Dispatches an event to the live menu widget; returns the confirmed index, else null.
+    // (A hit/Enter/digit both selects and confirms; an arrow only moves the selection.)
+    int? DispatchMenu(InputEvent ev) => _backend == RenderBackend.WebGl
+        ? ClickMenu(_webMenu!, ev)
+        : ClickMenu(_cpuMenu!, ev);
+
+    static int? ClickMenu<TSurface>(PixelMenuWidget<TSurface> menu, InputEvent ev)
+    {
+        menu.HandleInput(ev);
+        return menu.IsConfirmed ? menu.SelectedIndex : null;
+    }
+
+    async Task ConfirmMenuAsync(int selected)
+    {
+        switch (_menuPhase)
+        {
+            case MenuPhase.GameMode when selected == 0: // Player vs Computer
+                _vsComputer = true;
+                ShowMenu(MenuPhase.PlayAs);
+                await RenderMenuAsync();
+                break;
+
+            case MenuPhase.GameMode when selected == 1: // Player vs Player
+                _vsComputer = false;
+                await StartPlayingAsync();
+                break;
+
+            case MenuPhase.GameMode: // Custom Game
+                ShowMenu(MenuPhase.CustomBoard);
+                await RenderMenuAsync();
+                break;
+
+            case MenuPhase.PlayAs:
+                _humanSide = selected == 0 ? Side.White : Side.Black;
+                await StartPlayingAsync();
+                break;
+
+            case MenuPhase.CustomBoard:
+                _customEmpty = selected == 0;
+                ShowMenu(MenuPhase.CustomSideToMove);
+                await RenderMenuAsync();
+                break;
+
+            case MenuPhase.CustomSideToMove:
+                _customSideToMove = selected == 0 ? Side.White : Side.Black;
+                ShowMenu(MenuPhase.CustomHumanSide);
+                await RenderMenuAsync();
+                break;
+
+            case MenuPhase.CustomHumanSide:
+                _humanSide = selected == 0 ? Side.White : Side.Black;
+                _vsComputer = true; // custom games are played against the engine (like the desktop)
+                await EnterSetupAsync();
+                break;
+        }
+    }
+
+    // Maps a browser KeyboardEvent.key to the menu-relevant DIR.Lib keys (MenuModel handles the
+    // rest: Up/Down wrap, Enter confirms, D1/D2 select-and-confirm). Returns null to ignore.
+    static InputKey? MapMenuKey(string key) => key switch
+    {
+        "ArrowUp" => InputKey.Up,
+        "ArrowDown" => InputKey.Down,
+        "Enter" => InputKey.Enter,
+        "1" => InputKey.D1,
+        "2" => InputKey.D2,
+        "3" => InputKey.D3,
+        _ => null,
+    };
+
+    async Task StartPlayingAsync()
+    {
+        _screen = Screen.Playing;
+        StartNewGame();
+        // Stop capturing arrow/Enter on the canvas so normal page scrolling resumes during play.
+        await JS.InvokeVoidAsync("chessCanvas.enableMenuKeys", "board", false);
+        await RenderBoardAsync();
+        await MaybeAiMoveAsync(); // if the human chose Black, White (the AI) opens
+    }
+
+    async Task BackToMenuAsync()
+    {
+        _busy = false;
+        _screen = Screen.Menu;
+        ShowMenu(MenuPhase.GameMode);
+        await RenderMenuAsync();
+    }
+
+    // ---- custom game: board setup ---------------------------------------------------------------
+
+    // Opens GameUI's setup mode on an empty or standard board. All placement — selecting a square,
+    // picking a piece from the on-board palette, toggling the placement colour — is handled by
+    // GameUI via the normal click routing; the only thing the web adds is the Start button.
+    async Task EnterSetupAsync()
+    {
+        _screen = Screen.Setup;
+        _game = _customEmpty ? new Game(new Board(), _customSideToMove, []) : new Game();
+        _ui = new GameUI(_game, BoardW, BoardH, mainFontColor: Foreground, backgroundColor: Background)
+        {
+            IsSetupMode = true,
+        };
+        _busy = false;
+        _status = "Set up the board: click a square, then pick a piece. Click the colour swatch to switch side. Press Start when ready.";
+        await JS.InvokeVoidAsync("chessCanvas.enableMenuKeys", "board", false);
+        await RenderBoardAsync();
+    }
+
+    // Leaves setup: freeze the arranged board into a fresh game with the chosen side to move, then
+    // play it (the engine opens if it holds the side to move).
+    async Task FinishSetupAsync()
+    {
+        if (_screen != Screen.Setup) return;
+        var setupBoard = _game.Board;
+        _game = new Game(setupBoard, _customSideToMove, []);
+        _ui = new GameUI(_game, BoardW, BoardH, mainFontColor: Foreground, backgroundColor: Background);
+        _screen = Screen.Playing;
+        _busy = false;
+        _status = StatusText();
+        await RenderBoardAsync();
+        await MaybeAiMoveAsync();
+    }
+
+    // ---- gameplay -------------------------------------------------------------------------------
+
     void StartNewGame()
     {
         _game = new Game();
@@ -184,16 +393,25 @@
         _status = StatusText();
     }
 
-    async Task NewGameAsync()
-    {
-        StartNewGame();
-        await RenderBoardAsync();
-        await MaybeAiMoveAsync();
-    }
-
     async Task OnClickAsync(MouseEventArgs e)
     {
-        if (_busy || !_ready || _game.IsFinished) return;
+        if (!_ready || _busy) return;
+
+        if (_screen == Screen.Menu)
+        {
+            await HandleMenuClickAsync(e);
+            return;
+        }
+
+        if (_screen == Screen.Setup)
+        {
+            // Placement/selection/colour-toggle — GameUI handles it; setup never auto-finishes.
+            _ui.HandleMouseDown((int)e.OffsetX, (int)e.OffsetY);
+            await RenderBoardAsync();
+            return;
+        }
+
+        if (_game.IsFinished) return;
 
         var (response, _) = _ui.HandleMouseDown((int)e.OffsetX, (int)e.OffsetY);
         await RenderBoardAsync();
@@ -205,10 +423,18 @@
         }
     }
 
-    // Drives the AI while it is the computer's turn. Single-threaded WASM means the
-    // search blocks the UI thread; the short Delay lets the "thinking" state paint first.
+    // Drives the AI while it is the computer's turn. No-op in Player-vs-Player. Single-threaded
+    // WASM means the search blocks the UI thread; the short Delay lets the "thinking" state paint first.
     async Task MaybeAiMoveAsync()
     {
+        if (!_vsComputer)
+        {
+            _busy = false;
+            _status = StatusText();
+            StateHasChanged();
+            return;
+        }
+
         while (!_game.IsFinished && _game.CurrentSide != _humanSide)
         {
             _busy = true;
@@ -227,6 +453,28 @@
         _busy = false;
         _status = StatusText();
         StateHasChanged();
+    }
+
+    // ---- rendering ------------------------------------------------------------------------------
+
+    async Task RenderMenuAsync()
+    {
+        int w = BoardW, h = BoardH;
+        if (_backend == RenderBackend.WebGl)
+        {
+            _webGl!.Clear(Background);
+            _webMenu!.Render();
+            _webGl.Present(); // synchronous [JSImport] flush — one interop call per frame
+        }
+        else
+        {
+            _cpu!.Surface.Clear(Background);
+            _cpuMenu!.Render();
+            await JS.InvokeVoidAsync("chessCanvas.blit", "board", w, h, _cpu.Surface.Pixels);
+        }
+        // Focus the canvas (so arrow/Enter reach it without a click first) and suppress the
+        // page-scroll default for those keys while the menu is up.
+        await JS.InvokeVoidAsync("chessCanvas.enableMenuKeys", "board", true);
     }
 
     async Task RenderBoardAsync()
@@ -251,9 +499,6 @@
             await JS.InvokeVoidAsync("chessCanvas.blit", "board", w, h, _cpu.Surface.Pixels);
         }
     }
-
-    void OnSideChanged(ChangeEventArgs e)
-        => _humanSide = (string?)e.Value == "black" ? Side.Black : Side.White;
 
     void OnDepthChanged(ChangeEventArgs e)
     {

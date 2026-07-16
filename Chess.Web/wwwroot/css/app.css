@@ -74,6 +74,10 @@ canvas#board {
     touch-action: manipulation;
 }
 
+/* The canvas is focusable (tabindex) so the startup menu can take keyboard input; the menu draws
+   its own selection highlight, so a browser focus ring on the board would just be noise. */
+canvas#board:focus { outline: none; }
+
 .controls {
     display: flex;
     flex-wrap: wrap;

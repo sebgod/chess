@@ -34,12 +34,17 @@ foreach (var font in new[] { pieceFont, labelFont })
 // The chess charset. Pieces (U+2654-U+265F) come from the piece font; everything GameUI's
 // labels, status messages, keymap overlay, and setup markers draw comes from the label font:
 // printable ASCII covers coordinates/digits/messages, plus U+2715 (setup cross) and
-// U+21C4 (en-passant marker). Whitespace needs no baking — the atlas derives its advance
-// from the 'n' reference glyph, which ASCII includes.
+// U+21C4 (en-passant marker). The startup menu (DIR.Lib PixelMenuWidget) adds three more label
+// glyphs: U+25B6 (▶ selection prefix) and U+265A/U+2654 (the ♚ Chess ♔ title kings — baked from
+// the label font here, distinct atlas keys from the piece-font kings above). Whitespace needs no
+// baking — the atlas derives its advance from the 'n' reference glyph, which ASCII includes.
 var pieceRunes = Enumerable.Range(0x2654, 12).Select(cp => new Rune(cp));
 var labelRunes = Enumerable.Range(0x20, 0x7F - 0x20).Select(cp => new Rune(cp))
     .Append(new Rune(0x2715))
-    .Append(new Rune(0x21C4));
+    .Append(new Rune(0x21C4))
+    .Append(new Rune(0x25B6))
+    .Append(new Rune(0x2654))
+    .Append(new Rune(0x265A));
 
 Directory.CreateDirectory(outDir);
 using var rasterizer = new ManagedFontRasterizer();
