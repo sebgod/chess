@@ -420,7 +420,9 @@ public class GameUI
                 DrawPiece<TRenderer, TSurface>(renderer, new Piece((PieceType)(i + (int)PieceType.Knight), currentSide), squareRect, _pieceFontSize);
             }
         }
-        else if (Mode != GameUIMode.Playback && Game is { GameStatus: GameStatus.Checkmate or GameStatus.Stalemate })
+        // game-over banner — Playing only: a half-placed Setup board legitimately evaluates as
+        // stalemate, and Playback positions carry the final game's status.
+        else if (Mode == GameUIMode.Playing && Game is { GameStatus: GameStatus.Checkmate or GameStatus.Stalemate })
         {
             renderer.DrawScrim(boardRect, OverlayFill);
 
