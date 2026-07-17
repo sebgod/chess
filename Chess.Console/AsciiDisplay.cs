@@ -19,32 +19,41 @@ internal sealed class AsciiDisplay(IVirtualTerminal terminal) : IGameDisplay
     private GameUI? _gameUI;
 
     /// <summary>
-    /// Markdown-formatted version of <see cref="GameUI.KeymapText"/> for styled terminal rendering.
+    /// Markdown-formatted version of <see cref="GameUI.KeymapText"/>, DERIVED from it so the two
+    /// can never drift (the previous hand-copied constant had already lost the F8 line).
     /// </summary>
-    private const string KeymapMarkdown =
-        "### Keyboard Controls\n" +
-        "\n" +
-        "### Gameplay\n" +
-        "- **a-h** Select file\n" +
-        "- **1-8** Select rank\n" +
-        "- **Esc** Cancel selection\n" +
-        "\n" +
-        "### Playback\n" +
-        "- **Ctrl+Arrow** Navigate history\n" +
-        "- **Esc** Exit playback\n" +
-        "\n" +
-        "### Promotion\n" +
-        "- **n/b/r/q** Select piece\n" +
-        "\n" +
-        "### Custom Setup\n" +
-        "- **p/n/b/r/q/k** Place piece\n" +
-        "- **Tab** Toggle side\n" +
-        "- **Del** Clear square\n" +
-        "- **s** Start game\n" +
-        "\n" +
-        "---\n" +
-        "- **F1** Toggle this help\n" +
-        "- **F9** New game";
+    private static readonly string KeymapMarkdown = BuildKeymapMarkdown(GameUI.KeymapText);
+
+    /// <summary>
+    /// Converts the plain-text keymap into Markdown: a line whose key column is separated from
+    /// its description by 2+ spaces becomes a "- **key** description" bullet; every other
+    /// non-blank line is a "### " section heading.
+    /// </summary>
+    private static string BuildKeymapMarkdown(string keymapText)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var raw in keymapText.Split('\n'))
+        {
+            var line = raw.Trim();
+            if (line.Length == 0)
+            {
+                sb.Append('\n');
+                continue;
+            }
+
+            var split = line.IndexOf("  ", StringComparison.Ordinal);
+            if (split > 0)
+            {
+                sb.Append("- **").Append(line[..split]).Append("** ")
+                  .Append(line[split..].TrimStart()).Append('\n');
+            }
+            else
+            {
+                sb.Append("### ").Append(line).Append('\n');
+            }
+        }
+        return sb.ToString().TrimEnd('\n');
+    }
 
     public GameUI UI => _gameUI ?? throw new InvalidOperationException("Call ResetGame before accessing UI.");
 
@@ -70,7 +79,7 @@ internal sealed class AsciiDisplay(IVirtualTerminal terminal) : IGameDisplay
         }
         if (UI.IsSetupMode && (response.HasFlag(UIResponse.IsUpdate) || response.HasFlag(UIResponse.NeedsPiecePlacement)))
         {
-            WriteMarkdown($"**Setup:** placing *{UI.PlacementSide}* pieces — **Tab** toggle | **s** start");
+            WriteMarkdown($"**{UI.StatusLine()}**");
         }
 
         WritePrompt(game);
@@ -123,14 +132,8 @@ internal sealed class AsciiDisplay(IVirtualTerminal terminal) : IGameDisplay
         _terminal.WriteLine("  ");
 
         _terminal.WriteLine();
-        if (UI.Mode == GameUIMode.Playback)
-        {
-            WriteMarkdown($"**Playback:** ply {UI.PlaybackPlyIndex + 2}/{game.PlyCount + 1} — *Ctrl+Up/Down* navigate | *Esc* exit");
-        }
-        else
-        {
-            WriteMarkdown($"**{game.GameStatus.ToMessage(game.CurrentSide)}**");
-        }
+        // Canonical mode-aware status from GameUI, bolded for the Markdown terminal renderer.
+        WriteMarkdown($"**{UI.StatusLine()}**");
 
         var plies = game.Plies;
         if (plies.Count > 0)

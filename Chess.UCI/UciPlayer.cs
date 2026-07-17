@@ -12,6 +12,13 @@ namespace Chess.UCI;
 /// </summary>
 public sealed class UciPlayer(string enginePath, Side side, TimeProvider timeProvider) : IEngineBasedPlayer
 {
+    /// <summary>
+    /// The bundled chess-engine executable next to the host binary — the path every desktop
+    /// front-end launches by default (was duplicated verbatim in the GUI and Console hosts).
+    /// </summary>
+    public static string DefaultEnginePath =>
+        Path.Combine(AppContext.BaseDirectory, "chess-engine" + (OperatingSystem.IsWindows() ? ".exe" : ""));
+
     private readonly UciClient _client = new UciClient(enginePath, timeProvider);
     private Task<UciResponse.BestMove>? _pendingMove;
     private string? _initialFen;

@@ -14,10 +14,11 @@ window.chessCanvas = (function () {
     ctx.putImageData(new ImageData(rgba, width, height), 0, 0);
   }
 
-  // Menu keyboard support. The startup wizard is drawn into the canvas, so the canvas must be
-  // focused to receive keydown, and arrow/Enter/Space must not also scroll the page. We attach a
-  // single keydown listener (idempotent) that only calls preventDefault while the menu is active —
-  // so during gameplay it never swallows browser shortcuts. `active` also drives focus.
+  // Canvas keyboard capture. The startup wizard AND gameplay (playback nav, square entry) take
+  // keyboard input on the canvas, so arrow/Enter/Space must not also scroll the page while it is
+  // focused. A single keydown listener (idempotent) calls preventDefault for nav keys while
+  // active; the app turns capture on at the menu and leaves it on for the whole session — only
+  // the focused canvas is affected, so browser shortcuts elsewhere on the page are untouched.
   const NAV_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " ", "Enter"]);
   function enableMenuKeys(canvasId, active) {
     const canvas = document.getElementById(canvasId);

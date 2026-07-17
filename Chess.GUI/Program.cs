@@ -19,7 +19,8 @@ Task<bool>? gameTask = null;
 
 var loop = new SdlEventLoop(sdlWindow, renderer)
 {
-    BackgroundColor = new RGBAColor32(0x1a, 0x1a, 0x2e, 0xff),
+    // Same background the game display paints with — a re-typed literal here would band.
+    BackgroundColor = PixelGameDisplay<VulkanContext>.Background,
 
     OnKeyDown = (inputKey, inputMod) =>
     {
@@ -81,14 +82,12 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
 
             display = new VkGameDisplay(renderer) { Bus = bus };
             var timeProvider = TimeProvider.System;
-            var enginePath = Path.Combine(AppContext.BaseDirectory,
-                "chess-engine" + (OperatingSystem.IsWindows() ? ".exe" : ""));
 
             var gameLoop = new GameLoop(
                 timeProvider,
                 () => display,
                 () => player,
-                (cs, tp) => new UciPlayer(enginePath, cs, tp)
+                (cs, tp) => new UciPlayer(UciPlayer.DefaultEnginePath, cs, tp)
             );
 
             gameTask = gameLoop.RunAsync(gameMode, computerSide, sideToMove, cts.Token);

@@ -166,8 +166,8 @@ public class BoardTools
 
         using var renderer = new RgbaImageRenderer(size, totalHeight);
         var ui = new GameUI(game, size, size,
-            mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
-            backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff));
+            mainFontColor: GameUI.PlainFontColor,
+            backgroundColor: GameUI.PlainBackgroundColor);
 
         if (moveList.Count > 0)
         {
@@ -185,11 +185,9 @@ public class BoardTools
 
         if (hasAnnotation)
         {
-            var fontPath = Path.Combine(AppContext.BaseDirectory, "Fonts", "DejaVuSans.ttf");
             var fontSize = size * 0.04f;
             var annotationRect = new RectInt(((int)size, (int)annotationHeight), new PointInt(0, (int)size));
-            var textColor = new RGBAColor32(0xff, 0xff, 0xff, 0xff);
-            renderer.DrawText(annotation!, fontPath, fontSize, textColor, annotationRect, vertAlignment: TextAlign.Center);
+            renderer.DrawText(annotation!, FontPaths.DejaVuSans, fontSize, GameUI.PlainFontColor, annotationRect, vertAlignment: TextAlign.Center);
         }
 
         return PngWriter.Encode(renderer.Surface.Pixels, renderer.Surface.Width, renderer.Surface.Height);

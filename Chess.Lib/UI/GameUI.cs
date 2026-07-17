@@ -35,6 +35,14 @@ public class GameUI
     private const float LegalDotRadiusFraction = 0.22f;
     private const float OverlayStrokeWidth = 3f;
 
+    /// <summary>White-on-black palette for chrome-less board rendering (terminal displays, MCP
+    /// board snapshots) — pass as mainFontColor/backgroundColor. The ctor defaults are the
+    /// inverse (black-on-white).</summary>
+    public static readonly RGBAColor32 PlainFontColor = new(0xff, 0xff, 0xff, 0xff);
+
+    /// <inheritdoc cref="PlainFontColor"/>
+    public static readonly RGBAColor32 PlainBackgroundColor = new(0x00, 0x00, 0x00, 0xff);
+
     private readonly int _margin;
     private readonly int _squareSize;
     private readonly int _topMargin;
@@ -61,8 +69,8 @@ public class GameUI
         "  Esc    Cancel selection\n" +
         "\n" +
         "Playback\n" +
-        "  Ctrl+Arrow Navigate history\n" +
-        "  Esc        Exit playback\n" +
+        "  Ctrl+Arrow  Navigate history\n" +
+        "  Esc         Exit playback\n" +
         "\n" +
         "Promotion\n" +
         "  n/b/r/q  Select piece\n" +
@@ -1106,14 +1114,26 @@ public class GameUI
     }
 
     /// <summary>
+    /// The history panel's scroll window: total move rows, the highest valid first row, and the
+    /// effective first visible row (<see cref="HistoryScrollStart"/>, or pinned-to-latest when
+    /// null). The one home for the `(plyCount+1)/2` + `?? Max(0, …)` math every history renderer
+    /// needs — displays pass their own row capacity (it may differ from
+    /// <see cref="HistoryViewportRows"/>, which tracks the ACTIVE display's capacity).
+    /// </summary>
+    public (int MoveCount, int MaxStart, int StartMove) HistoryWindow(int visibleRows)
+    {
+        var moveCount = (Game.PlyCount + 1) / 2;
+        var maxStart = Math.Max(0, moveCount - visibleRows);
+        return (moveCount, maxStart, HistoryScrollStart ?? maxStart);
+    }
+
+    /// <summary>
     /// Scrolls the history panel by the given number of move rows (positive = down, negative = up).
     /// Does not change the selected playback ply.
     /// </summary>
     public UIResponse ScrollHistory(int moveDelta)
     {
-        var moveCount = (Game.PlyCount + 1) / 2;
-        var maxStart = Math.Max(0, moveCount - HistoryViewportRows);
-        var current = HistoryScrollStart ?? maxStart;
+        var (_, maxStart, current) = HistoryWindow(HistoryViewportRows);
         var newStart = Math.Clamp(current + moveDelta, 0, maxStart);
         HistoryScrollStart = newStart >= maxStart ? null : newStart;
         return UIResponse.IsUpdate;
@@ -1125,9 +1145,7 @@ public class GameUI
     private void EnsurePlyVisible(int plyIndex)
     {
         var moveRow = Math.Max(0, plyIndex) / 2;
-        var moveCount = (Game.PlyCount + 1) / 2;
-        var maxStart = Math.Max(0, moveCount - HistoryViewportRows);
-        var current = HistoryScrollStart ?? maxStart;
+        var (_, maxStart, current) = HistoryWindow(HistoryViewportRows);
 
         if (moveRow < current)
             HistoryScrollStart = moveRow;
@@ -1340,6 +1358,25 @@ public class GameUI
 
         PendingFile = null;
         return (UIResponse.None, []);
+    }
+
+    /// <summary>
+    /// The canonical one-line status text for the current mode — playback position, setup
+    /// placement side, or game status — with the pending-file suffix. All displays derive their
+    /// status bars from this (styling/prefixing per surface) instead of re-deriving the facts;
+    /// the three hand-written copies this replaced had drifted in wording and hints.
+    /// </summary>
+    public string StatusLine()
+    {
+        var fileInfo = PendingFile is { } f ? $" [{f.ToLabel()}]" : "";
+
+        if (Mode == GameUIMode.Playback)
+            return $"Playback: ply {PlaybackPlyIndex + 2}/{Game.PlyCount + 1}  [Ctrl+Arrows, Esc exit]";
+
+        if (IsSetupMode)
+            return $"Setup: placing {PlacementSide} pieces [Tab toggle, s start]{fileInfo}";
+
+        return $"{Game.GameStatus.ToMessage(Game.CurrentSide)}{fileInfo}";
     }
 
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) HandleMouseDown(int x, int y)

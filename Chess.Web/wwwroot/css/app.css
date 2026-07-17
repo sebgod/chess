@@ -24,7 +24,8 @@ html, body {
 }
 
 .app {
-    max-width: 820px;
+    /* Wide enough for the canvas at its full 1050px design width (+ padding). */
+    max-width: 1100px;
     margin: 0 auto;
     padding: 1.5rem 1rem 3rem;
 }
@@ -66,15 +67,30 @@ header h1 .tag {
     min-height: 1.4em;
 }
 
+/* Post-load the status renders inside the canvas (PixelGameDisplay's status bar); the paragraph
+   stays in the DOM for aria-live announcements only. Visually removed WITHOUT display:none so
+   screen readers keep reading it — and without occupying layout, so the board never shifts. */
+.status.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
 canvas#board {
     /* Display size only — the backing buffer is this laid-out box × devicePixelRatio, managed by
        WebGl.Renderer's WebGlCanvas component (which also maps clicks back into backing space).
-       Aspect-locked: 760/840 == GameUI's SquaresNeededX/Y (9.5/10.5), so any uniformly-scaled
-       size fills the board with no wasted space. touch-action/user-select come inline from the
-       component. */
-    width: 760px;
+       1050/830 == the desktop GUI window: the canvas hosts the same PixelGameDisplay chrome
+       (board + move-history panel + status bar), which splits whatever size it gets. Aspect is
+       locked so uniform scaling on narrow screens distorts nothing. touch-action/user-select
+       come inline from the component. */
+    width: 1050px;
     max-width: 100%;
-    aspect-ratio: 760 / 840;
+    aspect-ratio: 1050 / 830;
     height: auto;
     display: block;
     background: var(--panel);

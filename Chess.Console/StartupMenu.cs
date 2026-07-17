@@ -1,62 +1,27 @@
 using Chess.Lib;
+using Chess.Lib.UI;
 using Console.Lib;
 
 namespace Chess.Console;
 
 /// <summary>
-/// Renders a startup menu in the terminal with arrow-key navigation
-/// and returns the selected game mode.
+/// Terminal adapter for the shared <see cref="StartupWizard"/> (Chess.Lib.UI): the wizard owns
+/// the phases/content/flow, this class only presents each step through Console.Lib's text menu.
+/// The desktop (Chess.GUI) and web (Chess.Web) drive the same wizard through DIR.Lib's
+/// PixelMenuWidget.
 /// </summary>
 internal class StartupMenu(IVirtualTerminal terminal, TimeProvider timeProvider)
     : MenuBase<(GameMode Mode, Side ComputerSide, Side SideToMove)>(terminal, timeProvider)
 {
     protected override async Task<(GameMode Mode, Side ComputerSide, Side SideToMove)> ShowAsyncCore(CancellationToken cancellationToken)
     {
-        var mode = await ShowMenuAsync(
-            "\u265A Chess \u2654",
-            "Select game mode:",
-            ["Player vs Player", "Player vs Computer", "Custom Game"],
-            cancellationToken);
-
-        if (mode == 0)
+        var wizard = new StartupWizard();
+        while (!wizard.IsComplete)
         {
-            return (GameMode.PlayerVsPlayer, Side.None, Side.White);
+            var (title, prompt, items) = wizard.Current;
+            var selected = await ShowMenuAsync(title, prompt, items, cancellationToken);
+            wizard.Confirm(selected);
         }
-
-        if (mode == 1)
-        {
-            var side = await ShowMenuAsync(
-                "\u265A Chess \u2654",
-                "Play as:",
-                ["White", "Black"],
-                cancellationToken);
-
-            var computerSide = side == 0 ? Side.Black : Side.White;
-            return (GameMode.PlayerVsComputer, computerSide, Side.White);
-        }
-
-        // Custom Game
-        var boardChoice = await ShowMenuAsync(
-            "\u265A Chess \u2654",
-            "Starting board:",
-            ["Empty Board", "Standard Board"],
-            cancellationToken);
-
-        var sideToMoveChoice = await ShowMenuAsync(
-            "\u265A Chess \u2654",
-            "Side to move first:",
-            ["White", "Black"],
-            cancellationToken);
-
-        var sideToMove = sideToMoveChoice == 0 ? Side.White : Side.Black;
-
-        var customSide = await ShowMenuAsync(
-            "\u265A Chess \u2654",
-            "Play as:",
-            ["White", "Black"],
-            cancellationToken);
-
-        var customComputerSide = customSide == 0 ? Side.Black : Side.White;
-        return (boardChoice is 1 ? GameMode.CustomGameStandardBoard : GameMode.CustomGameEmpty, customComputerSide, sideToMove);
+        return wizard.Result;
     }
 }

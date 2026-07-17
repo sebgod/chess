@@ -84,8 +84,8 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
         var game = new Game(board, Side.White, []);
         var renderer = new SixelRgbaImageRenderer(size, size);
         var ui = new GameUI(game, size, size,
-            mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
-            backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff));
+            mainFontColor: GameUI.PlainFontColor,
+            backgroundColor: GameUI.PlainBackgroundColor);
 
         // Parse optional --move for arrow overlay
         var moveArg = parseResult.GetValue(renderMoveOption);
@@ -164,7 +164,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
             timeProvider,
             () => imageCapability is ImageDisplayCapability.Sixel ? new SixelGameDisplay(terminal) : new AsciiDisplay(terminal),
             () => new HumanPlayer(terminal),
-            (computerSide, tp) => new UciPlayer(Path.Combine(AppContext.BaseDirectory, "chess-engine" + (OperatingSystem.IsWindows() ? ".exe" : "")), computerSide, tp)
+            (computerSide, tp) => new UciPlayer(UciPlayer.DefaultEnginePath, computerSide, tp)
         );
 
         restart = await gameLoop.RunAsync(gameMode, computerSide, sideToMove, cancellationToken);

@@ -80,9 +80,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
             return null;
 
         var plyCount = UI.Game.PlyCount;
-        var moveCount = (plyCount + 1) / 2;
-        var visibleRows = _historyList.VisibleRows;
-        var startMove = UI.HistoryScrollStart ?? Math.Max(0, moveCount - visibleRows);
+        var (_, _, startMove) = UI.HistoryWindow(_historyList.VisibleRows);
         var moveIdx = startMove + cellRow - 1;
         var whitePlyIdx = moveIdx * 2;
 
@@ -116,31 +114,12 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         }
     }
 
-    private Side? SetupPlacementSide => UI.IsSetupMode ? UI.PlacementSide : null;
-
-    private (int PlyIndex, int PlyCount)? PlaybackInfo => UI.Mode == GameUIMode.Playback
-        ? (UI.PlaybackPlyIndex, UI.Game.PlyCount)
-        : null;
-
     private int? HighlightPlyIndex => UI.Mode == GameUIMode.Playback ? UI.PlaybackPlyIndex : null;
 
     private void UpdateStatusBar(Game game)
     {
-        var fileInfo = UI.PendingFile is { } f ? $" [{f.ToLabel()}]" : "";
-        var setupInfo = SetupPlacementSide is { } side ? $" Setup: placing {side} pieces [Tab to toggle; s to start]" : "";
-        string status;
-        if (PlaybackInfo is (var plyIdx, var plyCount))
-        {
-            status = $" Playback: ply {plyIdx + 2}/{plyCount + 1} [Ctrl+Up/Down, Esc exit]";
-        }
-        else if (SetupPlacementSide is { })
-        {
-            status = $" {setupInfo}{fileInfo}";
-        }
-        else
-        {
-            status = $" {game.GameStatus.ToMessage(game.CurrentSide)}{fileInfo}";
-        }
+        // Canonical mode-aware text from GameUI; the leading space is terminal-cell padding.
+        var status = $" {UI.StatusLine()}";
 
         var debugInfo = "";
         if (Stats is { } s)
@@ -158,9 +137,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
     private void UpdateHistory(Game game)
     {
         var plies = game.Plies;
-        var moveCount = (plies.Count + 1) / 2;
-        var visibleRows = _historyList.VisibleRows;
-        var startMove = UI.HistoryScrollStart ?? Math.Max(0, moveCount - visibleRows);
+        var (moveCount, _, startMove) = UI.HistoryWindow(_historyList.VisibleRows);
         var highlightPly = HighlightPlyIndex;
 
         var rows = new HistoryMoveRow[moveCount];
@@ -193,8 +170,8 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
     {
         var cell = _boardCanvas.Viewport.CellSize;
         _gameUI = new GameUI(game, _renderer.Width, _renderer.Height,
-            mainFontColor: new RGBAColor32(0xff, 0xff, 0xff, 0xff),
-            backgroundColor: new RGBAColor32(0x00, 0x00, 0x00, 0xff),
+            mainFontColor: GameUI.PlainFontColor,
+            backgroundColor: GameUI.PlainBackgroundColor,
             alignment: (cell.Width, cell.Height),
             resolveHistoryClick: ResolveHistoryClick);
     }
