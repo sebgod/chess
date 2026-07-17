@@ -27,8 +27,14 @@
 
     <p class="status" aria-live="polite">@_status</p>
 
-    <canvas id="board" tabindex="0" width="@BoardW" height="@BoardH"
-            @onclick="OnClickAsync" @onkeydown="OnKeyDownAsync"></canvas>
+    @* Shared hi-dpi canvas host (WebGl.Renderer): sizes the backing buffer to the laid-out CSS
+       box × devicePixelRatio, reports metrics, and maps pointer coords into backing space.
+       Display size comes from app.css's canvas#board rule (aspect-locked 760/840). *@
+    <WebGlCanvas @ref="_canvas" Id="board" TabIndex="0"
+                 OnReady="OnCanvasReadyAsync"
+                 OnResized="OnCanvasResizedAsync"
+                 OnPointerDown="OnPointerDownAsync"
+                 OnKeyDown="OnKeyDownAsync" />
 
     @if (_screen == Screen.Setup)
     {
@@ -56,7 +62,10 @@
 </div>
 
 @code {
-    // 9.5 : 10.5 (SquaresNeededX : SquaresNeededY) -> a whole 80px square with no wasted space.
+    // Logical design size: 9.5 : 10.5 (SquaresNeededX : SquaresNeededY) -> a whole 80px square
+    // with no wasted space at 1x. The REAL pixel size now comes from WebGlCanvas metrics
+    // (_backingW/_backingH = laid-out CSS box x devicePixelRatio); these constants remain only
+    // as the aspect reference mirrored by app.css's aspect-ratio rule.
     const int BoardW = 760;
     const int BoardH = 840;
 
@@ -76,6 +85,15 @@
     WebGlRenderer? _webGl;
     RgbaImageRenderer? _cpu;
 
+    WebGlCanvas _canvas = null!;
+    // Backing-buffer pixel dimensions, updated from WebGlCanvas metrics. Everything renders and
+    // hit-tests in this space (GameUI, menu widgets, clip rects, blit).
+    uint _backingW = BoardW;
+    uint _backingH = BoardH;
+    // Resolved by the canvas's first metrics report — init awaits this instead of guessing when
+    // the canvas is laid out (replaces the old firstRender/_pendingPaint workaround).
+    readonly TaskCompletionSource<CanvasMetrics> _canvasReady = new();
+
     // The startup menu reuses DIR.Lib's backend-neutral PixelMenuWidget — the same widget the
     // desktop Vulkan GUI draws. Only the one matching the active backend is constructed.
     PixelMenuWidget<WebGlContext>? _webMenu;
@@ -93,7 +111,6 @@
     int _aiDepth = 3;
     bool _busy;
     bool _ready;
-    bool _pendingPaint;
     string _status = "Loading…";
 
     static readonly RGBAColor32 Background = new(0x20, 0x24, 0x28, 0xff);
@@ -111,6 +128,12 @@
 
         await LoadFontsAsync();
 
+        // The canvas's first metrics report tells us the real backing size (CSS box x dpr) —
+        // and doubles as the "canvas is in the DOM and laid out" gate that renderer init needs.
+        var metrics = await _canvasReady.Task;
+        _backingW = metrics.BackingWidth;
+        _backingH = metrics.BackingHeight;
+
         if (_backend == RenderBackend.WebGl)
         {
             try
@@ -118,7 +141,7 @@
                 await LoadSdfCacheAsync(); // best-effort; a miss only costs runtime rasterization
                 // readOnly: single-threaded WASM has no writer thread; the pre-baked cache is
                 // load-only. Raster size/spread must match the bake (the shared atlas constants).
-                _webGl = await WebGlRenderer.CreateAsync("board", BoardW, BoardH,
+                _webGl = await WebGlRenderer.CreateAsync("board", _backingW, _backingH,
                     diskCache: new SdfGlyphDiskCache(SdfCacheDir,
                         SdfFontAtlas.SdfRasterSize, SdfFontAtlas.SdfSpread, readOnly: true));
                 // Pull the pre-baked glyphs into the atlas NOW, while "Loading…" shows —
@@ -139,7 +162,7 @@
             }
         }
         if (_backend == RenderBackend.Cpu)
-            _cpu = new RgbaImageRenderer(BoardW, BoardH);
+            _cpu = new RgbaImageRenderer(_backingW, _backingH);
 
         // Construct the menu widget for whichever renderer we ended up with.
         if (_backend == RenderBackend.WebGl)
@@ -149,18 +172,37 @@
 
         _ready = true;
         ShowMenu(MenuPhase.GameMode);
-        // Paint from OnAfterRenderAsync: OnInitializedAsync completes AFTER the first render (it
-        // awaits), so firstRender can't be relied on — a pending flag is drained on the next paint.
-        _pendingPaint = true;
+        await RenderMenuAsync(); // canvas + renderer are guaranteed live here — paint directly
     }
 
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    Task OnCanvasReadyAsync(CanvasMetrics metrics)
     {
-        if (_ready && _pendingPaint)
-        {
-            _pendingPaint = false;
+        _canvasReady.TrySetResult(metrics);
+        return Task.CompletedTask;
+    }
+
+    // Window resize / reflow / devicePixelRatio change: resize the live renderer + UI in place
+    // and repaint whatever screen is showing. Menu widgets track the renderer's size on their
+    // own; only GameUI bakes pixel sizes in at construction (Resize returns a NEW instance).
+    async Task OnCanvasResizedAsync(CanvasMetrics metrics)
+    {
+        if (!_ready) return; // pre-init reports are consumed via _canvasReady
+
+        _backingW = metrics.BackingWidth;
+        _backingH = metrics.BackingHeight;
+
+        if (_backend == RenderBackend.WebGl)
+            _webGl!.Resize(_backingW, _backingH);
+        else
+            _cpu!.Resize(_backingW, _backingH);
+
+        if (_ui is not null)
+            _ui = _ui.Resize(_backingW, _backingH);
+
+        if (_screen == Screen.Menu)
             await RenderMenuAsync();
-        }
+        else
+            await RenderBoardAsync();
     }
 
     // .NET's WASM runtime has a working in-memory filesystem, and GameUI resolves
@@ -239,10 +281,10 @@
     }
 
     // A click in menu mode: dispatch to the widget (a hit both selects and confirms the item),
-    // then advance the wizard or start the game.
-    async Task HandleMenuClickAsync(MouseEventArgs e)
+    // then advance the wizard or start the game. Coords arrive pre-mapped to backing space.
+    async Task HandleMenuClickAsync(CanvasPointerEventArgs e)
     {
-        var confirmed = DispatchMenu(new InputEvent.MouseDown((float)e.OffsetX, (float)e.OffsetY));
+        var confirmed = DispatchMenu(new InputEvent.MouseDown(e.X, e.Y));
         if (confirmed is { } sel)
             await ConfirmMenuAsync(sel);
         // A click that misses every item confirms nothing and changes nothing — no redraw needed.
@@ -358,7 +400,7 @@
     {
         _screen = Screen.Setup;
         _game = _customEmpty ? new Game(new Board(), _customSideToMove, []) : new Game();
-        _ui = new GameUI(_game, BoardW, BoardH, mainFontColor: Foreground, backgroundColor: Background)
+        _ui = new GameUI(_game, _backingW, _backingH, mainFontColor: Foreground, backgroundColor: Background)
         {
             IsSetupMode = true,
         };
@@ -375,7 +417,7 @@
         if (_screen != Screen.Setup) return;
         var setupBoard = _game.Board;
         _game = new Game(setupBoard, _customSideToMove, []);
-        _ui = new GameUI(_game, BoardW, BoardH, mainFontColor: Foreground, backgroundColor: Background);
+        _ui = new GameUI(_game, _backingW, _backingH, mainFontColor: Foreground, backgroundColor: Background);
         _screen = Screen.Playing;
         _busy = false;
         _status = StatusText();
@@ -388,12 +430,12 @@
     void StartNewGame()
     {
         _game = new Game();
-        _ui = new GameUI(_game, BoardW, BoardH, mainFontColor: Foreground, backgroundColor: Background);
+        _ui = new GameUI(_game, _backingW, _backingH, mainFontColor: Foreground, backgroundColor: Background);
         _busy = false;
         _status = StatusText();
     }
 
-    async Task OnClickAsync(MouseEventArgs e)
+    async Task OnPointerDownAsync(CanvasPointerEventArgs e)
     {
         if (!_ready || _busy) return;
 
@@ -406,14 +448,14 @@
         if (_screen == Screen.Setup)
         {
             // Placement/selection/colour-toggle — GameUI handles it; setup never auto-finishes.
-            _ui.HandleMouseDown((int)e.OffsetX, (int)e.OffsetY);
+            _ui.HandleMouseDown(e.X, e.Y);
             await RenderBoardAsync();
             return;
         }
 
         if (_game.IsFinished) return;
 
-        var (response, _) = _ui.HandleMouseDown((int)e.OffsetX, (int)e.OffsetY);
+        var (response, _) = _ui.HandleMouseDown(e.X, e.Y);
         await RenderBoardAsync();
 
         if (response.HasFlag(UIResponse.IsUpdate))
@@ -459,7 +501,6 @@
 
     async Task RenderMenuAsync()
     {
-        int w = BoardW, h = BoardH;
         if (_backend == RenderBackend.WebGl)
         {
             _webGl!.Clear(Background);
@@ -470,7 +511,7 @@
         {
             _cpu!.Surface.Clear(Background);
             _cpuMenu!.Render();
-            await JS.InvokeVoidAsync("chessCanvas.blit", "board", w, h, _cpu.Surface.Pixels);
+            await JS.InvokeVoidAsync("chessCanvas.blit", "board", _backingW, _backingH, _cpu.Surface.Pixels);
         }
         // Focus the canvas (so arrow/Enter reach it without a click first) and suppress the
         // page-scroll default for those keys while the menu is up.
@@ -479,9 +520,9 @@
 
     async Task RenderBoardAsync()
     {
-        // Locals (not consts) so the tuple->PointInt conversion isn't ambiguous between
-        // the (int,int) and (uint,uint) operators — const 760/840 both fit in uint.
-        int w = BoardW, h = BoardH;
+        // int locals (not uint fields) so the tuple->PointInt conversion isn't ambiguous between
+        // the (int,int) and (uint,uint) operators.
+        int w = (int)_backingW, h = (int)_backingH;
         var clip = new RectInt((w, h), PointInt.Origin);
 
         if (_backend == RenderBackend.WebGl)
@@ -496,7 +537,7 @@
             _ui.Render<RgbaImage, RgbaImageRenderer>(_cpu, clip);
             // Blazor marshals a byte[] argument to JS as a Uint8Array; the buffer is
             // already tightly-packed RGBA, exactly what ImageData wants.
-            await JS.InvokeVoidAsync("chessCanvas.blit", "board", w, h, _cpu.Surface.Pixels);
+            await JS.InvokeVoidAsync("chessCanvas.blit", "board", _backingW, _backingH, _cpu.Surface.Pixels);
         }
     }
 

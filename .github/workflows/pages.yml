@@ -57,8 +57,13 @@ jobs:
         run: dotnet run --project tools/BakeSdfAtlas -c Release -p:UseLocalSiblings=false -- Chess.Web/wwwroot/sdfcache Chess.Lib/Fonts/Merida.ttf Chess.Lib/Fonts/DejaVuSans.ttf
 
       # No sibling checkout in CI: Chess.Lib -> DIR.Lib and WebGl.Renderer resolve from NuGet.
+      # RunAOTCompilation: Mono WASM AOT — interpreted negamax stalls seconds/move at depth 4;
+      # AOT'd Chess.Lib erases that (measured 24-42x on pure compute in the tianwen A/B). Costs
+      # a few MB of dotnet.native.wasm and extra CI minutes, so CI-only — local dev publishes
+      # stay interpreted and fast. Escape hatches if an assembly ever fails to AOT-compile:
+      # -p:_AOT_InternalForceInterpretAssemblies=<AsmName>, then -p:WasmDedup=false.
       - name: Publish Chess.Web (Release)
-        run: dotnet publish Chess.Web/Chess.Web.csproj -c Release -o publish -p:UseLocalSiblings=false --nologo
+        run: dotnet publish Chess.Web/Chess.Web.csproj -c Release -o publish -p:UseLocalSiblings=false -p:RunAOTCompilation=true --nologo
 
       - name: Rewrite base href for the /chess/ project-site subpath
         run: |

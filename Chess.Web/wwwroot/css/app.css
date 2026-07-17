@@ -17,6 +17,10 @@ html, body {
     color: var(--fg);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
+    /* Kill rubber-band/back-forward swipe gestures at the page edge. NOT overflow:hidden — the
+       page still scrolls (controls sit below the board on short viewports); gestures ON the
+       canvas are already fully suppressed by WebGlCanvas's inline touch-action:none. */
+    overscroll-behavior: none;
 }
 
 .app {
@@ -63,15 +67,19 @@ header h1 .tag {
 }
 
 canvas#board {
-    /* Backing resolution == display size so click OffsetX/Y map 1:1 to board pixels. */
+    /* Display size only — the backing buffer is this laid-out box × devicePixelRatio, managed by
+       WebGl.Renderer's WebGlCanvas component (which also maps clicks back into backing space).
+       Aspect-locked: 760/840 == GameUI's SquaresNeededX/Y (9.5/10.5), so any uniformly-scaled
+       size fills the board with no wasted space. touch-action/user-select come inline from the
+       component. */
     width: 760px;
-    height: 840px;
     max-width: 100%;
+    aspect-ratio: 760 / 840;
+    height: auto;
     display: block;
     background: var(--panel);
     border: 1px solid var(--border);
     border-radius: 10px;
-    touch-action: manipulation;
 }
 
 /* The canvas is focusable (tabindex) so the startup menu can take keyboard input; the menu draws
