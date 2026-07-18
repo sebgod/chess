@@ -1,8 +1,10 @@
 # Chess
 
-A chess game with terminal (Sixel) and Vulkan GUI rendering backends, built in C# on .NET 10.
+A chess game with browser (WebGL), terminal (Sixel), and Vulkan GUI rendering backends, built in C# on .NET 10.
 
 ![Example game](board_screen.png)
+
+**▶ Play it now in your browser — [sebgod.github.io/chess](https://sebgod.github.io/chess/)** — nothing to install; the full engine runs client-side as WebAssembly.
 
 ## Features
 
@@ -11,6 +13,8 @@ A chess game with terminal (Sixel) and Vulkan GUI rendering backends, built in C
 - [UCI](https://en.wikipedia.org/wiki/Universal_Chess_Interface) protocol support — the engine runs as a separate process, communicating via standard UCI commands
 - **Terminal app**: graphical board rendered using FreeType2 and the [Sixel](https://en.wikipedia.org/wiki/Sixel) protocol (no ImageMagick dependency)
 - **Vulkan GUI app**: standalone windowed app using SDL3 + Vortice.Vulkan
+- **Browser app**: the full engine compiled to WebAssembly, rendered with WebGL (software-canvas fallback) — [play online](https://sebgod.github.io/chess/), nothing to install
+- **Play by Link**: serverless correspondence chess (browser) — the whole game travels in the URL, so you can play someone on the other side of the planet by swapping links over any messenger. No accounts, no server, no logins
 - Move history panel with algebraic notation — click any move or use Ctrl+Arrow to review past positions
 - Cross-platform: Windows, Linux, and macOS (x64 and ARM64)
 - Native AOT compiled for fast startup and small footprint
@@ -22,6 +26,12 @@ A chess game with terminal (Sixel) and Vulkan GUI rendering backends, built in C
 - .NET 10 SDK (to build from source)
 
 ## Getting started
+
+### Play online
+
+The browser version is live at **[sebgod.github.io/chess](https://sebgod.github.io/chess/)** — it runs entirely in your browser as WebAssembly, so there is nothing to install. Append `?renderer=cpu` to force the software renderer on devices without WebGL2.
+
+It includes **Play by Link**: choose *Play by Link* from the menu and pick your colour, make your move, then copy, email, or share the link with your opponent. The link *is* the game — opening one means it's your turn. The in-page "How Play by Link works" section explains the full flow.
 
 ### Download a release
 
@@ -44,6 +54,7 @@ cd chess
 dotnet build -c Release
 dotnet run --project Chess.Console -c Release   # Terminal app
 dotnet run --project Chess.GUI -c Release        # Vulkan GUI app
+dotnet run --project Chess.Web -c Release        # Browser app (Blazor WASM dev server)
 ```
 
 ## Running tests
@@ -121,6 +132,7 @@ In Custom Game mode, you place pieces on the board before playing. The popup app
 | `Chess.Engine` | Standalone UCI engine executable (`chess-engine`), supports `go depth N` |
 | `Chess.GUI` | Vulkan chess app (SDL3 + Vortice.Vulkan windowing/rendering) |
 | `Chess.Console` | Terminal chess app with Sixel and ASCII display backends |
+| `Chess.Web` | Browser app: Blazor WebAssembly, WebGL renderer with software-canvas fallback, Play by Link |
 | `Chess.Tests` | xUnit v3 test suite |
 
 ### NuGet library dependencies
@@ -130,6 +142,7 @@ In Custom Game mode, you place pieces on the board before playing. The popup app
 | [DIR.Lib](https://github.com/SharpAstro/DIR.Lib) | Device-independent rendering: geometry, colour, abstract `Renderer<T>`, `RgbaImage`, `FreeTypeGlyphRasterizer` |
 | [Console.Lib](https://github.com/SharpAstro/Console.Lib) | Terminal I/O, dock-based layout, widgets, `RgbaImageRenderer`, Sixel encoding, truecolor/SGR-16 styling |
 | [SdlVulkan.Renderer](https://github.com/SharpAstro/SdlVulkan.Renderer) | SDL3 + Vortice.Vulkan renderer: `VkRenderer`, `VulkanContext`, `VkFontAtlas` |
+| [WebGl.Renderer](https://github.com/SharpAstro/WebGl.Renderer) | WebGL2 backend for Blazor WASM: command-buffer JS interop, MSDF text from a shared atlas |
 
 ### Architecture
 
@@ -139,10 +152,12 @@ graph TD
     Lib["Chess.Lib<br/><i>Board, rules, AI engine (negamax)</i>"]
     ConLib["Console.Lib<br/><i>Terminal I/O, layout, widgets,<br/>RgbaImageRenderer, Sixel encoding</i>"]
     SdlVk["SdlVulkan.Renderer<br/><i>SDL3 + Vulkan renderer</i>"]
+    WebGl["WebGl.Renderer<br/><i>WebGL2 backend for Blazor WASM</i>"]
     UCI["Chess.UCI<br/><i>UCI protocol library</i>"]
     Engine["Chess.Engine<br/><i>Standalone UCI engine</i>"]
     GUI["Chess.GUI<br/><i>Vulkan chess app</i>"]
     Console["Chess.Console<br/><i>Terminal chess app</i>"]
+    Web["Chess.Web<br/><i>Browser app (Blazor WASM)</i>"]
     Tests["Chess.Tests<br/><i>xUnit v3 + Shouldly</i>"]
 
     Lib -- "NuGet" --> DIR
@@ -161,6 +176,10 @@ graph TD
     Console -- "project ref" --> Lib
     Console -- "project ref" --> UCI
     Console -. "launches as<br/>child process" .-> Engine
+    WebGl -- "NuGet" --> DIR
+    Web -- "NuGet" --> WebGl
+    Web -- "project ref" --> Lib
+    Web -- "project ref" --> UCI
     Tests -- "project ref" --> Lib
     Tests -- "project ref" --> UCI
     Tests -- "NuGet" --> ConLib
