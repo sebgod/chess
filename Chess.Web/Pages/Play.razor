@@ -4,7 +4,10 @@
 @using Chess.Lib.UI
 @using DIR.Lib
 @using WebGl.Renderer
+@using Chess.UCI
+@using Microsoft.AspNetCore.Components.Routing
 @using Action = Chess.Lib.Action
+@implements IDisposable
 @inject IJSRuntime JS
 @inject HttpClient Http
 @inject NavigationManager Nav
@@ -60,8 +63,61 @@
                     </select>
                 </label>
             }
+            @if (ShowShareRow)
+            {
+                @* Correspondence handoff — all serverless: the link IS the game. Copy is the
+                   universal path; mailto needs no JS at all; the native share sheet appears
+                   only where the browser supports it (mostly mobile — straight to WhatsApp). *@
+                <button class="share copy @(_linkCopied ? "copied" : null)" @onclick="CopyLinkAsync" disabled="@_busy">
+                    @(_linkCopied ? "Copied ✓" : "📋 Copy link")
+                </button>
+                <a class="share mail" href="@MailtoHref" @onclick="MarkShared">✉ Email</a>
+                @if (_shareSupported)
+                {
+                    <button class="share native" @onclick="ShareLinkAsync" disabled="@_busy">📤 Share…</button>
+                }
+                @if (CanUndo)
+                {
+                    <button class="share undo" @onclick="UndoLocalMoveAsync" disabled="@_busy">↶ Undo</button>
+                }
+            }
         </div>
     }
+
+    @* Feature explainer — static content, so it doubles as the discoverable "what is Play by
+       Link?" pitch on the menu screen and the how-do-I-send help mid-game. *@
+    <details class="help" open="@_linkPlay">
+        <summary>How "Play by Link" works</summary>
+        <div class="help-body">
+            <p>
+                Correspondence chess with <strong>no accounts and no server</strong> — the whole
+                game travels inside the link itself. Perfect for playing someone on the other
+                side of the planet, one move at a time.
+            </p>
+            <ol>
+                <li>Choose <em>Play by Link</em> from the menu and pick your colour.</li>
+                <li>
+                    Playing White? Make your move first. Playing Black? You start by sending the
+                    invitation link.
+                </li>
+                <li>
+                    <strong>Copy</strong>, <strong>Email</strong>, or <strong>Share</strong> the
+                    link to your opponent over anything — WhatsApp, Signal, iMessage, email…
+                </li>
+                <li>
+                    They open it, see the board with the full move history, make their move, and
+                    send the new link back. Repeat until someone wins.
+                </li>
+            </ol>
+            <p>
+                The address bar always holds the current game, so a <strong>bookmark is a saved
+                game</strong> — reopen it any time to resume. Every link is replayed through the
+                chess rules when opened: only legal games can travel, and a mangled link is
+                rejected rather than mis-played. Opening a link means it's your turn — the link
+                carries no identity, so play fair: it's honour-system chess.
+            </p>
+        </div>
+    </details>
 </div>
 
 @code {
@@ -105,8 +161,9 @@
 
     Screen _screen = Screen.Menu;
     // The shared wizard state machine (Chess.Lib.UI) — same flow/content as desktop + console;
-    // this page only presents Current through the menu widget and forwards confirms.
-    StartupWizard _wizard = new();
+    // this page only presents Current through the menu widget and forwards confirms. The web is
+    // (so far) the only front-end that can produce/consume game links, so only it opts in.
+    StartupWizard _wizard = new(includeLinkPlay: true);
     bool _vsComputer = true;
     // Side to move for a custom game, from the wizard; consumed when setup finishes.
     Side _setupSideToMove = Side.White;
@@ -116,6 +173,18 @@
     bool _busy;
     bool _ready;
     string _status = "Loading…";
+
+    // ---- Play by Link (correspondence) state. The game itself travels in the URL fragment
+    // (GameLinkCodec); these fields only track this tab's role in the exchange.
+    bool _linkPlay;                 // true for the whole link-game session
+    Side _localSide = Side.White;   // fixed: the colour THIS tab controls (opponent is remote)
+    string? _incomingFragment;      // the fragment as received — Undo re-parses it, no hand-rolled undo
+    int _incomingPlyCount;          // plies when the link was opened; > means a local move is staged
+    string? _lastAppliedFragment;   // dedupes our own replaceState echo against LocationChanged
+    bool _linkCopied;               // transient "Copied ✓" button label
+    bool _linkShared;               // flips the status from "send the link" to "waiting for reply"
+    bool _shareSupported;           // navigator.share feature detection (once, at boot)
+    string? _linkError;             // last Invalid-link message from TryApplyFragmentAsync
 
     // Must match PixelGameDisplay's internal background — the display's GameUI paints margins
     // with it, and the host clears the rest of the surface; a mismatch would band.
@@ -179,8 +248,27 @@
         }
 
         _ready = true;
-        ShowWizardStep();
-        await RenderMenuAsync(); // canvas + renderer are guaranteed live here — paint directly
+        _shareSupported = await JS.InvokeAsync<bool>("chessCanvas.isShareSupported");
+
+        // A game link in the fragment skips the wizard entirely: the link means "it's your
+        // turn" — decode, replay, and put the board straight on screen.
+        var bootFragment = new Uri(Nav.Uri).Fragment;
+        if (await TryApplyFragmentAsync(bootFragment))
+        {
+            _incomingFragment = bootFragment;
+            await PersistFragmentAsync(); // canonicalize the address bar (also seeds the dedupe)
+        }
+        else
+        {
+            ShowWizardStep();
+            if (_linkError is { } err)
+                _status = err; // don't let the wizard's default text swallow a broken-link error
+            await RenderMenuAsync(); // canvas + renderer are guaranteed live here — paint directly
+        }
+
+        // A second link pasted into this same tab is a fragment-only navigation — Blazor raises
+        // LocationChanged without reloading the app, and we apply it like a fresh open.
+        Nav.LocationChanged += OnLocationChanged;
     }
 
     Task OnCanvasReadyAsync(CanvasMetrics metrics)
@@ -312,6 +400,7 @@
         if (MapGameKey(e.Key) is not { } gameKey) return;
         var modifiers = e.CtrlKey ? InputModifier.Ctrl : InputModifier.None;
 
+        var plyBefore = _game.PlyCount;
         var (response, _) = Ui.HandleKeyDown(gameKey, modifiers);
 
         // 's' ends setup inside GameUI — mirror the Start button's freeze-and-play handoff.
@@ -323,7 +412,12 @@
 
         if (response == UIResponse.None) return;
 
-        _status = StatusText();
+        // IsUpdate also fires for playback navigation — only a ply-count increase means a move
+        // was actually committed (the signal the link handoff keys on).
+        if (_linkPlay && _game.PlyCount > plyBefore)
+            await PersistFragmentAsync();
+
+        RefreshStatus();
         await RenderBoardAsync();
         StateHasChanged();
 
@@ -376,6 +470,18 @@
         }
 
         var (mode, computerSide, sideToMove) = _wizard.Result;
+
+        if (mode == GameMode.PlayByLink)
+        {
+            // "computerSide" carries the side NOT locally controlled — here the remote
+            // correspondent (see StartupWizard.Result docs). No AI is ever involved.
+            _vsComputer = false;
+            _linkPlay = true;
+            _localSide = computerSide == Side.White ? Side.Black : Side.White;
+            await StartPlayingAsync();
+            return;
+        }
+
         _vsComputer = computerSide != Side.None;
         _humanSide = computerSide == Side.White ? Side.Black : Side.White;
         _setupSideToMove = sideToMove;
@@ -393,7 +499,18 @@
     {
         _screen = Screen.Playing;
         StartNewGame();
+        if (_linkPlay)
+        {
+            // After ResetGame (which builds the fresh GameUI): one-local-move gate. Creator as
+            // White moves first then shares; as Black the empty-game link IS the invitation.
+            Ui.MoveLockSide = _localSide;
+            _incomingFragment = GameLinkCodec.EncodeFragment(_game);
+            _incomingPlyCount = 0;
+            RefreshStatus();
+        }
         await RenderBoardAsync();
+        if (_linkPlay)
+            await PersistFragmentAsync();
         await MaybeAiMoveAsync(); // if the human chose Black, White (the AI) opens
     }
 
@@ -401,8 +518,17 @@
     {
         _busy = false;
         _display.StatusOverride = null;
+        if (_linkPlay)
+        {
+            // Leaving a link game: scrub the fragment so the address bar doesn't keep offering
+            // a stale game, and drop the session state.
+            _linkPlay = false;
+            _lastAppliedFragment = null;
+            _linkShared = false;
+            await JS.InvokeVoidAsync("chessCanvas.replaceStateFragment", "");
+        }
         _screen = Screen.Menu;
-        _wizard = new StartupWizard();
+        _wizard = new StartupWizard(includeLinkPlay: true);
         ShowWizardStep();
         await RenderMenuAsync();
     }
@@ -433,7 +559,7 @@
         _display.ResetGame(_game);
         _screen = Screen.Playing;
         _busy = false;
-        _status = StatusText();
+        RefreshStatus();
         await RenderBoardAsync();
         await MaybeAiMoveAsync();
     }
@@ -445,7 +571,7 @@
         _game = new Game();
         _display.ResetGame(_game); // builds GameUI at the display's board area (total − chrome)
         _busy = false;
-        _status = StatusText();
+        RefreshStatus();
     }
 
     async Task OnPointerDownAsync(CanvasPointerEventArgs e)
@@ -468,12 +594,23 @@
 
         // No IsFinished gate: after mate the history panel stays clickable (playback review),
         // exactly like the desktop; GameUI/Game reject board moves on a finished game.
+        var plyBefore = _game.PlyCount;
         var (response, _) = Ui.HandleMouseDown(e.X, e.Y);
+
+        // IsUpdate also fires for playback navigation — only a ply-count increase means a move
+        // was actually committed (the signal the link handoff keys on).
+        if (_linkPlay && _game.PlyCount > plyBefore)
+        {
+            await PersistFragmentAsync();
+            RefreshStatus();
+            StateHasChanged(); // the share row just appeared
+        }
+
         await RenderBoardAsync();
 
         if (response.HasFlag(UIResponse.IsUpdate))
         {
-            _status = StatusText();
+            RefreshStatus();
             await MaybeAiMoveAsync();
         }
     }
@@ -485,7 +622,7 @@
         if (!_vsComputer)
         {
             _busy = false;
-            _status = StatusText();
+            RefreshStatus();
             StateHasChanged();
             return;
         }
@@ -507,12 +644,12 @@
             _game.TryMove(mv);
 
             _display.StatusOverride = null;
-            _status = StatusText();
+            RefreshStatus();
             await RenderBoardAsync();
         }
         _busy = false;
         _display.StatusOverride = null;
-        _status = StatusText();
+        RefreshStatus();
         StateHasChanged();
     }
 
@@ -562,6 +699,181 @@
         if (int.TryParse((string?)e.Value, out var d)) _aiDepth = d;
     }
 
-    string StatusText()
+    // ---- status ---------------------------------------------------------------------------------
+
+    // Keeps the sr-only aria-live paragraph and the in-canvas status bar in lockstep. Link play
+    // overrides the display's derived text with its own handoff phrases; every other mode keeps
+    // GameUI's derived status bar (Override = null).
+    void RefreshStatus()
+    {
+        _status = StatusText();
+        _display.StatusOverride = _linkPlay ? _status : null;
+    }
+
+    string StatusText() => _linkPlay ? LinkPlayStatusText() : PlainStatusText();
+
+    string PlainStatusText()
         => _game.GameStatus.ToMessage(_game.IsFinished ? _game.Winner : _game.CurrentSide);
+
+    string LinkPlayStatusText()
+    {
+        if (_game.IsFinished)
+            return PlainStatusText();
+        if (_game.CurrentSide == _localSide)
+            return $"Your move ({_localSide}) — make it, then send the link.";
+        if (_linkShared)
+            return $"Waiting for {_localSide.ToOpposite()}'s reply link…";
+        return _game.PlyCount == 0
+            ? "Send the link to your opponent — they open it and play White."
+            : "Move staged — copy, email, or share the link now.";
+    }
+
+    // ---- Play by Link: fragment plumbing --------------------------------------------------------
+
+    // The single writer of the address bar: encodes the live game and replaceState's it in, so a
+    // bookmark (or a copy of the URL) is always the current game. Also re-arms the "not yet
+    // shared" state whenever the position actually changed.
+    async Task PersistFragmentAsync()
+    {
+        var fragment = GameLinkCodec.EncodeFragment(_game);
+        if (fragment == _lastAppliedFragment) return;
+        _lastAppliedFragment = fragment;
+        _linkShared = false;
+        _linkCopied = false;
+        await JS.InvokeVoidAsync("chessCanvas.replaceStateFragment", fragment);
+    }
+
+    // Shared by boot, same-tab link navigation, and Undo: decode + replay a fragment and, if it
+    // holds a game, put it on screen as a link-play session. "Receiving a link means it's your
+    // turn": the local side is whatever side is to move in the decoded position.
+    async Task<bool> TryApplyFragmentAsync(string fragment)
+    {
+        var result = GameLinkCodec.TryDecode(fragment, out var game, out var error);
+        if (result == GameLinkResult.NoLink)
+        {
+            _linkError = null;
+            return false;
+        }
+        if (result == GameLinkResult.Invalid)
+        {
+            _linkError = $"That link isn't a valid chess game ({error}).";
+            _status = _linkError;
+            return false;
+        }
+
+        _game = game!;
+        _display.ResetGame(_game);
+        _vsComputer = false;
+        _linkPlay = true;
+        _linkError = null;
+        _linkShared = false;
+        _localSide = _game.CurrentSide;
+        Ui.MoveLockSide = _localSide;
+        _incomingPlyCount = _game.PlyCount;
+        _screen = Screen.Playing;
+        _busy = false;
+        RefreshStatus();
+        await RenderBoardAsync();
+        return true;
+    }
+
+    // Fragment-only navigation (opponent's next link pasted into this same tab) raises
+    // LocationChanged without reloading the WASM app — apply it like a fresh open. The
+    // _lastAppliedFragment guard swallows echoes of our own replaceState. An invalid link
+    // mid-session only sets the status; it never tears down the running game.
+    async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        try
+        {
+            if (!_ready || _busy) return;
+            var fragment = new Uri(e.Location).Fragment;
+            if (fragment == _lastAppliedFragment) return;
+
+            await InvokeAsync(async () =>
+            {
+                if (await TryApplyFragmentAsync(fragment))
+                {
+                    _incomingFragment = fragment;
+                    await PersistFragmentAsync();
+                }
+                StateHasChanged();
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[chess-web] LocationChanged handling failed: {ex}");
+        }
+    }
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+
+    // ---- Play by Link: share row ----------------------------------------------------------------
+
+    // The handoff affordances appear once the local move is staged (or the game just ended and
+    // the final link still needs sending). While it's genuinely your turn there's nothing to
+    // share yet — the row appearing IS the "now send it" cue.
+    bool ShowShareRow => _linkPlay && (_game.IsFinished || _game.CurrentSide != _localSide);
+
+    // Undo is only offered while the staged local move hasn't notionally left this tab — it
+    // re-parses the fragment as received, so even a move that just ended the game (a misclick
+    // into stalemate) can be taken back before sending.
+    bool CanUndo => _linkPlay && _incomingFragment is not null && _game.PlyCount > _incomingPlyCount;
+
+    string GameUrl => Nav.BaseUri + GameLinkCodec.EncodeFragment(_game); // BaseUri ends in '/'
+
+    // The entire body (URL included) is percent-encoded: '#' and '&' inside a mailto body value
+    // would otherwise truncate the link in most mail clients.
+    string MailtoHref
+    {
+        get
+        {
+            var subject = Uri.EscapeDataString("Your move! ♟ (chess by link)");
+            var body = Uri.EscapeDataString(
+                $"It's your move — open this link to see the board and reply with yours:\n\n{GameUrl}");
+            return $"mailto:?subject={subject}&body={body}";
+        }
+    }
+
+    async Task CopyLinkAsync()
+    {
+        var ok = await JS.InvokeAsync<bool>("chessCanvas.copyText", GameUrl);
+        _linkCopied = ok;
+        if (ok) _linkShared = true;
+        RefreshStatus();
+        StateHasChanged();
+        if (ok) _ = ResetCopiedLabelAfterDelayAsync();
+    }
+
+    async Task ResetCopiedLabelAfterDelayAsync()
+    {
+        await Task.Delay(1500);
+        _linkCopied = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    async Task ShareLinkAsync()
+    {
+        var ok = await JS.InvokeAsync<bool>("chessCanvas.shareLink", GameUrl,
+            "Chess — your move", "It's your move! Open the link to play:");
+        if (ok)
+        {
+            _linkShared = true;
+            RefreshStatus();
+            StateHasChanged();
+        }
+    }
+
+    // Optimistic — fired from the mailto anchor's onclick; we can't observe the mail client.
+    void MarkShared()
+    {
+        _linkShared = true;
+        RefreshStatus();
+    }
+
+    async Task UndoLocalMoveAsync()
+    {
+        if (await TryApplyFragmentAsync(_incomingFragment!))
+            await PersistFragmentAsync();
+        StateHasChanged();
+    }
 }

@@ -20,6 +20,7 @@ on:
     paths:
       - 'Chess.Web/**'
       - 'Chess.Lib/**'
+      - 'Chess.UCI/**'
       - 'tools/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:

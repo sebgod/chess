@@ -742,4 +742,109 @@ public class GameUITests
         // ScrollHistory should return a valid response
         (response == UIResponse.None || response.HasFlag(UIResponse.IsUpdate)).ShouldBeTrue();
     }
+
+    // ── MoveLockSide (Play by Link) ───────────────────────────────
+
+    [Fact]
+    public void MoveLockSide_Null_AllowsHotSeatMoves()
+    {
+        var ui = CreateStandardUI();
+
+        ui.TryPerformAction(E2);
+        ui.TryPerformAction(E4);
+        ui.TryPerformAction(E7);
+        ui.TryPerformAction(E5);
+
+        ui.Game.PlyCount.ShouldBe(2); // both colours moved through one UI, as ever
+    }
+
+    [Fact]
+    public void MoveLockSide_MatchingSide_AllowsMove()
+    {
+        var ui = CreateStandardUI();
+        ui.MoveLockSide = Side.White;
+
+        ui.TryPerformAction(E2);
+        var (response, _) = ui.TryPerformAction(E4);
+
+        response.HasFlag(UIResponse.IsUpdate).ShouldBeTrue();
+        ui.Game.PlyCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public void MoveLockSide_OtherSidesTurn_BlocksSelectionAndMove()
+    {
+        var ui = CreateStandardUI();
+        ui.MoveLockSide = Side.Black; // White to move — this tab controls Black
+
+        var (selectResponse, _) = ui.TryPerformAction(E2);
+        selectResponse.ShouldBe(UIResponse.None);
+        ui.Selected.ShouldBeNull(); // a locked click does nothing at all — no selection
+
+        var (moveResponse, _) = ui.TryPerformAction(DoMove(E2, E4));
+        moveResponse.ShouldBe(UIResponse.None);
+        ui.Game.PlyCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public void MoveLockSide_SelfLocksAfterOneMove()
+    {
+        // The correspondence gate: CurrentSide flips on commit, so one property set at load
+        // yields exactly one local move.
+        var ui = CreateStandardUI();
+        ui.MoveLockSide = Side.White;
+
+        ui.TryPerformAction(E2);
+        ui.TryPerformAction(E4);
+        ui.Game.PlyCount.ShouldBe(1);
+
+        ui.TryPerformAction(E7); // Black's reply must not be playable from this tab
+        ui.TryPerformAction(E5);
+
+        ui.Game.PlyCount.ShouldBe(1);
+        ui.Selected.ShouldBeNull();
+    }
+
+    [Fact]
+    public void MoveLockSide_PromotionAction_IsBlockedToo()
+    {
+        // The Action overload is the promotion picker's path — it must honor the lock as well.
+        // White pawn teleported to a7, promotion square cleared, Black to move.
+        var game = new Game(Board.StandardBoard - A7 - A8 - B8 + DoMove(A2, A7), Side.Black, []);
+        var ui = CreateUI(game);
+        ui.MoveLockSide = Side.White; // Black to move — the White promotion must stay locked
+
+        var (response, _) = ui.TryPerformAction(Promote(A7, A8, PieceType.Queen));
+
+        response.ShouldBe(UIResponse.None);
+        ui.Game.PlyCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public void MoveLockSide_PlaybackNavigation_StillWorksWhileLocked()
+    {
+        var game = new Game();
+        game.TryMove(DoMove(E2, E4));
+        game.TryMove(DoMove(E7, E5));
+        var ui = CreateUI(game);
+        ui.MoveLockSide = Side.Black; // White to move — board locked for this tab
+
+        var (response, _) = ui.NavigateBack();
+
+        response.HasFlag(UIResponse.IsUpdate).ShouldBeTrue();
+        ui.Mode.ShouldBe(GameUIMode.Playback); // reviewing history is never gated
+    }
+
+    [Fact]
+    public void Resize_PreservesMoveLockSide()
+    {
+        // The web host rebuilds GameUI via Resize on every canvas metrics change — losing the
+        // lock there would silently unlock the board mid-link-game.
+        var ui = CreateStandardUI();
+        ui.MoveLockSide = Side.Black;
+
+        var resized = ui.Resize(1024, 768);
+
+        resized.MoveLockSide.ShouldBe(Side.Black);
+    }
 }

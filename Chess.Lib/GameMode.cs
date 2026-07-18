@@ -8,5 +8,6 @@ public enum GameMode : byte
     PlayerVsPlayer,
     PlayerVsComputer,
     CustomGameEmpty,
-    CustomGameStandardBoard
+    CustomGameStandardBoard,
+    PlayByLink
 }

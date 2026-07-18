@@ -121,6 +121,50 @@ canvas#board:focus { outline: none; }
 }
 
 .controls button.new { font-weight: 600; }
+
+/* The share row's Email entry is an <a href="mailto:..."> — style it like its sibling buttons
+   (the button/select rule above doesn't reach anchors). */
+.controls a.share {
+    background: var(--panel);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: .5rem .8rem;
+    font: inherit;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+}
+
+.controls a.share:hover { border-color: var(--accent); }
+.controls button.share.copied { border-color: #6fdc8c; }
+
+/* --- "How Play by Link works" explainer --- */
+.help {
+    margin-top: 1.25rem;
+    color: var(--muted);
+    max-width: 62ch;
+    line-height: 1.5;
+}
+
+.help summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--fg);
+}
+
+.help summary:hover { color: var(--accent); }
+
+.help .help-body {
+    margin-top: .5rem;
+    border-left: 2px solid var(--border);
+    padding-left: 1rem;
+}
+
+.help p { margin: .5rem 0; }
+.help ol { margin: .5rem 0; padding-left: 1.4rem; }
+.help li { margin: .25rem 0; }
+.help strong, .help em { color: var(--fg); }
 .controls button:disabled, .controls select:disabled { opacity: .5; cursor: default; }
 .controls label { color: var(--muted); display: inline-flex; gap: .4rem; align-items: center; }
 .controls select { padding: .35rem .5rem; }

@@ -25,6 +25,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Chess.Lib\Chess.Lib.csproj" />
+    <!-- For UciMove + GameLinkCodec only (Play by Link). NOT a TrimmerRootAssembly: the
+         Process-based UciClient/UciPlayer must stay trimmable — nothing browser-side can
+         launch an engine process. -->
+    <ProjectReference Include="..\Chess.UCI\Chess.UCI.csproj" />
   </ItemGroup>
 
   <!-- WebGL backend: sibling working copy for local iteration, NuGet in CI (same switch as

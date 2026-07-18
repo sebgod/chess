@@ -191,6 +191,18 @@ public class GameUI
 
     public Side PlacementSide { get; set; } = Side.White;
 
+    /// <summary>
+    /// When set, restricts move commitment to this side only — correspondence ("Play by Link")
+    /// mode's one-local-move gate. Because <see cref="Chess.Lib.Game.CurrentSide"/> flips after
+    /// a committed ply, the host sets this once to the local player's fixed colour and the gate
+    /// self-locks after that one move — no separate "has moved" bookkeeping. Null (default) =
+    /// unrestricted, the hot-seat behaviour every other mode uses. Only the two
+    /// <see cref="TryPerformAction(Position)"/>/<see cref="TryPerformAction(Action)"/> commit
+    /// paths check it; selection highlights on your own turn, history playback, and the keymap
+    /// overlay are unaffected.
+    /// </summary>
+    public Side? MoveLockSide { get; set; }
+
     public Position? PendingPlacement { get; private set; }
 
     public File? PendingFile { get; set; }
@@ -286,6 +298,9 @@ public class GameUI
         resized.HistoryViewportRows = HistoryViewportRows;
         resized.HistoryScrollStart = HistoryScrollStart;
         resized.PendingFile = PendingFile;
+        // Not copying this would silently unlock the board on a window resize mid-link-game
+        // (the web host rebuilds GameUI through Resize on every canvas metrics change).
+        resized.MoveLockSide = MoveLockSide;
         return resized;
     }
 
@@ -873,6 +888,11 @@ public class GameUI
         if (Mode == GameUIMode.Playback)
             return (UIResponse.None, []);
 
+        // Gated before TrySelect: while waiting for the remote side a click does nothing at
+        // all — no selection, no legal-move hints — matching "the board is locked".
+        if (MoveLockSide is { } lockSide && Game.CurrentSide != lockSide)
+            return (UIResponse.None, []);
+
         if (Selected is { } prev && prev != position)
         {
             return TryPerformAction(Action.DoMove(prev, position));
@@ -894,6 +914,11 @@ public class GameUI
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TryPerformAction(Action action)
     {
         if (Mode == GameUIMode.Playback)
+            return (UIResponse.None, []);
+
+        // Also gated here (not just the Position overload): the promotion-picker paths build
+        // an Action directly and would otherwise bypass the lock.
+        if (MoveLockSide is { } lockSide && Game.CurrentSide != lockSide)
             return (UIResponse.None, []);
 
         var prevLastMove = LastMove;
