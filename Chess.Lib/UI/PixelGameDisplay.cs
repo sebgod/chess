@@ -22,10 +22,10 @@ public interface IPixelGameDisplay : IGameDisplay
 
 /// <summary>
 /// Renderer-agnostic pixel game display: board (via <see cref="GameUI"/>) + move-history panel
-/// (right) + status bar (bottom), laid out with <see cref="PixelLayout"/>. Hoisted verbatim from
-/// Chess.GUI's VkGameDisplay — nothing here was Vulkan-specific; the desktop display is now a
-/// thin <c>PixelGameDisplay&lt;VulkanContext&gt;</c> subclass and Chess.Web drives the same class
-/// over WebGlContext/RgbaImage. History rows are a declarative Layout tree, so each ply cell's
+/// (right) + status bar (bottom), laid out with <see cref="PixelLayout"/>. Originally Chess.GUI's
+/// Vulkan display, but nothing here is Vulkan-specific: the desktop GUI, Chess.Droid (Android), and
+/// Chess.Web all instantiate this class directly over their surface type (VulkanContext / RgbaImage
+/// / WebGlContext). History rows are a declarative Layout tree, so each ply cell's
 /// click region is auto-bound to its drawn rect (draw == hit); <see cref="ResolveHistoryClick"/>
 /// feeds GameUI's playback navigation.
 /// </summary>

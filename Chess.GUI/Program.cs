@@ -14,7 +14,7 @@ var player = new HumanPlayer();
 var bus = new SignalBus();
 
 var cts = new CancellationTokenSource();
-VkGameDisplay? display = null;
+PixelGameDisplay<VulkanContext>? display = null;
 Task<bool>? gameTask = null;
 
 var loop = new SdlEventLoop(sdlWindow, renderer)
@@ -80,7 +80,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             var (gameMode, computerSide, sideToMove) = menu.Result;
             menu = null;
 
-            display = new VkGameDisplay(renderer) { Bus = bus };
+            display = new PixelGameDisplay<VulkanContext>(renderer) { Bus = bus };
             var timeProvider = TimeProvider.System;
 
             var gameLoop = new GameLoop(

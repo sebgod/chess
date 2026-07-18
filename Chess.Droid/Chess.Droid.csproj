@@ -1,0 +1,49 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-android</TargetFramework>
+    <SupportedOSPlatformVersion>24.0</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- A namespace segment "Android" would shadow the global Android.* namespaces, so the root
+         namespace is Chess.Droid even though the assembly is the Android chess head. -->
+    <RootNamespace>Chess.Droid</RootNamespace>
+    <ApplicationId>org.sebgod.chess</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <!-- Android pilot head. Like Chess.Web, it lives OUTSIDE Chess.sln (CI has no Android SDK) and
+         is a local build/package artifact for now. -->
+  </PropertyGroup>
+
+  <!-- Pin a coherent SDL managed+native pair for android, overriding the repo's 3.5.0-preview CPM
+       pin for this head only. 3.4.10.5 (NOT 3.4.12.x, whose SDL3-CS.Android ships a Java-3.4.10 /
+       native-3.4.12 mismatch that trips SDL's runtime C/Java version check). -->
+  <ItemGroup>
+    <PackageReference Include="SDL3-CS" VersionOverride="3.4.10.5" />
+    <PackageReference Include="SDL3-CS.Android" VersionOverride="3.4.10.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Chess.Lib\Chess.Lib.csproj" />
+  </ItemGroup>
+
+  <!-- Bundle the glyph fonts as APK assets (assets/Fonts/*.ttf); MainActivity.StageFonts copies
+       them to FontPaths.FontsDirectory at startup so PixelGameDisplay's rasterizer finds them. -->
+  <ItemGroup>
+    <AndroidAsset Include="..\Chess.Lib\Fonts\DejaVuSans.ttf" Link="Assets\Fonts\DejaVuSans.ttf" />
+    <AndroidAsset Include="..\Chess.Lib\Fonts\Merida.ttf" Link="Assets\Fonts\Merida.ttf" />
+  </ItemGroup>
+
+  <!-- Renderer + DIR.Lib: sibling working copies for local iteration, NuGet otherwise (mirrors
+       Chess.GUI). The renderer must be the multi-targeted build carrying the net10.0-android TFM. -->
+  <ItemGroup Condition="'$(UseLocalSiblings)' == 'true'">
+    <ProjectReference Include="..\..\DIR.Lib\src\DIR.Lib\DIR.Lib.csproj" />
+    <ProjectReference Include="..\..\SdlVulkan.Renderer\src\SdlVulkan.Renderer\SdlVulkan.Renderer.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
+    <PackageReference Include="DIR.Lib" />
+    <PackageReference Include="SdlVulkan.Renderer" />
+  </ItemGroup>
+
+</Project>
