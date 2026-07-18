@@ -22,6 +22,8 @@
     </PackageReference>
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
     <PackageReference Include="Shouldly" />
+    <!-- PngWriter, for dumping the offline PixelGameDisplay renders as PNGs (PixelGameDisplayLayoutTests). -->
+    <PackageReference Include="SharpAstro.Png" />
   </ItemGroup>
 
   <ItemGroup>

@@ -45,6 +45,9 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
     private const float HistoryPanelWidthFactor = 18f;
     private const float StatusBarHeightFactor = 2f;
 
+    // GameUI's natural aspect (height:width) — matches the web board canvas (760x840 == 9.5:10.5).
+    private const float BoardAspect = 10.5f / 9.5f;
+
     private readonly string _labelFont;
     private GameUI? _gameUI;
     private volatile bool _hasPendingUpdate;
@@ -125,14 +128,21 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         var totalH = (float)Renderer.Height;
         var layout = new PixelLayout(new RectF32(0, 0, totalW, totalH));
 
-        var statusRect = layout.Dock(PixelDockStyle.Bottom, totalH - boardH);
-        var historyRect = layout.Dock(PixelDockStyle.Right, totalW - boardW);
-        var boardRect = layout.Fill();
+        // Status bar: full-width bottom strip in every layout.
+        var statusRect = layout.Dock(PixelDockStyle.Bottom, StatusBarHeight);
 
+        // History panel: side-by-side only in landscape. In portrait (phones) the board takes the
+        // full width and the history panel is dropped — a fixed-width vertical move list can't share
+        // a narrow screen without squeezing the board to nothing (see ComputeBoardArea).
+        var showHistory = !IsPortrait;
+        var historyRect = showHistory ? layout.Dock(PixelDockStyle.Right, HistoryPanelWidth) : default;
+
+        // The board is anchored at the clip origin (top-left); the clip matches ComputeBoardArea.
         var boardClip = new RectInt((boardW, boardH), PointInt.Origin);
         _gameUI.Render<TSurface, Renderer<TSurface>>(Renderer, boardClip);
 
-        RenderHistoryPanel(historyRect);
+        if (showHistory)
+            RenderHistoryPanel(historyRect);
         RenderStatusBar(statusRect);
     }
 
@@ -142,10 +152,26 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
     private float HistoryPanelWidth => ChromeFontSize * HistoryPanelWidthFactor;
     private float StatusBarHeight => ChromeFontSize * StatusBarHeightFactor;
 
+    /// <summary>Portrait when the surface is taller than wide — phones, where the desktop
+    /// board-left / history-right split doesn't fit: the history panel is a width derived from
+    /// ChromeFontSize (a function of height), so on a tall narrow screen it exceeds the whole width
+    /// and the board area would go negative.</summary>
+    private bool IsPortrait => Renderer.Height > Renderer.Width;
+
     private (int BoardW, int BoardH) ComputeBoardArea()
     {
         var totalW = (int)Renderer.Width;
         var totalH = (int)Renderer.Height;
+
+        if (IsPortrait)
+        {
+            // Board spans the full width at its natural aspect; the history panel is dropped and the
+            // status bar keeps the bottom strip. Clamp so the board never exceeds the space above it.
+            var availH = totalH - (int)StatusBarHeight;
+            var boardH = Math.Min(availH, (int)(totalW * BoardAspect));
+            return (totalW, boardH);
+        }
+
         return (totalW - (int)HistoryPanelWidth, totalH - (int)StatusBarHeight);
     }
 
