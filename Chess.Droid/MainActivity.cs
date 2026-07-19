@@ -11,6 +11,10 @@ using SdlVulkan.Renderer;
 using static Android.Content.PM.ConfigChanges;
 using File = System.IO.File;
 
+// Use the rendered white-knight launcher icon (mipmap PNGs generated from DIR.Lib's
+// chess_white_knight baseline) instead of the default Android robot.
+[assembly: Application(Label = "Chess", Icon = "@mipmap/ic_launcher")]
+
 namespace Chess.Droid;
 
 /// <summary>
