@@ -57,6 +57,32 @@ public sealed class PixelGameDisplayLayoutTests
         lightFraction.ShouldBeGreaterThan(0.05, $"{label} ({width}x{height}) drew too few board pixels; PNG at {pngPath}");
     }
 
+    [Fact]
+    public void Startup_menu_renders()
+    {
+        using var renderer = new RgbaImageRenderer(1080, 2408);
+        FillBackground(renderer.Surface.Pixels, PixelGameDisplay<RgbaImage>.Background);
+
+        // Same StartupWizard + PixelMenuWidget the Android host mounts (Chess.Droid), rendered over the
+        // CPU surface — proves the menu draws without a device.
+        var wizard = new StartupWizard();
+        var menu = new PixelMenuWidget<RgbaImage>(renderer, FontPaths.DejaVuSans);
+        var (title, prompt, items) = wizard.Current;
+        menu.Reset(title, prompt, [.. items]);
+        menu.Render();
+
+        var pixels = renderer.Surface.Pixels;
+        long light = 0;
+        for (var i = 0; i + 3 < pixels.Length; i += 4)
+            if (IsLight(pixels[i], pixels[i + 1], pixels[i + 2])) light++;
+
+        File.WriteAllBytes(Path.Combine(AppContext.BaseDirectory, "startup-menu.png"),
+            PngWriter.Encode(pixels, renderer.Surface.Width, renderer.Surface.Height));
+
+        // The title + prompt + three items are light text on the dark menu — thousands of light pixels.
+        light.ShouldBeGreaterThan(2000, "startup menu drew too little text");
+    }
+
     private static void FillBackground(byte[] px, RGBAColor32 c)
     {
         for (var i = 0; i + 3 < px.Length; i += 4)
