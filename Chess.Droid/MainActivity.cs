@@ -45,6 +45,11 @@ public sealed class MainActivity : SdlVulkanActivity
 
     protected override void OnRendererReady(VkRenderer renderer, SdlEventLoop loop)
     {
+        // Route the renderer's loop diagnostics to logcat (Android has no console) — surfaces the
+        // background/foreground surface-recreation traces. The renderer's DebugLog is compiled in only
+        // for DEBUG or ANDROID, so this costs nothing on desktop Release. Tag: "chessdroid".
+        SdlEventLoop.DiagnosticLog = m => Android.Util.Log.Info("chessdroid", m);
+
         // PixelGameDisplay loads its glyph fonts from FontPaths.FontsDirectory
         // (AppContext.BaseDirectory/Fonts). That path is empty in the APK sandbox, so stage the
         // bundled asset copies into it first — the Android analog of Chess.Web's LoadFontsAsync.
