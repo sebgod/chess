@@ -1,5 +1,9 @@
 # Deferred: landscape-mode polish (Android)
 
+> **Unblocked by DIR.Lib 6.14:** the new responsive-layout primitives (`CollapseBelow`, clamped
+> `Star` min/max, `Wrap`) now cover the panel/strip math these items hand-roll, so items 1–2 below
+> can lean on the framework instead of bespoke rect arithmetic.
+
 **Status:** deferred (future improvement). Landscape already **works** — rotation renders upright
 (`preTransform = Identity` in the renderer), the game is preserved across the rotate, the display
 cutout moves to a **left** inset and the board shifts clear of it via `GameUI` `leftOffset`, and the
