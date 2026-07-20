@@ -172,8 +172,6 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
             netSession = await new ConsoleLanLobby(terminal, timeProvider, lanDir, preferredColor)
                 .ShowAsync(cancellationToken);
             if (netSession is null) { restart = true; continue; }
-            computerSide = netSession.RemoteSide;
-            sideToMove = Side.White;
         }
 
         Func<IGameDisplay> displayFactory = () =>
@@ -182,12 +180,8 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
         GameLoop gameLoop;
         if (netSession is { } session)
         {
-            gameLoop = new GameLoop(
-                timeProvider,
-                displayFactory,
-                () => new LocalNetworkPlayer(new HumanPlayer(terminal), session),
-                (_, _) => new NetworkPlayer(session)
-            );
+            (gameLoop, computerSide, sideToMove) = NetworkGame.CreateLoop(
+                timeProvider, displayFactory, () => new HumanPlayer(terminal), session);
         }
         else
         {
