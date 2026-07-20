@@ -121,23 +121,25 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                 lobby = null;
 
                 currentGameIsNetwork = true;
-                currentComputerSide = session.RemoteSide;
                 display = new PixelGameDisplay<VulkanContext>(renderer) { Bus = bus };
 
-                var netLoop = new GameLoop(
-                    TimeProvider.System,
-                    () => display,
-                    () => new LocalNetworkPlayer(player, session),
-                    (_, _) => new NetworkPlayer(session)
-                );
+                var (netLoop, computerSide, sideToMove) =
+                    NetworkGame.CreateLoop(TimeProvider.System, () => display, () => player, session);
+                currentComputerSide = computerSide;
 
-                gameTask = netLoop.RunAsync(GameMode.NetworkGame, session.RemoteSide, Side.White, cts.Token);
+                gameTask = netLoop.RunAsync(GameMode.NetworkGame, computerSide, sideToMove, cts.Token);
             }
             else if (lobby.IsAborted)
             {
                 lobby.Dispose();
                 lobby = null;
                 menu = new VkStartupMenu(CanContinue());
+                // Paint the fresh menu in THIS frame: once lobby is null the CheckNeedsRedraw
+                // predicate goes false, so SDL parks in WaitEventTimeout and no further frame comes
+                // until the next input — without this the menu would stay invisible (blank window)
+                // until the user pressed a key. (The earlier menu branch already ran this frame with
+                // menu still null, so it won't repaint on its own.)
+                menu.Render(renderer);
             }
             else
             {
