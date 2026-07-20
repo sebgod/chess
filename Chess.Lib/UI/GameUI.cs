@@ -46,6 +46,8 @@ public class GameUI
     private readonly int _margin;
     private readonly int _squareSize;
     private readonly int _topMargin;
+    private readonly int _topOffset;
+    private readonly int _leftOffset;
     private readonly int _boardEnd;
     private readonly (uint X, uint Y)? _alignment;
 
@@ -66,10 +68,11 @@ public class GameUI
         "Gameplay\n" +
         "  a-h    Select file\n" +
         "  1-8    Select rank\n" +
-        "  Esc    Cancel selection\n" +
+        "  Esc    Cancel, then back to menu\n" +
         "\n" +
         "Playback\n" +
         "  Ctrl+Arrow  Navigate history\n" +
+        "  PgUp/PgDn   Scroll history\n" +
         "  Esc         Exit playback\n" +
         "\n" +
         "Promotion\n" +
@@ -83,7 +86,8 @@ public class GameUI
         "\n" +
         "F1       Toggle this help\n" +
         "F8       Back to menu\n" +
-        "F9       New game";
+        "F9       New game\n" +
+        "F11      Toggle fullscreen";
 
     private const int PieceTypeStride = 7;
     private const int LastMoveBorderWidth = 3;
@@ -103,11 +107,15 @@ public class GameUI
         RGBAColor32? mainFontColor = null,
         RGBAColor32? backgroundColor = null,
         (uint X, uint Y)? alignment = null,
-        Func<int, int, int?>? resolveHistoryClick = null)
+        Func<int, int, int?>? resolveHistoryClick = null,
+        int topOffset = 0,
+        int leftOffset = 0)
     {
         Game = game;
         ResolveHistoryClick = resolveHistoryClick;
         _alignment = alignment;
+        _topOffset = topOffset;
+        _leftOffset = leftOffset;
         _squareSize = CalculateSquareSize(uiSizeX, uiSizeY);
 
         if (alignment is (var alignX, var alignY))
@@ -128,6 +136,14 @@ public class GameUI
             var contentHeight = 8 * _squareSize + 2 * _margin + 2 * capturedHeight;
             _topMargin = Math.Max(minTopMargin, ((int)uiSizeY - contentHeight) / 2 + capturedHeight);
         }
+
+        // Every y-coordinate (draw AND hit-test) flows through _topMargin, so folding the offset in
+        // here shifts the whole board uniformly — pushes content below a phone's display cutout
+        // (PixelGameDisplay's safe-area top inset) without per-site coordinate changes. An aligned
+        // host (sixel cells) should pass a cell-aligned offset to keep square boundaries aligned.
+        // X has no such funnel (_margin doubles as a y-inset and a size term), so _leftOffset is
+        // added explicitly at every x-origin site instead (landscape phones: cutout on the side).
+        _topMargin += topOffset;
 
         _boardEnd = _squareSize * 8 + _margin;
 
@@ -276,9 +292,11 @@ public class GameUI
     public int SquareSize => _squareSize;
 
     /// <summary>
-    /// Creates a new <see cref="GameUI"/> with the given dimensions, preserving game state, selection, and style.
+    /// Creates a new <see cref="GameUI"/> with the given dimensions, preserving game state, selection,
+    /// and style. Pass <paramref name="topOffset"/> when the safe-area top inset changed with the
+    /// resize (rotation moves the cutout); null keeps the current offset.
     /// </summary>
-    public GameUI Resize(uint uiSizeX, uint uiSizeY)
+    public GameUI Resize(uint uiSizeX, uint uiSizeY, int? topOffset = null, int? leftOffset = null)
     {
         var resized = new GameUI(
             Game, uiSizeX, uiSizeY,
@@ -289,7 +307,9 @@ public class GameUI
             mainFontColor: _mainFontColor,
             backgroundColor: _backgroundColor,
             alignment: _alignment,
-            resolveHistoryClick: ResolveHistoryClick);
+            resolveHistoryClick: ResolveHistoryClick,
+            topOffset: topOffset ?? _topOffset,
+            leftOffset: leftOffset ?? _leftOffset);
         resized.Mode = Mode;
         resized.PlaybackPlyIndex = PlaybackPlyIndex;
         resized.PlacementSide = PlacementSide;
@@ -310,7 +330,7 @@ public class GameUI
         // board
         RenderBoard<TRenderer, TSurface>(renderer, clip);
 
-        var boardRect = new RectInt((_boardEnd, _topMargin + _boardEnd), (_margin, _topMargin + _margin));
+        var boardRect = new RectInt((_leftOffset + _boardEnd, _topMargin + _boardEnd), (_leftOffset + _margin, _topMargin + _margin));
 
         // If the clip is entirely within the board area, skip chrome rendering
         if (clip.IsContainedWithin(boardRect))
@@ -328,10 +348,12 @@ public class GameUI
             var fileText = pos.File.ToLabel();
             var rankText = pos.Rank.ToLabel();
 
-            var top = new RectInt((x_y + _squareSize, _topMargin + _margin), (x_y, _topMargin));
+            // x_y doubles as an x (file labels) and a y (rank labels); only the x uses take the
+            // left offset — the y side is already shifted through _topMargin.
+            var top = new RectInt((_leftOffset + x_y + _squareSize, _topMargin + _margin), (_leftOffset + x_y, _topMargin));
             var bottom = new RectInt((top.LowerRight.X, top.LowerRight.Y + _boardEnd), (top.UpperLeft.X, top.UpperLeft.Y + _boardEnd));
 
-            var left = new RectInt((_margin, x_y + _topMargin + _squareSize), (0, x_y + _topMargin));
+            var left = new RectInt((_leftOffset + _margin, x_y + _topMargin + _squareSize), (_leftOffset, x_y + _topMargin));
             var right = new RectInt((left.LowerRight.X + _boardEnd, left.LowerRight.Y), (left.UpperLeft.X + _boardEnd, left.UpperLeft.Y));
 
             renderer.DrawText(fileText, _labelFont, _labelFontSize, _mainFontColor, top, vertAlignment: TextAlign.Center);
@@ -364,17 +386,18 @@ public class GameUI
                 }
             }
 
+            var capturedTextX = _leftOffset + _margin;
             var whiteCapturedTextY = _topMargin + _boardEnd + _margin;
-            if (clip.Contains(_margin, whiteCapturedTextY))
+            if (clip.Contains(capturedTextX, whiteCapturedTextY))
             {
-                DrawCapturedText<TRenderer, TSurface>(renderer, capturedPieceCounts, Side.White, _margin, whiteCapturedTextY);
+                DrawCapturedText<TRenderer, TSurface>(renderer, capturedPieceCounts, Side.White, capturedTextX, whiteCapturedTextY);
             }
 
             var capturedCellHeight = (int)MathF.Round(_capturedFontSize * 1.4f);
             var blackCapturedTextY = _topMargin - capturedCellHeight;
-            if (clip.Contains(_margin, blackCapturedTextY))
+            if (clip.Contains(capturedTextX, blackCapturedTextY))
             {
-                DrawCapturedText<TRenderer, TSurface>(renderer, capturedPieceCounts, Side.Black, _margin, blackCapturedTextY);
+                DrawCapturedText<TRenderer, TSurface>(renderer, capturedPieceCounts, Side.Black, capturedTextX, blackCapturedTextY);
             }
         }
 
@@ -449,9 +472,10 @@ public class GameUI
     private void DrawCapturedText<TRenderer, TSurface>(TRenderer renderer, ReadOnlySpan<byte> capturedPieceCounts, Side side, int x, int y)
         where TRenderer : Renderer<TSurface>
     {
-        // Calculate size and clear the area first
+        // Calculate size and clear the area first. x arrives left-offset, so measure the width
+        // against the board's right edge in the same (offset) coordinates.
         var cellSize = (int)MathF.Round(_capturedFontSize * 1.4f);
-        var maxWidth = _boardEnd - x;
+        var maxWidth = _leftOffset + _boardEnd - x;
         var clearRect = new RectInt((x + maxWidth, y + cellSize), (x, y));
         renderer.FillRectangle(clearRect, _capturedAreaColor);
 
@@ -490,7 +514,8 @@ public class GameUI
                 var sqY = (7 - rankIdx) * _squareSize;
 
                 var lowerY = sqY + _margin + _topMargin;
-                var rect = new RectInt((x + _margin + _squareSize, lowerY + _squareSize), (x + _margin, lowerY));
+                var lowerX = x + _margin + _leftOffset;
+                var rect = new RectInt((lowerX + _squareSize, lowerY + _squareSize), (lowerX, lowerY));
 
                 if (!rect.OverlapsWith(clip))
                 {
@@ -666,7 +691,7 @@ public class GameUI
 
     public Position? FindSelected(int x, int y)
     {
-        var boardX = x - _margin;
+        var boardX = x - _margin - _leftOffset;
         var boardY = y - _margin - _topMargin;
 
         var fileIdx = boardX / _squareSize;
@@ -694,7 +719,7 @@ public class GameUI
 
     public RectInt SquareRect(Position position)
     {
-        var x = (int)position.File * _squareSize + _margin;
+        var x = (int)position.File * _squareSize + _margin + _leftOffset;
         var y = (7 - (int)position.Rank) * _squareSize + _margin + _topMargin;
 
         return new RectInt((x + _squareSize, y + _squareSize), (x, y));
@@ -702,7 +727,7 @@ public class GameUI
 
     public RectInt PromotePieceTypeSelectionBox(Side side)
     {
-        var offX = _margin;
+        var offX = _margin + _leftOffset;
         var boardTop = _topMargin + _margin;
         var offY = side is Side.White ? boardTop : boardTop + 7 * _squareSize;
 
@@ -719,7 +744,7 @@ public class GameUI
         // Center the 7-square-wide popup on the selected file, clamped to the board
         var fileIdx = (int)position.File;
         var startFile = Math.Clamp(fileIdx - 3, 0, 1); // 7 squares wide, max start index is 1
-        var offX = startFile * _squareSize + _margin;
+        var offX = startFile * _squareSize + _margin + _leftOffset;
 
         // Place above the selected square
         var squareY = (7 - (int)position.Rank) * _squareSize + _margin + _topMargin;
@@ -779,13 +804,14 @@ public class GameUI
     {
         var cellSize = (int)MathF.Round(_capturedFontSize * 1.4f);
         var maxWidth = _boardEnd - _margin;
+        var x = _margin + _leftOffset;
 
         var whiteY = _topMargin + _boardEnd + _margin;
         var blackY = _topMargin - cellSize;
 
         return (
-            new RectInt((_margin + maxWidth, whiteY + cellSize), (_margin, whiteY)),
-            new RectInt((_margin + maxWidth, blackY + cellSize), (_margin, blackY))
+            new RectInt((x + maxWidth, whiteY + cellSize), (x, whiteY)),
+            new RectInt((x + maxWidth, blackY + cellSize), (x, blackY))
         );
     }
 
@@ -1199,8 +1225,12 @@ public class GameUI
 
     private (UIResponse Response, ImmutableArray<RectInt> ClipRects) TryHistoryClick(int x, int y)
     {
-        if (ResolveHistoryClick?.Invoke(x, y) is { } plyIndex && plyIndex >= 0 && plyIndex < Game.PlyCount)
+        if (ResolveHistoryClick?.Invoke(x, y) is { } plyIndex && plyIndex >= 0)
         {
+            // An index at/past the ply count is the "back to latest" affordance — the touch-side
+            // ExitPlayback (phones have no Esc; PixelGameDisplay binds it to a header chip).
+            if (plyIndex >= Game.PlyCount)
+                return Mode == GameUIMode.Playback ? ExitPlayback() : (UIResponse.None, []);
             return NavigateToPly(plyIndex);
         }
         return (UIResponse.None, []);
@@ -1277,8 +1307,14 @@ public class GameUI
 
         if (key is InputKey.Escape)
         {
+            // Progressive escape: cancel an in-progress selection / pending file first; only when
+            // there's nothing left to cancel does escape unwind one more level back to the menu.
+            // Mirrors the Android back button, which the host maps to Escape (SdlInputMapping).
+            var hadInProgress = PendingFile is not null || Selected is not null;
             PendingFile = null;
             var (clearResponse, clearClips) = ClearSelection();
+            if (!hadInProgress)
+                return (UIResponse.NeedsRestart, []);
             return (clearResponse | UIResponse.IsUpdate, clearClips);
         }
 
@@ -1393,15 +1429,17 @@ public class GameUI
     /// status bars from this (styling/prefixing per surface) instead of re-deriving the facts;
     /// the three hand-written copies this replaced had drifted in wording and hints.
     /// </summary>
-    public string StatusLine()
+    public string StatusLine(bool keyHints = true)
     {
         var fileInfo = PendingFile is { } f ? $" [{f.ToLabel()}]" : "";
 
+        // keyHints: false on touch-only hosts (Chess.Droid) — "[Ctrl+Arrows, Esc exit]" is noise
+        // there (and overflows a phone-width status bar); playback exits via the history chip.
         if (Mode == GameUIMode.Playback)
-            return $"Playback: ply {PlaybackPlyIndex + 2}/{Game.PlyCount + 1}  [Ctrl+Arrows, Esc exit]";
+            return $"Playback: ply {PlaybackPlyIndex + 2}/{Game.PlyCount + 1}{(keyHints ? "  [Ctrl+Arrows, Esc exit]" : "")}";
 
         if (IsSetupMode)
-            return $"Setup: placing {PlacementSide} pieces [Tab toggle, s start]{fileInfo}";
+            return $"Setup: placing {PlacementSide} pieces{(keyHints ? " [Tab toggle, s start]" : "")}{fileInfo}";
 
         return $"{Game.GameStatus.ToMessage(Game.CurrentSide)}{fileInfo}";
     }

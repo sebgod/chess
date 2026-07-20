@@ -18,6 +18,33 @@ public class GameUITests
 
     private static GameUI CreateStandardUI() => CreateUI(new Game());
 
+    // ── Safe-area top offset ───────────────────────────────────────
+
+    [Fact]
+    public void TopOffset_ShiftsPixelHitTestingWithTheBoard()
+    {
+        // top/leftOffset shift drawing AND FindSelected's pixel->square mapping together — a tap
+        // that hit e2 unshifted hits e2 only when adjusted by both offsets (landscape phones put
+        // the cutout on the SIDE, so x matters as much as y).
+        const int topOffset = 137; // > one square at 800x800, so an unadjusted tap can't still hit e2
+        const int leftOffset = 61; // < one square: shifts the file by exactly one column at the edge
+        var game = new Game();
+        var ui = CreateUI(game);
+        var shifted = new GameUI(game, 800, 800, topOffset: topOffset, leftOffset: leftOffset);
+
+        // Locate e2's first (top-left-most) pixel on the unshifted board.
+        var (fx, fy) = (-1, -1);
+        for (var y = 0; y < 800 && fx < 0; y++)
+            for (var x = 0; x < 800; x++)
+                if (ui.FindSelected(x, y) == E2) { (fx, fy) = (x, y); break; }
+        fx.ShouldBeGreaterThanOrEqualTo(0, "probe never found e2 on the unshifted board");
+
+        shifted.FindSelected(fx, fy).ShouldNotBe(E2);
+        shifted.FindSelected(fx + leftOffset, fy).ShouldNotBe(E2);
+        shifted.FindSelected(fx, fy + topOffset).ShouldNotBe(E2); // x unadjusted -> lands a file left of e
+        shifted.FindSelected(fx + leftOffset, fy + topOffset).ShouldBe(E2);
+    }
+
     // ── Selection ──────────────────────────────────────────────────
 
     [Fact]
@@ -663,6 +690,33 @@ public class GameUITests
 
         response.HasFlag(UIResponse.IsUpdate).ShouldBeTrue();
         ui.Selected.ShouldBeNull();
+    }
+
+    [Fact]
+    public void HandleKeyDown_EscapeWithPendingFile_CancelsWithoutLeavingGame()
+    {
+        var ui = CreateStandardUI();
+        ui.HandleKeyDown(InputKey.E, InputModifier.None); // pending file e, nothing selected yet
+        ui.PendingFile.ShouldBe(File.E);
+
+        var (response, _) = ui.HandleKeyDown(InputKey.Escape, InputModifier.None);
+
+        // First escape cancels the pending input; it must NOT fall through to the menu.
+        ui.PendingFile.ShouldBeNull();
+        response.HasFlag(UIResponse.NeedsRestart).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void HandleKeyDown_EscapeWithNothingSelected_RequestsBackToMenu()
+    {
+        var ui = CreateStandardUI();
+        ui.Selected.ShouldBeNull();
+        ui.PendingFile.ShouldBeNull();
+
+        var (response, _) = ui.HandleKeyDown(InputKey.Escape, InputModifier.None);
+
+        // Progressive escape: with nothing to cancel, escape unwinds one level to the menu.
+        response.HasFlag(UIResponse.NeedsRestart).ShouldBeTrue();
     }
 
     [Fact]
