@@ -49,7 +49,7 @@ public sealed class UciPlayer(string enginePath, Side side, TimeProvider timePro
 
         if (_pendingMove is null)
         {
-            var moves = BuildMovesList(game);
+            var moves = UciMove.FormatMoves(game);
             var position = new UciCommand.SetPosition(_initialFen, moves);
             var go = new UciCommand.Go(MoveTime: 1000);
             _pendingMove = _client.GoAsync(position, go);
@@ -71,23 +71,6 @@ public sealed class UciPlayer(string enginePath, Side side, TimeProvider timePro
         }
 
         return null;
-    }
-
-    private static string[] BuildMovesList(Game game)
-    {
-        var plies = game.Plies;
-        var moves = new string[plies.Count];
-
-        for (var i = 0; i < plies.Count; i++)
-        {
-            var ply = plies[i];
-            var action = ply.Promoted is not PieceType.None
-                ? Action.Promote(ply.From, ply.To, ply.Promoted)
-                : Action.DoMove(ply.From, ply.To);
-            moves[i] = UciMove.Format(action);
-        }
-
-        return moves;
     }
 
     public async ValueTask DisposeAsync()

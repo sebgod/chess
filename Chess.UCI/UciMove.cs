@@ -44,6 +44,34 @@ public static class UciMove
         return result;
     }
 
+    /// <summary>
+    /// Formats a single recorded ply as a UCI move string, preserving the promotion piece.
+    /// <see cref="RecordedPly.Action"/> drops <c>Promoted</c>, so a promotion is rebuilt via the
+    /// factory here — otherwise "e7e8q" would silently degrade to "e7e8".
+    /// </summary>
+    public static string FormatPly(RecordedPly ply) =>
+        Format(ply.Promoted is not PieceType.None
+            ? Action.Promote(ply.From, ply.To, ply.Promoted)
+            : Action.DoMove(ply.From, ply.To));
+
+    /// <summary>
+    /// Formats a game's played plies as UCI move strings, in order — the one shared "moves" list
+    /// every mover-serializer needs: engine <c>position … moves …</c> sync, Play-by-Link fragments,
+    /// the Continue save, and LAN move exchange. Each move keeps its promotion piece via
+    /// <see cref="FormatPly"/>.
+    /// </summary>
+    public static string[] FormatMoves(Game game)
+    {
+        var plies = game.Plies;
+        var moves = new string[plies.Count];
+        for (var i = 0; i < plies.Count; i++)
+        {
+            moves[i] = FormatPly(plies[i]);
+        }
+
+        return moves;
+    }
+
     private static File ParseFile(char c) => c switch
     {
         >= 'a' and <= 'h' => (File)(c - 'a'),

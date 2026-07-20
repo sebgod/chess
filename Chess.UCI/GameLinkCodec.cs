@@ -44,20 +44,9 @@ public static class GameLinkCodec
     /// </summary>
     public static string EncodeFragment(Game game)
     {
-        var plies = game.Plies;
-        var moves = new string[plies.Count];
-
-        for (var i = 0; i < plies.Count; i++)
-        {
-            var ply = plies[i];
-            // RecordedPly.Action drops Promoted — rebuild via the factories (the same idiom as
-            // UciPlayer.BuildMovesList) so "e7e8q" doesn't degrade to "e7e8".
-            var action = ply.Promoted is not PieceType.None
-                ? Action.Promote(ply.From, ply.To, ply.Promoted)
-                : Action.DoMove(ply.From, ply.To);
-            moves[i] = UciMove.Format(action);
-        }
-
+        // Shared move-list helper rebuilds each ply WITH its promotion piece (RecordedPly.Action
+        // drops Promoted), so "e7e8q" doesn't degrade to "e7e8".
+        var moves = UciMove.FormatMoves(game);
         return $"#{GameKey}{KeyValueSeparator}{string.Join(MoveSeparator, moves)}";
     }
 

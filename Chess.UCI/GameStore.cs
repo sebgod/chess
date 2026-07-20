@@ -1,7 +1,5 @@
 using System;
-using System.Linq;
 using Chess.Lib;
-using Action = Chess.Lib.Action;
 using File = System.IO.File;
 
 namespace Chess.UCI;
@@ -62,7 +60,10 @@ public static class GameStore
     {
         try
         {
-            var moves = string.Join(' ', game.Plies.Select(FormatPly));
+            // FormatMoves reconstructs each move WITH its promotion piece (RecordedPly.Action drops
+            // Promoted): a bare "e7e8" would make the reload reject the illegal non-promoting pawn
+            // move and discard the whole save.
+            var moves = string.Join(' ', UciMove.FormatMoves(game));
             File.WriteAllText(path, $"{computerSide}\n{moves}");
         }
         catch (Exception ex)
@@ -70,12 +71,4 @@ public static class GameStore
             log?.Invoke($"[save] write failed: {ex.GetType().Name}: {ex.Message}");
         }
     }
-
-    // Reconstruct the move WITH its promotion piece: the computed RecordedPly.Action drops Promoted,
-    // so formatting that directly would write "e7e8" instead of "e7e8q" and the reload would reject
-    // the illegal non-promoting pawn move, discarding the whole save.
-    private static string FormatPly(RecordedPly ply) =>
-        UciMove.Format(ply.Promoted is not PieceType.None
-            ? Action.Promote(ply.From, ply.To, ply.Promoted)
-            : Action.DoMove(ply.From, ply.To));
 }
