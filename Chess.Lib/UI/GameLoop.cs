@@ -98,6 +98,13 @@ public class GameLoop(
             (whitePlayer, blackPlayer) = (humanPlayer, humanPlayer);
         }
 
+        // Orient the board to the local player's colour (their pieces at the bottom) when there's a
+        // single local human facing an engine/remote opponent; hot-seat (PvP) stays White-at-bottom.
+        // computerSide is the opponent's colour, so the local human is the opposite — flip exactly
+        // when the opponent plays White. Ctrl+F still overrides at runtime.
+        var flipForLocalSide = opponent is not null && computerSide is Side.White;
+        gameDisplay.UI.FlipBoard = flipForLocalSide;
+
         gameDisplay.RenderInitial(game);
 
         try
@@ -122,6 +129,7 @@ public class GameLoop(
                             ? new Game()
                             : new Game(initialBoard, sideToMove, []);
                         gameDisplay.ResetGame(game);
+                        gameDisplay.UI.FlipBoard = flipForLocalSide; // ResetGame builds a fresh GameUI
                         gameDisplay.RenderInitial(game);
                         if (opponent is not null)
                         {

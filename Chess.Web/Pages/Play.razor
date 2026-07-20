@@ -499,6 +499,9 @@
     {
         _screen = Screen.Playing;
         StartNewGame();
+        // Auto-orient to the local player's side (their pieces at the bottom): the correspondent's
+        // side in link play, the human's vs the AI. PvP leaves _humanSide = White, so no flip.
+        Ui.FlipBoard = (_linkPlay ? _localSide : _humanSide) == Side.Black;
         if (_linkPlay)
         {
             // After ResetGame (which builds the fresh GameUI): one-local-move gate. Creator as
@@ -557,6 +560,7 @@
         var setupBoard = _game.Board;
         _game = new Game(setupBoard, _setupSideToMove, []);
         _display.ResetGame(_game);
+        Ui.FlipBoard = _humanSide == Side.Black; // custom game vs the AI as Black -> flip
         _screen = Screen.Playing;
         _busy = false;
         RefreshStatus();
@@ -769,6 +773,7 @@
         _linkShared = false;
         _localSide = _game.CurrentSide;
         Ui.MoveLockSide = _localSide;
+        Ui.FlipBoard = _localSide == Side.Black; // orient to the receiving player's side
         _incomingPlyCount = _game.PlyCount;
         _screen = Screen.Playing;
         _busy = false;

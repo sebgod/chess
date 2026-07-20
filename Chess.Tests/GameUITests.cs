@@ -606,6 +606,76 @@ public class GameUITests
         pos.ShouldBeNull();
     }
 
+    // ── Board flip (orientation) ───────────────────────────────────
+
+    [Fact]
+    public void FlipBoard_MirrorsSquareToOppositeCorner()
+    {
+        var normal = CreateStandardUI();
+        var flipped = CreateStandardUI();
+        flipped.FlipBoard = true;
+
+        // A 180° rotation: a1 (bottom-left) lands where h8 (top-right) sits unflipped, and each
+        // square maps to its file+rank mirror (e2 -> d7).
+        flipped.SquareRect(A1).ShouldBe(normal.SquareRect(H8));
+        flipped.SquareRect(H8).ShouldBe(normal.SquareRect(A1));
+        flipped.SquareRect(E2).ShouldBe(normal.SquareRect(D7));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FindSelected_RoundTripsSquareRectCenter_EitherOrientation(bool flip)
+    {
+        var ui = CreateStandardUI();
+        ui.FlipBoard = flip;
+
+        // Draw and hit-test share one mapping, so a tap at a square's centre must resolve to it
+        // regardless of orientation.
+        foreach (var pos in new[] { A1, H8, E2, E4, D7, G1 })
+        {
+            var rect = ui.SquareRect(pos);
+            var cx = (rect.UpperLeft.X + rect.LowerRight.X) / 2;
+            var cy = (rect.UpperLeft.Y + rect.LowerRight.Y) / 2;
+            ui.FindSelected(cx, cy).ShouldBe(pos);
+        }
+    }
+
+    [Fact]
+    public void CtrlF_TogglesFlipBoard()
+    {
+        var ui = CreateStandardUI();
+        ui.FlipBoard.ShouldBeFalse();
+
+        var (response, _) = ui.HandleKeyDown(InputKey.F, InputModifier.Ctrl);
+
+        ui.FlipBoard.ShouldBeTrue();
+        response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
+
+        ui.HandleKeyDown(InputKey.F, InputModifier.Ctrl);
+        ui.FlipBoard.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void BareF_SelectsFileF_DoesNotFlip()
+    {
+        var ui = CreateStandardUI();
+
+        ui.HandleKeyDown(InputKey.F, InputModifier.None);
+
+        ui.FlipBoard.ShouldBeFalse();     // bare f must NOT flip (it's the file selector)
+        ui.PendingFile.ShouldBe(File.F);
+    }
+
+    [Fact]
+    public void FlipBoard_PreservedAcrossResize()
+    {
+        var ui = CreateStandardUI();
+        ui.FlipBoard = true;
+
+        ui.Resize(1000, 1000).FlipBoard.ShouldBeTrue();
+    }
+
     // ── LastMove ───────────────────────────────────────────────────
 
     [Fact]

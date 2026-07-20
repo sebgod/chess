@@ -68,6 +68,7 @@ public class GameUI
         "Gameplay\n" +
         "  a-h    Select file\n" +
         "  1-8    Select rank\n" +
+        "  Ctrl+F Flip board\n" +
         "  Esc    Cancel, then back to menu\n" +
         "\n" +
         "Playback\n" +
@@ -226,6 +227,16 @@ public class GameUI
     public bool ShowingKeymap { get; set; }
 
     /// <summary>
+    /// When true the board is drawn rotated 180° — Black's pieces at the bottom, files h→a shown
+    /// left→right. Hosts auto-set this to the local player's colour (their pieces at the bottom) in
+    /// games with a single local side (vs-computer, network); the Ctrl+F key toggles it at runtime.
+    /// Every square↔pixel mapping (<see cref="SquareRect"/>, <see cref="FindSelected"/>, the
+    /// coordinate labels, and the promotion/placement popups) honours it, so draw and hit-test can't
+    /// disagree about orientation. Preserved across <see cref="Resize"/>.
+    /// </summary>
+    public bool FlipBoard { get; set; }
+
+    /// <summary>
     /// The destination square of the last completed move, derived from game history.
     /// During playback, returns the ply at the current playback index.
     /// </summary>
@@ -321,6 +332,9 @@ public class GameUI
         // Not copying this would silently unlock the board on a window resize mid-link-game
         // (the web host rebuilds GameUI through Resize on every canvas metrics change).
         resized.MoveLockSide = MoveLockSide;
+        // A window resize must not silently snap the board back to White-at-bottom (the web host
+        // rebuilds GameUI via Resize on every canvas metrics change).
+        resized.FlipBoard = FlipBoard;
         return resized;
     }
 
@@ -343,10 +357,13 @@ public class GameUI
         {
             var x_y = idx * _squareSize + _margin;
 
-            var pos = Position.FromIndex(idx, (byte)(7 - idx));
+            // Column `idx` (left→right) and row `idx` (top→bottom) keep their pixel positions; only
+            // which file/rank label sits there flips. Unflipped: col idx = file idx, top row = rank 8.
+            var fileLabelIdx = FlipBoard ? 7 - idx : idx;
+            var rankLabelIdx = FlipBoard ? idx : 7 - idx;
 
-            var fileText = pos.File.ToLabel();
-            var rankText = pos.Rank.ToLabel();
+            var fileText = Position.FromIndex((byte)fileLabelIdx, 0).File.ToLabel();
+            var rankText = Position.FromIndex(0, (byte)rankLabelIdx).Rank.ToLabel();
 
             // x_y doubles as an x (file labels) and a y (rank labels); only the x uses take the
             // left offset — the y side is already shifted through _topMargin.
@@ -508,21 +525,18 @@ public class GameUI
 
         for (byte fileIdx = 0; fileIdx < 8; fileIdx++)
         {
-            var x = fileIdx * _squareSize;
             for (byte rankIdx = 0; rankIdx < 8; rankIdx++)
             {
-                var sqY = (7 - rankIdx) * _squareSize;
-
-                var lowerY = sqY + _margin + _topMargin;
-                var lowerX = x + _margin + _leftOffset;
-                var rect = new RectInt((lowerX + _squareSize, lowerY + _squareSize), (lowerX, lowerY));
+                var position = Position.FromIndex(fileIdx, rankIdx);
+                // Both draw and hit-test go through SquareRect so the flip stays consistent; the
+                // (fileIdx+rankIdx) colour parity below is orientation-invariant (180° preserves it).
+                var rect = SquareRect(position);
 
                 if (!rect.OverlapsWith(clip))
                 {
                     continue;
                 }
 
-                var position = Position.FromIndex(fileIdx, rankIdx);
                 var piece = DisplayBoard[position];
 
                 RGBAColor32 squareFill;
@@ -691,15 +705,13 @@ public class GameUI
 
     public Position? FindSelected(int x, int y)
     {
-        var boardX = x - _margin - _leftOffset;
-        var boardY = y - _margin - _topMargin;
+        var col = (x - _margin - _leftOffset) / _squareSize;
+        var rowFromTop = (y - _margin - _topMargin) / _squareSize;
 
-        var fileIdx = boardX / _squareSize;
-        var rankIdx = boardY / _squareSize;
-
-        if (fileIdx is >= 0 and < 8 && rankIdx is >= 0 and < 8)
+        if (col is >= 0 and < 8 && rowFromTop is >= 0 and < 8)
         {
-            return Position.FromIndex((byte)fileIdx, (byte)(7 - rankIdx));
+            var (file, rank) = LogicalCell(col, rowFromTop);
+            return Position.FromIndex((byte)file, (byte)rank);
         }
 
         return default;
@@ -719,17 +731,30 @@ public class GameUI
 
     public RectInt SquareRect(Position position)
     {
-        var x = (int)position.File * _squareSize + _margin + _leftOffset;
-        var y = (7 - (int)position.Rank) * _squareSize + _margin + _topMargin;
+        var (col, rowFromTop) = DisplayCell((int)position.File, (int)position.Rank);
+        var x = col * _squareSize + _margin + _leftOffset;
+        var y = rowFromTop * _squareSize + _margin + _topMargin;
 
         return new RectInt((x + _squareSize, y + _squareSize), (x, y));
     }
+
+    /// <summary>Maps a logical (file, rank) to its on-screen cell — column from the left, row from the
+    /// top — applying the 180° flip when <see cref="FlipBoard"/> is set. The single mapping both draw
+    /// and hit-test go through, so they can never disagree about orientation.</summary>
+    private (int Col, int RowFromTop) DisplayCell(int file, int rank) =>
+        FlipBoard ? (7 - file, rank) : (file, 7 - rank);
+
+    /// <summary>Inverse of <see cref="DisplayCell"/>: an on-screen cell back to a logical (file, rank).</summary>
+    private (int File, int Rank) LogicalCell(int col, int rowFromTop) =>
+        FlipBoard ? (7 - col, rowFromTop) : (col, 7 - rowFromTop);
 
     public RectInt PromotePieceTypeSelectionBox(Side side)
     {
         var offX = _margin + _leftOffset;
         var boardTop = _topMargin + _margin;
-        var offY = side is Side.White ? boardTop : boardTop + 7 * _squareSize;
+        // The picker sits on the promoting side's back-rank end; the flip swaps which screen end that is.
+        var promotesAtDisplayTop = (side is Side.White) ^ FlipBoard;
+        var offY = promotesAtDisplayTop ? boardTop : boardTop + 7 * _squareSize;
 
         if (_alignment is (_, var alignY))
         {
@@ -741,13 +766,13 @@ public class GameUI
 
     public RectInt PieceTypeSelectionBox(Position position)
     {
-        // Center the 7-square-wide popup on the selected file, clamped to the board
-        var fileIdx = (int)position.File;
-        var startFile = Math.Clamp(fileIdx - 3, 0, 1); // 7 squares wide, max start index is 1
+        // Center the 7-square-wide popup on the selected square's on-screen column (honours the flip),
+        // clamped to the board; place it above that square's on-screen row.
+        var (col, rowFromTop) = DisplayCell((int)position.File, (int)position.Rank);
+        var startFile = Math.Clamp(col - 3, 0, 1); // 7 squares wide, max start index is 1
         var offX = startFile * _squareSize + _margin + _leftOffset;
 
-        // Place above the selected square
-        var squareY = (7 - (int)position.Rank) * _squareSize + _margin + _topMargin;
+        var squareY = rowFromTop * _squareSize + _margin + _topMargin;
         var offY = squareY - _squareSize;
 
         // If the popup would go above the board, place it below instead
@@ -1088,6 +1113,13 @@ public class GameUI
         return (UIResponse.NeedsRefresh, []);
     }
 
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) ToggleFlipBoard()
+    {
+        FlipBoard = !FlipBoard;
+        // Whole board re-orients — a full redraw, not a clipped update.
+        return (UIResponse.NeedsRefresh, []);
+    }
+
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TogglePlacementSide()
     {
         PlacementSide = PlacementSide.ToOpposite();
@@ -1272,6 +1304,9 @@ public class GameUI
 
         if (isCtrl)
         {
+            // Ctrl+F flips the board (bare `f` is the file-f selector). Handled before the mode
+            // dispatch below so it works while playing, in playback, and in setup.
+            if (key is InputKey.F)     { PendingFile = null; return ToggleFlipBoard(); }
             if (key is InputKey.Left)  { PendingFile = null; return NavigateBack(); }
             if (key is InputKey.Right) { PendingFile = null; return NavigateForward(); }
             if (key is InputKey.Up)    { PendingFile = null; return NavigateBack(2); }

@@ -303,6 +303,9 @@ public sealed class MainActivity : SdlVulkanActivity
         // Touch-only: no keyboard hints in the status bar; playback exits via the history chip.
         _display.KeyboardHints = false;
         _display.ResetGame(_game);
+        // Orient the board to the local player (their pieces at the bottom) vs the AI; PvP stays
+        // White-at-bottom (_humanSide is White there).
+        _display.UI.FlipBoard = _humanSide == Side.Black;
 
         SaveGame();
         PlayAiReply(); // if the human chose Black, White (the AI) opens
@@ -472,6 +475,7 @@ public sealed class MainActivity : SdlVulkanActivity
         _display.TopStripLabel = $"LAN ({_netLocalSide})";
         _display.KeyboardHints = false;
         _display.ResetGame(_game);
+        _display.UI.FlipBoard = _netLocalSide == Side.Black; // local player's pieces at the bottom
     }
 
     // Applies moves the peer sent, on the SDL/render thread (GameUI is single-threaded). No
