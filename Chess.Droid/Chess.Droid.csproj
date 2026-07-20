@@ -27,6 +27,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Chess.Lib\Chess.Lib.csproj" />
     <ProjectReference Include="..\Chess.UCI\Chess.UCI.csproj" />
+    <ProjectReference Include="..\Chess.Net\Chess.Net.csproj" />
   </ItemGroup>
 
   <!-- Bundle the glyph fonts as APK assets (assets/Fonts/*.ttf); MainActivity.StageFonts copies
