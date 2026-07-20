@@ -18,13 +18,18 @@ namespace Chess.Lib.UI;
 /// the entry (today Chess.Web); desktop/console menus stay three items until they grow a link
 /// driver of their own.</para>
 ///
+/// <para>"Network game" (live LAN play against a discovered peer — see <c>Chess.Net</c>) is likewise
+/// opt-in via <paramref name="includeNetworkPlay"/>: hosts that can open sockets (GUI, Console,
+/// Android — not the browser) show it. Like PvC/Link it uses the PlayAs step, so the result's
+/// <c>ComputerSide</c> is the remote peer's colour; the host then hands off to a lobby.</para>
+///
 /// <para>"Continue" (resume the host's persisted in-progress game) is likewise opt-in via
 /// <paramref name="includeContinue"/> — hosts pass true only when a resumable save exists (today
 /// Chess.Droid, whose back button returns to this menu mid-game). It is PREPENDED so "back to
 /// menu, tap the top item" resumes; <see cref="Confirm"/> normalizes the index shift so the
 /// standard entries keep their base indices.</para>
 /// </summary>
-public sealed class StartupWizard(bool includeLinkPlay = false, bool includeContinue = false)
+public sealed class StartupWizard(bool includeLinkPlay = false, bool includeContinue = false, bool includeNetworkPlay = false)
 {
     /// <summary>♚ Chess ♔ — the wizard title shown on every step.</summary>
     public const string Title = "♚ Chess ♔";
@@ -33,6 +38,7 @@ public sealed class StartupWizard(bool includeLinkPlay = false, bool includeCont
 
     private readonly bool _includeLinkPlay = includeLinkPlay;
     private readonly bool _includeContinue = includeContinue;
+    private readonly bool _includeNetworkPlay = includeNetworkPlay;
     private Phase _phase = Phase.GameMode;
     private GameMode _gameMode;
     private Side _computerSide;
@@ -54,9 +60,9 @@ public sealed class StartupWizard(bool includeLinkPlay = false, bool includeCont
     {
         Phase.GameMode => (Title, "Select game mode:",
             [.. _includeContinue ? new[] { "Continue game" } : [],
-             .. _includeLinkPlay
-                ? new[] { "Player vs Player", "Player vs Computer", "Custom Game", "Play by Link" }
-                : new[] { "Player vs Player", "Player vs Computer", "Custom Game" }]),
+             "Player vs Player", "Player vs Computer", "Custom Game",
+             .. _includeLinkPlay ? new[] { "Play by Link" } : [],
+             .. _includeNetworkPlay ? new[] { "Network game" } : []]),
         Phase.PlayAs => (Title, "Play as:", ["White", "Black"]),
         Phase.BoardType => (Title, "Starting board:", ["Empty Board", "Standard Board"]),
         Phase.SideToMove => (Title, "Side to move first:", ["White", "Black"]),
@@ -87,9 +93,9 @@ public sealed class StartupWizard(bool includeLinkPlay = false, bool includeCont
                     }
                     selected -= 1;
                 }
-                // Explicit indices, not a catch-all else: the item list can be 3 or 4 entries
-                // (includeLinkPlay), and a trailing else would silently misroute the extra
-                // index into the Custom Game flow.
+                // Explicit indices, not a catch-all else: the item list is 3 base entries plus 0–2
+                // trailing optional entries (Play by Link, Network game), and a trailing else would
+                // silently misroute an extra index into the Custom Game flow.
                 if (selected == 0)
                 {
                     _gameMode = GameMode.PlayerVsPlayer;
@@ -105,12 +111,30 @@ public sealed class StartupWizard(bool includeLinkPlay = false, bool includeCont
                 {
                     _phase = Phase.BoardType;
                 }
-                else if (selected == 3 && _includeLinkPlay)
+                else
                 {
-                    // Same PlayAs step as PvC: "play as" your colour, the other side (here the
-                    // remote correspondent, not an engine) lands in _computerSide.
-                    _gameMode = GameMode.PlayByLink;
-                    _phase = Phase.PlayAs;
+                    // Trailing optional entries, appended after Custom (index 2) in a fixed order.
+                    // Both use the same PlayAs step as PvC: "play as" your colour, the other side
+                    // (here a remote correspondent/peer, not an engine) lands in _computerSide.
+                    var index = 3;
+                    if (_includeLinkPlay)
+                    {
+                        if (selected == index)
+                        {
+                            _gameMode = GameMode.PlayByLink;
+                            _phase = Phase.PlayAs;
+                        }
+                        index++;
+                    }
+                    if (_includeNetworkPlay)
+                    {
+                        if (selected == index)
+                        {
+                            _gameMode = GameMode.NetworkGame;
+                            _phase = Phase.PlayAs;
+                        }
+                        index++;
+                    }
                 }
                 break;
 

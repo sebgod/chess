@@ -71,27 +71,30 @@ public class GameLoop(
             : null;
 
         IGamePlayer whitePlayer, blackPlayer;
-        IEngineBasedPlayer? uciPlayer;
+        IEngineBasedPlayer? opponent;
 
         var humanPlayer = playerFactory();
-        if (gameMode is GameMode.PlayerVsComputer or GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard)
+        // The "other" player is engine-shaped for PvC/custom AND for a LAN game: a remote peer is a
+        // drop-in IEngineBasedPlayer (Chess.Net.NetworkPlayer) here, with computerSide = the peer's
+        // colour, so the pairing below wires the local human to the local colour automatically.
+        if (gameMode is GameMode.PlayerVsComputer or GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard or GameMode.NetworkGame)
         {
-            uciPlayer = engineBasedPlayerFactory(computerSide, timeProvider);
+            opponent = engineBasedPlayerFactory(computerSide, timeProvider);
 
-            await uciPlayer.InitAsync(initialFen, cancellationToken);
+            await opponent.InitAsync(initialFen, cancellationToken);
 
             if (computerSide is Side.White)
             {
-                (whitePlayer, blackPlayer) = (uciPlayer, humanPlayer);
+                (whitePlayer, blackPlayer) = (opponent, humanPlayer);
             }
             else
             {
-                (whitePlayer, blackPlayer) = (humanPlayer, uciPlayer);
+                (whitePlayer, blackPlayer) = (humanPlayer, opponent);
             }
         }
         else
         {
-            uciPlayer = null;
+            opponent = null;
             (whitePlayer, blackPlayer) = (humanPlayer, humanPlayer);
         }
 
@@ -120,9 +123,9 @@ public class GameLoop(
                             : new Game(initialBoard, sideToMove, []);
                         gameDisplay.ResetGame(game);
                         gameDisplay.RenderInitial(game);
-                        if (uciPlayer is not null)
+                        if (opponent is not null)
                         {
-                            await uciPlayer.NewGameAsync(initialFen, cancellationToken);
+                            await opponent.NewGameAsync(initialFen, cancellationToken);
                         }
                         continue;
                     }
@@ -143,7 +146,7 @@ public class GameLoop(
         }
         finally
         {
-            if (uciPlayer is not null) await uciPlayer.DisposeAsync();
+            if (opponent is not null) await opponent.DisposeAsync();
         }
 
         return false;
