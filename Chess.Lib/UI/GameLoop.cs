@@ -11,12 +11,18 @@ public class GameLoop(
         GameMode gameMode,
         Side computerSide,
         Side sideToMove,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Game? resumeGame = null
     )
     {
-        var game = gameMode is GameMode.CustomGameEmpty
-            ? new Game(new Board(), sideToMove, [])
-            : new Game();
+        // resumeGame (Continue): use the loaded game as-is so its full ply history drives both the
+        // display's move list/playback AND the engine, which rebuilds "position ... moves ..." from
+        // the live plies each turn. Reset (F9) still rebuilds from the mode's baseline below, so
+        // "New game" always means a fresh standard game, never the resumed midpoint.
+        var game = resumeGame
+            ?? (gameMode is GameMode.CustomGameEmpty
+                ? new Game(new Board(), sideToMove, [])
+                : new Game());
 
         using var gameDisplay = displayFactory();
         gameDisplay.ResetGame(game);

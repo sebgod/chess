@@ -46,6 +46,25 @@ public sealed class StartupFlowTests
     }
 
     [Fact]
+    public void Wizard_Continue_is_prepended_and_does_not_shift_the_standard_entries()
+    {
+        // Chess.Droid offers "Continue game" when an unfinished save exists (back button returns to
+        // the menu mid-game) — it must NOT shift the standard entries' behavior (order is
+        // load-bearing; Confirm normalizes the index).
+        var wizard = new StartupWizard(includeContinue: true);
+        wizard.Current.Items[0].ShouldBe("Continue game");
+
+        wizard.Confirm(0);
+        wizard.IsComplete.ShouldBeTrue();
+        wizard.Result.Mode.ShouldBe(GameMode.Continue);
+
+        var shifted = new StartupWizard(includeContinue: true);
+        shifted.Confirm(2); // "Player vs Computer", one below its base index
+        shifted.IsComplete.ShouldBeFalse();
+        shifted.Current.Prompt.ShouldBe("Play as:"); // the PvC side question
+    }
+
+    [Fact]
     public void Ai_picks_a_legal_opening_move()
     {
         var game = new Game();

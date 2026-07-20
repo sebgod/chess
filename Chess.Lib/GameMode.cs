@@ -9,5 +9,10 @@ public enum GameMode : byte
     PlayerVsComputer,
     CustomGameEmpty,
     CustomGameStandardBoard,
-    PlayByLink
+    PlayByLink,
+
+    /// <summary>Resume the host's persisted in-progress game (offered by the startup wizard when
+    /// one exists — see <c>StartupWizard(includeContinue:)</c>). The saved game defines the real
+    /// mode and computer side; the wizard result carries <c>Side.None</c>.</summary>
+    Continue
 }

@@ -11,9 +11,11 @@ namespace Chess.GUI;
 /// and input. The web (Chess.Web) and console (Chess.Console) drive the same wizard through
 /// their own widgets.
 /// </summary>
-internal sealed class VkStartupMenu : IWidget
+internal sealed class VkStartupMenu(bool includeContinue = false) : IWidget
 {
-    private readonly StartupWizard _wizard = new();
+    // includeContinue prepends a "Continue game" entry (resumes the persisted in-progress game);
+    // the host passes true only when a resumable save exists, exactly as the Android head does.
+    private readonly StartupWizard _wizard = new(includeContinue: includeContinue);
 
     // Lazy: PixelMenuWidget<VulkanContext> is constructed on first Render call so we have a
     // VkRenderer instance to pass to the PixelWidgetBase ctor.

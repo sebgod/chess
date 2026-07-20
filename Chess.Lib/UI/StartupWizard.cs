@@ -17,8 +17,14 @@ namespace Chess.Lib.UI;
 /// host via the constructor flag: only front-ends that can produce and consume game links show
 /// the entry (today Chess.Web); desktop/console menus stay three items until they grow a link
 /// driver of their own.</para>
+///
+/// <para>"Continue" (resume the host's persisted in-progress game) is likewise opt-in via
+/// <paramref name="includeContinue"/> — hosts pass true only when a resumable save exists (today
+/// Chess.Droid, whose back button returns to this menu mid-game). It is PREPENDED so "back to
+/// menu, tap the top item" resumes; <see cref="Confirm"/> normalizes the index shift so the
+/// standard entries keep their base indices.</para>
 /// </summary>
-public sealed class StartupWizard(bool includeLinkPlay = false)
+public sealed class StartupWizard(bool includeLinkPlay = false, bool includeContinue = false)
 {
     /// <summary>♚ Chess ♔ — the wizard title shown on every step.</summary>
     public const string Title = "♚ Chess ♔";
@@ -26,6 +32,7 @@ public sealed class StartupWizard(bool includeLinkPlay = false)
     private enum Phase { GameMode, PlayAs, BoardType, SideToMove, HumanSide }
 
     private readonly bool _includeLinkPlay = includeLinkPlay;
+    private readonly bool _includeContinue = includeContinue;
     private Phase _phase = Phase.GameMode;
     private GameMode _gameMode;
     private Side _computerSide;
@@ -45,9 +52,11 @@ public sealed class StartupWizard(bool includeLinkPlay = false)
     /// <summary>The current step's menu content.</summary>
     public (string Title, string Prompt, string[] Items) Current => _phase switch
     {
-        Phase.GameMode => (Title, "Select game mode:", _includeLinkPlay
-            ? ["Player vs Player", "Player vs Computer", "Custom Game", "Play by Link"]
-            : ["Player vs Player", "Player vs Computer", "Custom Game"]),
+        Phase.GameMode => (Title, "Select game mode:",
+            [.. _includeContinue ? new[] { "Continue game" } : [],
+             .. _includeLinkPlay
+                ? new[] { "Player vs Player", "Player vs Computer", "Custom Game", "Play by Link" }
+                : new[] { "Player vs Player", "Player vs Computer", "Custom Game" }]),
         Phase.PlayAs => (Title, "Play as:", ["White", "Black"]),
         Phase.BoardType => (Title, "Starting board:", ["Empty Board", "Standard Board"]),
         Phase.SideToMove => (Title, "Side to move first:", ["White", "Black"]),
@@ -64,6 +73,20 @@ public sealed class StartupWizard(bool includeLinkPlay = false)
         switch (_phase)
         {
             case Phase.GameMode:
+                // Continue is prepended; consume it here and normalize the index so the standard
+                // entries below keep their base positions (no per-flag index drift).
+                if (_includeContinue)
+                {
+                    if (selected == 0)
+                    {
+                        // The save defines the real mode/computer side — the host reads them there.
+                        _gameMode = GameMode.Continue;
+                        _computerSide = Side.None;
+                        IsComplete = true;
+                        break;
+                    }
+                    selected -= 1;
+                }
                 // Explicit indices, not a catch-all else: the item list can be 3 or 4 entries
                 // (includeLinkPlay), and a trailing else would silently misroute the extra
                 // index into the Custom Game flow.
