@@ -15,7 +15,9 @@ internal sealed class VkStartupMenu(bool includeContinue = false) : IWidget
 {
     // includeContinue prepends a "Continue game" entry (resumes the persisted in-progress game);
     // the host passes true only when a resumable save exists, exactly as the Android head does.
-    private readonly StartupWizard _wizard = new(includeContinue: includeContinue);
+    // includeNetworkPlay is always on for the desktop GUI (it can open sockets), appending a
+    // "Network game" entry that routes into the LAN lobby.
+    private readonly StartupWizard _wizard = new(includeContinue: includeContinue, includeNetworkPlay: true);
 
     // Lazy: PixelMenuWidget<VulkanContext> is constructed on first Render call so we have a
     // VkRenderer instance to pass to the PixelWidgetBase ctor.
@@ -23,6 +25,12 @@ internal sealed class VkStartupMenu(bool includeContinue = false) : IWidget
 
     public bool IsComplete => _wizard.IsComplete;
     public (GameMode Mode, Side ComputerSide, Side SideToMove) Result => _wizard.Result;
+
+#if DEBUG
+    /// <summary>The underlying pixel widget, so the DEBUG inspector can read its clickable regions +
+    /// captured layout (null until the first Render builds it).</summary>
+    public PixelWidgetBase<VulkanContext>? InspectorWidget => _menu;
+#endif
 
     public void Render(VkRenderer renderer)
     {

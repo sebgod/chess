@@ -1,6 +1,7 @@
 using Chess.GUI;
 using Chess.Lib;
 using Chess.Lib.UI;
+using Chess.Net;
 using Chess.UCI;
 using DIR.Lib;
 using SdlVulkan.Renderer;
@@ -25,6 +26,11 @@ PixelGameDisplay<VulkanContext>? display = null;
 Task<bool>? gameTask = null;
 var currentComputerSide = Side.None;
 
+// The LAN lobby sits between the menu and the game while the user picks/invites a peer.
+VkLanLobby? lobby = null;
+// A LAN game can't be resumed later (no peer to reconnect), so it's never written to the save.
+var currentGameIsNetwork = false;
+
 // A resumable save = present AND not already finished (a finished game isn't worth resuming).
 bool CanContinue() => GameStore.TryLoad(savePath) is { } s && !s.Game.IsFinished;
 
@@ -33,6 +39,7 @@ bool CanContinue() => GameStore.TryLoad(savePath) is { } s && !s.Game.IsFinished
 void SaveCurrentGame()
 {
     if (display is null) return;
+    if (currentGameIsNetwork) return; // LAN games aren't resumable — never persist them
     var g = display.UI.Game;
     if (g.PlyCount == 0) return;
     if (g.IsFinished)
@@ -57,14 +64,14 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             sdlWindow.ToggleFullscreen();
             return true;
         }
-        IWidget activeWidget = menu is { IsComplete: false } ? menu : player;
+        IWidget activeWidget = menu is { IsComplete: false } ? menu : lobby is not null ? lobby : player;
         return activeWidget.HandleInput(new InputEvent.KeyDown(inputKey, inputMod));
     },
 
     OnMouseDown = (button, x, y, _, _) =>
     {
         if (button != 1) return false;
-        IWidget clickTarget = menu is { IsComplete: false } ? menu : player;
+        IWidget clickTarget = menu is { IsComplete: false } ? menu : lobby is not null ? lobby : player;
         return clickTarget.HandleInput(new InputEvent.MouseDown(x, y));
     },
 
@@ -75,7 +82,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
         display?.OnResize((int)rw, (int)rh),
 
     CheckNeedsRedraw = () =>
-        display is { HasPendingUpdate: true } || gameTask is { IsCompleted: true },
+        display is { HasPendingUpdate: true } || gameTask is { IsCompleted: true } || lobby is not null,
 
     OnRender = () =>
     {
@@ -103,41 +110,88 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
         {
             menu.Render(renderer);
         }
+        else if (lobby is not null)
+        {
+            if (lobby.IsConnected)
+            {
+                // A peer connected: take the session (its socket outlives the lobby) and start a LAN
+                // game — the local human relays each move, the remote peer IS the "engine" opponent.
+                var session = lobby.Session!;
+                lobby.Dispose();
+                lobby = null;
+
+                currentGameIsNetwork = true;
+                currentComputerSide = session.RemoteSide;
+                display = new PixelGameDisplay<VulkanContext>(renderer) { Bus = bus };
+
+                var netLoop = new GameLoop(
+                    TimeProvider.System,
+                    () => display,
+                    () => new LocalNetworkPlayer(player, session),
+                    (_, _) => new NetworkPlayer(session)
+                );
+
+                gameTask = netLoop.RunAsync(GameMode.NetworkGame, session.RemoteSide, Side.White, cts.Token);
+            }
+            else if (lobby.IsAborted)
+            {
+                lobby.Dispose();
+                lobby = null;
+                menu = new VkStartupMenu(CanContinue());
+            }
+            else
+            {
+                lobby.Render(renderer);
+            }
+        }
         else if (menu is { IsComplete: true } && gameTask is null)
         {
             var (gameMode, computerSide, sideToMove) = menu.Result;
-            menu = null;
 
-            // Continue: the save (not the wizard) defines the real mode and computer side; load it
-            // and hand the loaded game to the loop so its full history drives both display and engine.
-            Game? resumeGame = null;
-            if (gameMode is GameMode.Continue)
+            if (gameMode is GameMode.NetworkGame)
             {
-                if (GameStore.TryLoad(savePath) is { } saved)
-                {
-                    resumeGame = saved.Game;
-                    computerSide = saved.ComputerSide;
-                    sideToMove = saved.Game.CurrentSide;
-                    gameMode = saved.ComputerSide == Side.None ? GameMode.PlayerVsPlayer : GameMode.PlayerVsComputer;
-                }
-                else
-                {
-                    gameMode = GameMode.PlayerVsPlayer; // nothing to resume -> plain hot-seat
-                }
+                // Hand off to the LAN lobby; the game starts once a peer connects (handled above).
+                // ComputerSide is the remote peer's colour, so our preferred colour is the opposite.
+                var preferredColor = computerSide == Side.White ? Side.Black : Side.White;
+                lobby = new VkLanLobby(renderer, Path.GetDirectoryName(savePath)!, preferredColor);
+                menu = null;
             }
-            currentComputerSide = computerSide;
+            else
+            {
+                menu = null;
+                currentGameIsNetwork = false;
 
-            display = new PixelGameDisplay<VulkanContext>(renderer) { Bus = bus };
-            var timeProvider = TimeProvider.System;
+                // Continue: the save (not the wizard) defines the real mode and computer side; load it
+                // and hand the loaded game to the loop so its full history drives both display and engine.
+                Game? resumeGame = null;
+                if (gameMode is GameMode.Continue)
+                {
+                    if (GameStore.TryLoad(savePath) is { } saved)
+                    {
+                        resumeGame = saved.Game;
+                        computerSide = saved.ComputerSide;
+                        sideToMove = saved.Game.CurrentSide;
+                        gameMode = saved.ComputerSide == Side.None ? GameMode.PlayerVsPlayer : GameMode.PlayerVsComputer;
+                    }
+                    else
+                    {
+                        gameMode = GameMode.PlayerVsPlayer; // nothing to resume -> plain hot-seat
+                    }
+                }
+                currentComputerSide = computerSide;
 
-            var gameLoop = new GameLoop(
-                timeProvider,
-                () => display,
-                () => player,
-                (cs, tp) => new UciPlayer(UciPlayer.DefaultEnginePath, cs, tp)
-            );
+                display = new PixelGameDisplay<VulkanContext>(renderer) { Bus = bus };
+                var timeProvider = TimeProvider.System;
 
-            gameTask = gameLoop.RunAsync(gameMode, computerSide, sideToMove, cts.Token, resumeGame);
+                var gameLoop = new GameLoop(
+                    timeProvider,
+                    () => display,
+                    () => player,
+                    (cs, tp) => new UciPlayer(UciPlayer.DefaultEnginePath, cs, tp)
+                );
+
+                gameTask = gameLoop.RunAsync(gameMode, computerSide, sideToMove, cts.Token, resumeGame);
+            }
         }
     },
 
@@ -170,11 +224,48 @@ bus.Subscribe<RequestResetSignal>(_ =>
     // the signal is available for future decoupling if needed.
 });
 
+#if DEBUG
+// Live UI debug inspector (DEBUG only — compiled out of Release, and the renderer only carries
+// DebugInspector in its own DEBUG build). Exposes this process to the SdlVulkan.Renderer.Inspector
+// MCP sidecar / any TCP driver: read the widget tree (describe/describeLayout), screenshot, inject
+// input, and read a curated state snapshot. Mirrors tianwen's wiring — the machinery lives in the
+// framework; this block is the only glue, aggregating the active screen's regions + captured layout.
+PixelWidgetBase<VulkanContext>? ActiveInspectorWidget() =>
+    display is not null ? display
+    : lobby is not null ? lobby.InspectorWidget
+    : menu?.InspectorWidget;
+using var inspector = DebugInspector.Attach(loop, new DebugInspectorOptions
+{
+    AppName = "Chess.GUI",
+    WindowTitle = () => "Chess",
+    GetRegions = () => ActiveInspectorWidget()?.GetRegisteredRegions() ?? [],
+    GetLayout = () => ActiveInspectorWidget()?.GetCapturedLayout() ?? [],
+    AppState = s =>
+    {
+        s.Set("screen", display is not null ? "game" : lobby is not null ? "lobby" : "menu");
+        if (lobby is not null)
+        {
+            s.Set("lobbyState", lobby.State.ToString());
+            s.Set("peers", string.Join(", ", lobby.Peers.Select(p => p.DisplayName)));
+        }
+        if (display is not null)
+        {
+            var g = display.UI.Game;
+            s.Set("sideToMove", g.CurrentSide.ToString());
+            s.Set("plyCount", g.PlyCount);
+            s.Set("finished", g.IsFinished);
+            s.Set("networkGame", currentGameIsNetwork);
+        }
+    },
+});
+#endif
+
 loop.Run(cts.Token);
 
 // Persist an in-progress game on exit too, so closing the window and relaunching offers Continue.
 SaveCurrentGame();
 cts.Cancel();
+lobby?.Dispose(); // tears down discovery/sockets if the user quit while still in the lobby
 display?.Dispose();
 renderer.Dispose();
 ctx.Dispose();
