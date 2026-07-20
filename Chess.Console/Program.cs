@@ -1,6 +1,7 @@
 using Chess.Console;
 using Chess.Lib;
 using Chess.Lib.UI;
+using Chess.Net;
 using Chess.UCI;
 using DIR.Lib;
 using Console.Lib;
@@ -160,12 +161,43 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
             sideToMove = Side.White; // TODO: add --side-to-move CLI option for custom mode
         }
 
-        var gameLoop = new GameLoop(
-            timeProvider,
-            () => imageCapability is ImageDisplayCapability.Sixel ? new SixelGameDisplay(terminal) : new AsciiDisplay(terminal),
-            () => new HumanPlayer(terminal),
-            (computerSide, tp) => new UciPlayer(UciPlayer.DefaultEnginePath, computerSide, tp)
-        );
+        // Network game: run the LAN lobby to discover + connect a peer, then play them over the
+        // socket. A null session means the user backed out of the lobby -> reshow the menu.
+        NetworkSession? netSession = null;
+        if (gameMode is GameMode.NetworkGame)
+        {
+            var lanDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SharpAstro.Chess");
+            var preferredColor = computerSide == Side.White ? Side.Black : Side.White;
+            netSession = await new ConsoleLanLobby(terminal, timeProvider, lanDir, preferredColor)
+                .ShowAsync(cancellationToken);
+            if (netSession is null) { restart = true; continue; }
+            computerSide = netSession.RemoteSide;
+            sideToMove = Side.White;
+        }
+
+        Func<IGameDisplay> displayFactory = () =>
+            imageCapability is ImageDisplayCapability.Sixel ? new SixelGameDisplay(terminal) : new AsciiDisplay(terminal);
+
+        GameLoop gameLoop;
+        if (netSession is { } session)
+        {
+            gameLoop = new GameLoop(
+                timeProvider,
+                displayFactory,
+                () => new LocalNetworkPlayer(new HumanPlayer(terminal), session),
+                (_, _) => new NetworkPlayer(session)
+            );
+        }
+        else
+        {
+            gameLoop = new GameLoop(
+                timeProvider,
+                displayFactory,
+                () => new HumanPlayer(terminal),
+                (cs, tp) => new UciPlayer(UciPlayer.DefaultEnginePath, cs, tp)
+            );
+        }
 
         restart = await gameLoop.RunAsync(gameMode, computerSide, sideToMove, cancellationToken);
     }

@@ -15,7 +15,8 @@ internal class StartupMenu(IVirtualTerminal terminal, TimeProvider timeProvider)
 {
     protected override async Task<(GameMode Mode, Side ComputerSide, Side SideToMove)> ShowAsyncCore(CancellationToken cancellationToken)
     {
-        var wizard = new StartupWizard();
+        // The console can open sockets, so it offers LAN "Network game" (routes into ConsoleLanLobby).
+        var wizard = new StartupWizard(includeNetworkPlay: true);
         while (!wizard.IsComplete)
         {
             var (title, prompt, items) = wizard.Current;
