@@ -19,7 +19,7 @@ public enum LanMessageKind
 
 /// <summary>
 /// A decoded LAN message. One record covers both channels; <see cref="Kind"/> says which fields are
-/// meaningful (Announce: PeerId/Name/TcpPort; Invite: PeerId/Name/Color; Move: Move; …).
+/// meaningful (Announce: PeerId/Name/TcpPort/MachineName/Pid; Invite: PeerId/Name/Color; Move: Move; …).
 /// </summary>
 public readonly record struct LanMessage(
     LanMessageKind Kind,
@@ -27,7 +27,9 @@ public readonly record struct LanMessage(
     string Name = "",
     int TcpPort = 0,
     Side Color = Side.None,
-    string Move = "");
+    string Move = "",
+    string MachineName = "",
+    int Pid = 0);
 
 /// <summary>
 /// The wire format for LAN play — deliberately plain, space-separated ASCII text (no reflection-JSON,
@@ -51,8 +53,10 @@ public static class LanProtocol
     private const string ColorWhite = "white";
     private const string ColorBlack = "black";
 
-    public static string EncodeAnnounce(string peerId, int tcpPort, string name) =>
-        $"{Magic} {Version} ANNOUNCE {peerId} {tcpPort} {Encode(name)}";
+    // machineName + pid ride along so the lobby can disambiguate look-alike beacons (same display
+    // name across machines → show the machine; same name on one machine → number by PID).
+    public static string EncodeAnnounce(string peerId, int tcpPort, string name, string machineName = "", int pid = 0) =>
+        $"{Magic} {Version} ANNOUNCE {peerId} {tcpPort} {Encode(name)} {Encode(machineName)} {pid}";
 
     public static string EncodeBye(string peerId) =>
         $"{Magic} {Version} BYE {peerId}";
@@ -83,8 +87,11 @@ public static class LanProtocol
         // t[1] is the version; unknown future versions still parse best-effort by verb.
         return t[2] switch
         {
+            // machineName/pid are trailing tokens — tolerate their absence so a minimal (older) announce
+            // still parses; they just default to unknown ("" / 0).
             "ANNOUNCE" when t.Length >= 6 =>
-                new LanMessage(LanMessageKind.Announce, PeerId: t[3], TcpPort: ParseInt(t[4]), Name: Decode(t[5])),
+                new LanMessage(LanMessageKind.Announce, PeerId: t[3], TcpPort: ParseInt(t[4]), Name: Decode(t[5]),
+                    MachineName: t.Length >= 7 ? Decode(t[6]) : "", Pid: t.Length >= 8 ? ParseInt(t[7]) : 0),
             "BYE" when t.Length >= 4 =>
                 new LanMessage(LanMessageKind.Bye, PeerId: t[3]),
             "INVITE" when t.Length >= 6 =>

@@ -41,6 +41,28 @@ public class LanProtocolTests
         msg.Name.ShouldBe("");
     }
 
+    [Fact]
+    public void Announce_RoundTrips_MachineAndPid()
+    {
+        var msg = LanProtocol.Parse(LanProtocol.EncodeAnnounce("id", 1, "Seb", "My Laptop", 4242));
+
+        msg.Kind.ShouldBe(LanMessageKind.Announce);
+        msg.MachineName.ShouldBe("My Laptop"); // spaces survive (url-encoded like the name)
+        msg.Pid.ShouldBe(4242);
+    }
+
+    [Fact]
+    public void Announce_WithoutMachineOrPid_ParsesWithDefaults()
+    {
+        // A minimal 6-token announce (older build / defaulted) must still parse, machine/pid unknown.
+        var msg = LanProtocol.Parse("CHESSLAN 1 ANNOUNCE id 1 Seb");
+
+        msg.Kind.ShouldBe(LanMessageKind.Announce);
+        msg.Name.ShouldBe("Seb");
+        msg.MachineName.ShouldBe("");
+        msg.Pid.ShouldBe(0);
+    }
+
     [Theory]
     [InlineData(Side.White)]
     [InlineData(Side.Black)]

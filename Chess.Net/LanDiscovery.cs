@@ -26,6 +26,9 @@ public sealed class LanDiscovery : IDisposable
     private readonly TimeProvider _time;
     private readonly string _localPeerId;
     private readonly Func<string> _localName;
+    // Process constants sent in every beacon purely so the lobby can disambiguate look-alike names.
+    private readonly string _localMachineName = Environment.MachineName;
+    private readonly int _localPid = Environment.ProcessId;
     private readonly object _lock = new();
     private readonly Dictionary<string, LanPeer> _peers = new();
     private ITimer? _beacon;
@@ -54,8 +57,11 @@ public sealed class LanDiscovery : IDisposable
         {
             lock (_lock)
             {
+                // Stable order that matches ResolveLabels' numbering: name, then machine, then PID.
                 return _peers.Values
                     .OrderBy(p => p.DisplayName, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(p => p.MachineName, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(p => p.Pid)
                     .ToArray();
             }
         }
@@ -66,7 +72,8 @@ public sealed class LanDiscovery : IDisposable
 
     private void SendBeacon()
     {
-        _transport.Broadcast(LanProtocol.EncodeAnnounce(_localPeerId, _transport.ListenPort, _localName()));
+        _transport.Broadcast(LanProtocol.EncodeAnnounce(
+            _localPeerId, _transport.ListenPort, _localName(), _localMachineName, _localPid));
         Prune();
     }
 
@@ -80,7 +87,7 @@ public sealed class LanDiscovery : IDisposable
                 var endpoint = new IPEndPoint(dg.SenderAddress, msg.TcpPort);
                 lock (_lock)
                 {
-                    _peers[msg.PeerId] = new LanPeer(msg.PeerId, msg.Name, endpoint, _time.GetUtcNow());
+                    _peers[msg.PeerId] = new LanPeer(msg.PeerId, msg.Name, msg.MachineName, msg.Pid, endpoint, _time.GetUtcNow());
                 }
                 break;
 

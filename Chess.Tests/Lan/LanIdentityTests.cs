@@ -12,16 +12,14 @@ public class LanIdentityTests
         Path.Combine(Path.GetTempPath(), "chess-lan-" + Guid.NewGuid().ToString("N"));
 
     [Fact]
-    public void SaveThenLoad_RoundTripsNameAndPeerId()
+    public void SaveThenLoad_RoundTripsName()
     {
         var dir = TempDir();
         try
         {
-            new LanIdentity("Alice", "peer-123").Save(dir);
+            new LanIdentity("Alice", "ignored-peer-id").Save(dir);
 
-            var loaded = LanIdentity.Load(dir);
-            loaded.Name.ShouldBe("Alice");
-            loaded.PeerId.ShouldBe("peer-123");
+            LanIdentity.Load(dir).Name.ShouldBe("Alice");
         }
         finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
@@ -36,8 +34,22 @@ public class LanIdentityTests
     }
 
     [Fact]
-    public void Load_TwiceWithoutSave_MintsDistinctIds()
+    public void PeerId_IsMintedPerLoad_NotPersisted()
     {
-        LanIdentity.Load(TempDir()).PeerId.ShouldNotBe(LanIdentity.Load(TempDir()).PeerId);
+        var dir = TempDir();
+        try
+        {
+            new LanIdentity("Alice", "aaaa").Save(dir);
+
+            // Even loading the SAME saved dir twice yields two fresh ids (never the one "saved") —
+            // this is what lets two instances sharing one lan.txt discover each other.
+            var first = LanIdentity.Load(dir).PeerId;
+            var second = LanIdentity.Load(dir).PeerId;
+
+            first.ShouldNotBe("aaaa");
+            second.ShouldNotBe("aaaa");
+            first.ShouldNotBe(second);
+        }
+        finally { if (Directory.Exists(dir)) Directory.Delete(dir, true); }
     }
 }

@@ -114,7 +114,7 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
                     ""
                 };
                 var items = new List<string>(peers.Count + 1);
-                items.AddRange(peers.Select(p => p.DisplayName));
+                items.AddRange(LanPeer.ResolveLabels(peers));
                 items.Add("Back");
                 return (header, items);
         }

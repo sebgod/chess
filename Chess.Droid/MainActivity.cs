@@ -408,7 +408,7 @@ public sealed class MainActivity : SdlVulkanActivity
                 _lobbyPeers = [.. _netLobby.Peers];
                 title = "LAN Lobby";
                 prompt = _lobbyPeers.Length == 0 ? "Searching for players…" : "Tap a player to invite:";
-                items = [.. _lobbyPeers.Select(p => p.DisplayName), "Back"];
+                items = [.. LanPeer.ResolveLabels(_lobbyPeers), "Back"];
                 break;
         }
 

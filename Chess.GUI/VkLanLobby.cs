@@ -117,7 +117,7 @@ internal sealed class VkLanLobby : IWidget, IDisposable
                     prompt = _peers.Length == 0
                         ? "Searching for players on your network…"
                         : "Select a player to invite:";
-                    items = [.. _peers.Select(p => p.DisplayName), "Back"];
+                    items = [.. LanPeer.ResolveLabels(_peers), "Back"];
                     break;
             }
         }
