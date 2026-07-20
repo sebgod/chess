@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Matches PixelGameDisplay.Background (0x1a1a2e) so the pre-SDL window background and the
+         system bars don't flash a different colour before/around the Vulkan surface. -->
+    <color name="app_background">#1a1a2e</color>
+</resources>

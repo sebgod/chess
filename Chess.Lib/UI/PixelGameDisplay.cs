@@ -18,6 +18,12 @@ public interface IPixelGameDisplay : IGameDisplay
 
     /// <inheritdoc cref="PixelGameDisplay{TSurface}.StatusOverride"/>
     string? StatusOverride { get; set; }
+
+    /// <inheritdoc cref="PixelGameDisplay{TSurface}.SafeAreaInsets"/>
+    (int Left, int Top, int Right, int Bottom) SafeAreaInsets { get; set; }
+
+    /// <inheritdoc cref="PixelGameDisplay{TSurface}.TopStripLabel"/>
+    string? TopStripLabel { get; set; }
 }
 
 /// <summary>
@@ -72,6 +78,48 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
     /// </summary>
     public string? StatusOverride { get; set; }
 
+    private (int Left, int Top, int Right, int Bottom) _safeAreaInsets;
+
+    /// <summary>
+    /// Safe-area insets in pixels: keeps the board, history, and status bar clear of display
+    /// cutouts, rounded screen corners, and system bars (phones; zero on desktop/web). The top
+    /// inset becomes a stats strip (<see cref="TopStripLabel"/> left, derived move counter right)
+    /// flanking the centered camera (portrait). Hosts must re-set this on every resize — the
+    /// cutout moves to a SIDE inset in landscape, where the board shifts right of it instead.
+    /// Setting it relayouts a live game.
+    /// </summary>
+    public (int Left, int Top, int Right, int Bottom) SafeAreaInsets
+    {
+        get => _safeAreaInsets;
+        set
+        {
+            if (_safeAreaInsets == value) return;
+            _safeAreaInsets = value;
+            if (_gameUI is not null)
+                OnResize((int)Renderer.Width, (int)Renderer.Height);
+            _hasPendingUpdate = true;
+        }
+    }
+
+    /// <summary>Left-side text of the notch stats strip (e.g. the game mode: "You vs AI"). The
+    /// right side is the derived move counter. Drawn only when <see cref="SafeAreaInsets"/>.Top is
+    /// deep enough for legible text.</summary>
+    public string? TopStripLabel { get; set; }
+
+    /// <summary>False on touch-only hosts (Chess.Droid): drops keyboard hints ("[Ctrl+Arrows, Esc
+    /// exit]") from the status line — there are no keys, and the hints overflow a phone-width bar.
+    /// Playback is exited via the history header's "▶ Latest" chip instead.</summary>
+    public bool KeyboardHints { get; set; } = true;
+
+    /// <summary>
+    /// Exact bounds of the top display cutout (the camera punch-hole) in pixels, when the host can
+    /// query them (Android: <c>DisplayCutout.BoundingRectTop</c>). The notch strip then centers its
+    /// text on the camera's row — the safe-area top inset is deeper than the cutout, so strip-center
+    /// text would sit visibly below the camera — and keeps out of its real horizontal span. Null =
+    /// generic strip-centered layout.
+    /// </summary>
+    public (int Left, int Top, int Right, int Bottom)? TopCutout { get; set; }
+
     public bool HasPendingUpdate
     {
         get
@@ -100,7 +148,9 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         _gameUI = new GameUI(game, (uint)boardW, (uint)boardH,
             mainFontColor: FontColor,
             backgroundColor: BackgroundColor,
-            resolveHistoryClick: ResolveHistoryClick);
+            resolveHistoryClick: ResolveHistoryClick,
+            topOffset: _safeAreaInsets.Top,
+            leftOffset: _safeAreaInsets.Left);
         _gameUI.HistoryViewportRows = ComputeHistoryVisibleRows(boardH);
         _hasPendingUpdate = true;
     }
@@ -110,7 +160,8 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         if (_gameUI is null) return;
 
         var (boardW, boardH) = ComputeBoardArea();
-        _gameUI = _gameUI.Resize((uint)boardW, (uint)boardH);
+        _gameUI = _gameUI.Resize((uint)boardW, (uint)boardH,
+            topOffset: _safeAreaInsets.Top, leftOffset: _safeAreaInsets.Left);
         _gameUI.HistoryViewportRows = ComputeHistoryVisibleRows(boardH);
     }
 
@@ -124,26 +175,42 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         // passed to GameUI constructor/Resize to keep overlay sizing consistent.
         var (boardW, boardH) = ComputeBoardArea();
 
+        var (l, t, r, b) = _safeAreaInsets;
         var totalW = (float)Renderer.Width;
         var totalH = (float)Renderer.Height;
-        var layout = new PixelLayout(new RectF32(0, 0, totalW, totalH));
+        // Chrome lays out inside the safe area: the status bar lands above the gesture-bar/rounded
+        // bottom, and the top inset is drawn as the stats strip below. Insets are zero on desktop.
+        var layout = new PixelLayout(new RectF32(l, t, totalW - l - r, totalH - t - b));
 
         // Status bar: full-width bottom strip in every layout.
         var statusRect = layout.Dock(PixelDockStyle.Bottom, StatusBarHeight);
 
-        // History panel: side-by-side only in landscape. In portrait (phones) the board takes the
-        // full width and the history panel is dropped — a fixed-width vertical move list can't share
-        // a narrow screen without squeezing the board to nothing (see ComputeBoardArea).
-        var showHistory = !IsPortrait;
-        var historyRect = showHistory ? layout.Dock(PixelDockStyle.Right, HistoryPanelWidth) : default;
+        // History panel: right of the board in landscape; in portrait (phones) a fixed-width side
+        // panel can't share a narrow screen without squeezing the board to nothing (see
+        // ComputeBoardArea), so the history takes the leftover strip BELOW the board instead — the
+        // full-width board at its natural aspect leaves a tall gap above the status bar.
+        var showSideHistory = !IsPortrait;
+        var historyRect = showSideHistory ? layout.Dock(PixelDockStyle.Right, HistoryPanelWidth) : default;
 
-        // The board is anchored at the clip origin (top-left); the clip matches ComputeBoardArea.
-        var boardClip = new RectInt((boardW, boardH), PointInt.Origin);
+        // The board's shift inside the safe area lives INSIDE GameUI (top/leftOffset, draw and
+        // hit-test alike), so the clip spans from the surface origin through the shifted board.
+        var boardClip = new RectInt((l + boardW, t + boardH), PointInt.Origin);
         _gameUI.Render<TSurface, Renderer<TSurface>>(Renderer, boardClip);
 
-        if (showHistory)
+        if (showSideHistory)
+        {
             RenderHistoryPanel(historyRect);
+        }
+        else
+        {
+            var histTop = t + boardH;
+            var histH = statusRect.Y - histTop;
+            if (histH >= MinPortraitHistoryHeight)
+                RenderHistoryPanel(new RectF32(l, histTop, totalW - l - r, histH));
+        }
         RenderStatusBar(statusRect);
+        if (t > 0)
+            RenderTopStrip(new RectF32(0, 0, totalW, t));
     }
 
     public void Dispose() { }
@@ -160,8 +227,11 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
 
     private (int BoardW, int BoardH) ComputeBoardArea()
     {
-        var totalW = (int)Renderer.Width;
-        var totalH = (int)Renderer.Height;
+        // Layout math runs on the safe-area dimensions; the unsafe strips are chrome-free (the top
+        // inset hosts the stats strip, the rest stays background).
+        var (l, t, r, b) = _safeAreaInsets;
+        var totalW = (int)Renderer.Width - l - r;
+        var totalH = (int)Renderer.Height - t - b;
 
         if (IsPortrait)
         {
@@ -175,12 +245,25 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         return (totalW - (int)HistoryPanelWidth, totalH - (int)StatusBarHeight);
     }
 
+    /// <summary>Header + two rows — anything shallower isn't a useful history and stays background.</summary>
+    private float MinPortraitHistoryHeight => ChromeFontSize * 5f;
+
+    /// <summary>Height available to the portrait below-board history: from the board's bottom edge
+    /// down to the top of the status bar (both already inside the safe area).</summary>
+    private float PortraitHistoryHeight(int boardH)
+    {
+        var (_, t, _, b) = _safeAreaInsets;
+        return (int)Renderer.Height - b - StatusBarHeight - (t + boardH);
+    }
+
     private int ComputeHistoryVisibleRows(int boardH)
     {
         var fontSize = ChromeFontSize;
         var headerH = fontSize * 2f;
         var rowH = fontSize * 1.5f;
-        return Math.Max(1, (int)((boardH - headerH) / rowH));
+        // Landscape: the side panel is board-height. Portrait: the below-board strip's height.
+        var availH = IsPortrait ? PortraitHistoryHeight(boardH) : boardH;
+        return Math.Max(1, (int)((availH - headerH) / rowH));
     }
 
     private void RenderHistoryPanel(RectF32 rect)
@@ -199,6 +282,20 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         FillRect(rect.X + 4, rect.Y + headerH, rect.Width - 8, 1, HistorySepColor);
 
         if (_game is null || _gameUI is null) return;
+
+        // During playback, a "▶ Latest" chip in the header is the touch path back to the live game
+        // (desktop has Esc). Its click region is auto-bound by RenderLayout; the index one past the
+        // last ply is GameUI's exit-playback sentinel (see TryHistoryClick).
+        if (_gameUI.Mode == GameUIMode.Playback)
+        {
+            var chip = Layout.Builder
+                .Text("▶ Latest", fontSize, PlaybackHighlightText, TextAlign.Far, TextAlign.Center)
+                .Stretch()
+                .Clickable(new HitResult.ListItemHit("History", _game.Plies.Count));
+            RenderLayout(Layout.Builder.HStack(chip),
+                new RectF32(rect.X + rect.Width * 0.55f, rect.Y, rect.Width * 0.45f - 8, headerH),
+                _labelFont, dpiScale: 1f);
+        }
 
         var plies = _game.Plies;
         var plyCount = plies.Count;
@@ -258,12 +355,78 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         var fontSize = ChromeFontSize;
 
         var status = StatusOverride
-            ?? (_game is null || _gameUI is null ? "" : _gameUI.StatusLine());
+            ?? (_game is null || _gameUI is null ? "" : _gameUI.StatusLine(KeyboardHints));
+
+        // The bar doesn't clip: scale a too-long status down rather than overflow the screen edge.
+        var available = rect.Width - 16f;
+        var measured = Renderer.MeasureText(status.AsSpan(), _labelFont, fontSize).Width;
+        if (measured > available && available > 0)
+            fontSize = MathF.Max(10f, fontSize * (available / measured));
 
         RenderTextBar(status, _labelFont,
             rect.X, rect.Y, rect.Width, rect.Height,
             fontSize, StatusBarBg, FontColor,
             horizontalPadding: 8f, alignX: TextAlign.Near, alignY: TextAlign.Center);
+    }
+
+    /// <summary>
+    /// The notch row (the safe-area top inset): filled like the status bar so the cutout reads as a
+    /// deliberate top bar, with the host label (game mode) left and the derived move counter right.
+    /// Text hugs the edges so the centered camera punch-hole stays clear, and the side padding scales
+    /// with the strip height to clear the rounded screen corners.
+    /// </summary>
+    private void RenderTopStrip(RectF32 rect)
+    {
+        FillRect(rect.X, rect.Y, rect.Width, rect.Height, StatusBarBg);
+
+        // Notch-row text reads as system chrome, not content: status-bar-small (well under half the
+        // strip height), hugging the left/right edges. The centered camera halves the usable run —
+        // each side gets from the corner padding to the keep-out, so ~40% of the width apiece.
+        var fontSize = MathF.Min(ChromeFontSize * 0.75f, rect.Height * 0.32f);
+        if (fontSize < 9f) return; // too shallow for legible text — keep the bar, skip the stats
+
+        var pad = MathF.Max(12f, rect.Height * 0.5f); // corners intrude ~half the strip at mid-height
+
+        // With the real cutout known, line the text row up with the camera (the strip is deeper than
+        // the cutout, so strip-centering sits visibly below it) and keep out of its true span plus a
+        // text-sized gap. Otherwise fall back to strip-centered text and a generic middle keep-out.
+        float textY, textH, leftEnd, rightStart;
+        if (TopCutout is var (cl, ct, cr, cb) && cr > cl)
+        {
+            textH = MathF.Min(rect.Height, fontSize * 1.5f);
+            textY = MathF.Max(rect.Y, (ct + cb) / 2f - textH / 2f);
+            var gap = fontSize;
+            leftEnd = cl - gap;
+            rightStart = cr + gap;
+        }
+        else
+        {
+            textY = rect.Y;
+            textH = rect.Height;
+            leftEnd = rect.X + pad + (rect.Width - 2 * pad) * 0.4f;
+            rightStart = rect.X + rect.Width - pad - (rect.Width - 2 * pad) * 0.4f;
+        }
+        var leftW = leftEnd - (rect.X + pad);
+        var rightW = rect.X + rect.Width - pad - rightStart;
+
+        // DrawText does NOT clip to the given width, so a long label would overrun its column and
+        // collide with the counter across the camera gap — measure and scale down to fit instead
+        // (same approach as DIR.Lib's PixelMenuWidget width cap).
+        void DrawFitted(string text, float x, float w, TextAlign align)
+        {
+            if (w <= 0) return;
+            var fs = fontSize;
+            var measured = Renderer.MeasureText(text.AsSpan(), _labelFont, fs).Width;
+            if (measured > w)
+                fs = MathF.Max(10f, fs * (w / measured));
+            DrawText(text, _labelFont, x, textY, w, textH,
+                fs, FontColor, align, TextAlign.Center);
+        }
+
+        if (!string.IsNullOrEmpty(TopStripLabel))
+            DrawFitted(TopStripLabel, rect.X + pad, leftW, TextAlign.Near);
+        if (_game is not null)
+            DrawFitted($"Move {_game.Plies.Count / 2 + 1}", rightStart, rightW, TextAlign.Far);
     }
 
     private int? ResolveHistoryClick(int px, int py)

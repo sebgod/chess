@@ -57,6 +57,53 @@ public sealed class PixelGameDisplayLayoutTests
         lightFraction.ShouldBeGreaterThan(0.05, $"{label} ({width}x{height}) drew too few board pixels; PNG at {pngPath}");
     }
 
+    // PixelGameDisplay.StatusBarBg — the chrome bar fill, used by both the status bar and the notch
+    // stats strip. Unique among the display's colors, so counting it per row-band locates the chrome.
+    private static bool IsChromeBar(byte r, byte g, byte b) => r == 0x24 && g == 0x24 && b == 0x3a;
+
+    [Fact]
+    public void Safe_area_insets_move_chrome_clear_of_notch_and_gesture_bar()
+    {
+        // A14-ish portrait with a punch-hole top inset and a gesture-bar bottom inset. Pins the
+        // safe-area layout: the notch row becomes a stats strip, the status bar rises above the
+        // gesture band, and the gesture band itself stays chrome-free.
+        const int W = 1080, H = 2408, Top = 100, Bottom = 60;
+        using var renderer = new RgbaImageRenderer(W, H);
+        FillBackground(renderer.Surface.Pixels, PixelGameDisplay<RgbaImage>.Background);
+
+        var display = new PixelGameDisplay<RgbaImage>(renderer)
+        {
+            SafeAreaInsets = (0, Top, 0, Bottom),
+            TopStripLabel = "You (White) vs AI",
+        };
+        display.ResetGame(new Game());
+        display.Render();
+
+        var px = renderer.Surface.Pixels;
+        long ChromeBarIn(int rowStart, int rowEnd)
+        {
+            long n = 0;
+            for (var i = rowStart * W * 4; i < rowEnd * W * 4; i += 4)
+                if (IsChromeBar(px[i], px[i + 1], px[i + 2])) n++;
+            return n;
+        }
+
+        File.WriteAllBytes(Path.Combine(AppContext.BaseDirectory, "pixelgamedisplay-insets.png"),
+            PngWriter.Encode(px, renderer.Surface.Width, renderer.Surface.Height));
+
+        // The notch row is painted as a chrome bar (pre-fix: raw background under the cutout).
+        ChromeBarIn(0, Top).ShouldBeGreaterThan(40_000, "notch strip not painted");
+        // The gesture-bar band is chrome-free (pre-fix: the status bar sat flush at the bottom).
+        ChromeBarIn(H - Bottom, H).ShouldBe(0, "chrome drawn under the gesture bar");
+        // The status bar sits directly above the gesture band.
+        ChromeBarIn(H - Bottom - 130, H - Bottom).ShouldBeGreaterThan(40_000, "status bar not above the inset");
+
+        long light = 0;
+        for (var i = 0; i + 3 < px.Length; i += 4)
+            if (IsLight(px[i], px[i + 1], px[i + 2])) light++;
+        ((double)light / ((long)W * H)).ShouldBeGreaterThan(0.05, "board did not render with insets");
+    }
+
     [Fact]
     public void Startup_menu_renders()
     {

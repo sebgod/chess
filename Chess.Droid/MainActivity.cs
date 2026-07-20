@@ -10,10 +10,11 @@ using DIR.Lib;
 using SdlVulkan.Renderer;
 using static Android.Content.PM.ConfigChanges;
 using File = System.IO.File;
+using GameMode = Chess.Lib.GameMode; // Android.App.GameMode collides
 
 // Use the rendered white-knight launcher icon (mipmap PNGs generated from DIR.Lib's
 // chess_white_knight baseline) instead of the default Android robot.
-[assembly: Application(Label = "Chess", Icon = "@mipmap/ic_launcher")]
+[assembly: Application(Label = "Chess", Icon = "@mipmap/ic_launcher", Theme = "@style/AppTheme")]
 
 namespace Chess.Droid;
 
@@ -62,12 +63,23 @@ public sealed class MainActivity : SdlVulkanActivity
     private bool _vsComputer;
     private Side _humanSide;
 
+
     protected override void OnRendererReady(VkRenderer renderer, SdlEventLoop loop)
     {
         // Route the renderer's loop diagnostics to logcat (Android has no console) — surfaces the
         // background/foreground surface-recreation traces. The renderer's DebugLog is compiled in only
         // for DEBUG or ANDROID, so this costs nothing on desktop Release. Tag: "chessdroid".
         SdlEventLoop.DiagnosticLog = m => Android.Util.Log.Info("chessdroid", m);
+
+        // Match the navigation-bar (home button row) background to the app background — the system
+        // default otherwise clashes below our status bar when the bars are visible. UI-thread call.
+        RunOnUiThread(() =>
+        {
+            var c = PixelGameDisplay<VulkanContext>.Background;
+#pragma warning disable CA1422 // deprecated in API 35 (edge-to-edge enforcement); fine through 34
+            Window?.SetNavigationBarColor(Android.Graphics.Color.Argb(c.Alpha, c.Red, c.Green, c.Blue));
+#pragma warning restore CA1422
+        });
 
         // PixelGameDisplay loads its glyph fonts from FontPaths.FontsDirectory
         // (AppContext.BaseDirectory/Fonts). That path is empty in the APK sandbox, so stage the
@@ -84,7 +96,15 @@ public sealed class MainActivity : SdlVulkanActivity
             ShowMenu();
 
         loop.OnRender = Render;
-        loop.OnResize = (w, h) => _display?.OnResize((int)w, (int)h);
+        loop.OnResize = (w, h) =>
+        {
+            if (_display is null) return;
+            // Re-query the safe area on every resize — the cutout/gesture-bar insets move with
+            // rotation and can change on fold/resume. The setter relayouts only when they differ.
+            _display.SafeAreaInsets = SdlWindow.GetSafeAreaInsets();
+            _display.TopCutout = QueryTopCutout();
+            _display.OnResize((int)w, (int)h);
+        };
         // SDL synthesizes mouse-button events from single-finger touches, so a tap arrives here as a
         // left button-down. Route it to the menu or the board depending on what's up.
         loop.OnMouseDown = (button, x, y, _, _) =>
@@ -95,12 +115,33 @@ public sealed class MainActivity : SdlVulkanActivity
         // The menu is static between taps (each tap already forces a redraw), so only the in-play
         // display needs the external-update poll.
         loop.CheckNeedsRedraw = () => _display?.HasPendingUpdate ?? false;
+        // Android's back button/gesture: SDL traps it before the activity's onBackPressed and
+        // delivers it as a key (AC_BACK -> InputKey.Escape), already on the SDL thread. Desktop Esc
+        // semantics, staged: playback -> live game -> menu (state is saved move-by-move) -> launcher.
+        loop.OnKeyDown = (key, _) =>
+        {
+            if (key != InputKey.Escape) return false;
+            if (_display is { } d)
+            {
+                if (d.UI.Mode == GameUIMode.Playback)
+                    d.UI.ExitPlayback();
+                else
+                    ShowMenu();
+                return true;
+            }
+            RunOnUiThread(() => MoveTaskToBack(true)); // menu: hand back to the launcher
+            return true;
+        };
     }
 
     private void ShowMenu()
     {
         _display = null;
-        _wizard = new StartupWizard(); // no Play-by-Link on Android (no link driver)
+        // No Play-by-Link on Android (no link driver). "Continue game" appears whenever an
+        // unfinished save exists (back button mid-game, or a cold launch with one on disk) —
+        // returning to the menu must never cost the game; only starting a new one overwrites it.
+        var canContinue = TryLoadGame() is { } s && !s.Game.IsFinished;
+        _wizard = new StartupWizard(includeContinue: canContinue);
         _menu = new PixelMenuWidget<VulkanContext>(_renderer, FontPaths.DejaVuSans);
         var (title, prompt, items) = _wizard.Current;
         _menu.Reset(title, prompt, [.. items]);
@@ -125,10 +166,21 @@ public sealed class MainActivity : SdlVulkanActivity
                 _wizard.Confirm(_menu.SelectedIndex);
                 if (_wizard.IsComplete)
                 {
-                    var (_, computerSide, _) = _wizard.Result;
+                    var (mode, computerSide, _) = _wizard.Result;
                     _menu = null;
                     _wizard = null;
-                    StartGame(new Game(), computerSide); // Custom -> standard board for now
+                    if (mode == GameMode.Continue)
+                    {
+                        // The menu only offers Continue when the save parsed moments ago; if it
+                        // fails NOW, re-showing the menu (without Continue) is the safe move — a
+                        // silent fresh StartGame would overwrite the very game being continued.
+                        if (TryLoadGame() is { } saved)
+                            StartGame(saved.Game, saved.ComputerSide);
+                        else
+                            ShowMenu();
+                    }
+                    else
+                        StartGame(new Game(), computerSide); // Custom -> standard board for now
                 }
                 else
                 {
@@ -156,6 +208,14 @@ public sealed class MainActivity : SdlVulkanActivity
         _menu = null;
         _wizard = null;
         _display = new PixelGameDisplay<VulkanContext>(_renderer);
+        // Safe area BEFORE ResetGame so the first layout already clears the notch and the rounded
+        // bottom; the notch strip shows the mode left and the move counter right of the camera.
+        _display.SafeAreaInsets = SdlWindow.GetSafeAreaInsets();
+        _display.TopCutout = QueryTopCutout();
+        // Short labels: the notch strip is status-bar-sized chrome, not a headline.
+        _display.TopStripLabel = _vsComputer ? $"vs AI ({_humanSide})" : "PvP";
+        // Touch-only: no keyboard hints in the status bar; playback exits via the history chip.
+        _display.KeyboardHints = false;
         _display.ResetGame(_game);
 
         SaveGame();
@@ -183,39 +243,34 @@ public sealed class MainActivity : SdlVulkanActivity
     // en-passant rights included) that a bare FEN snapshot would lose.
     private string GamePath => Path.Combine(FilesDir!.AbsolutePath, "game.uci");
 
+    // Persistence lives in the shared Chess.UCI.GameStore so every front-end (desktop GUI too) uses
+    // the same file format and replay logic; these wrappers just supply the path, the computer side
+    // (derived from this activity's mode state), and the logcat sink.
     private (Game Game, Side ComputerSide)? TryLoadGame()
-    {
-        try
-        {
-            if (!File.Exists(GamePath)) return null;
-            var lines = File.ReadAllLines(GamePath);
-            if (lines.Length < 1) return null;
-            var computerSide = Enum.TryParse<Side>(lines[0].Trim(), out var cs) ? cs : Side.None;
-            var moves = lines.Length > 1 ? lines[1].Split(' ', StringSplitOptions.RemoveEmptyEntries) : [];
-            var game = new Game();
-            foreach (var move in moves)
-                if (!game.TryMove(UciMove.Parse(move)).IsMoveOrCapture())
-                    return null; // a move didn't apply -> save is stale/incompatible; start fresh
-            return (game, computerSide);
-        }
-        catch
-        {
-            return null; // unreadable / garbled save -> start fresh
-        }
-    }
+        => GameStore.TryLoad(GamePath, m => SdlEventLoop.DiagnosticLog?.Invoke(m));
 
     private void SaveGame()
     {
         if (_game is null) return;
+        var computerSide = _vsComputer ? (_humanSide == Side.White ? Side.Black : Side.White) : Side.None;
+        GameStore.Save(GamePath, _game, computerSide, m => SdlEventLoop.DiagnosticLog?.Invoke(m));
+    }
+
+    // The exact camera punch-hole bounds, so the notch strip lines its text up with the camera's row
+    // (the safe-area top inset is deeper than the cutout — strip-centered text sits visibly below the
+    // camera) and keeps out of its true horizontal span. Null when unavailable (pre-API-29, insets
+    // not attached yet, no cutout) — the strip then falls back to generic centering.
+    private (int Left, int Top, int Right, int Bottom)? QueryTopCutout()
+    {
         try
         {
-            var computerSide = _vsComputer ? (_humanSide == Side.White ? Side.Black : Side.White) : Side.None;
-            var moves = string.Join(' ', _game.Plies.Select(p => UciMove.Format(p.Action)));
-            File.WriteAllText(GamePath, $"{computerSide}\n{moves}");
+            if (!OperatingSystem.IsAndroidVersionAtLeast(29)) return null;
+            var r = Window?.DecorView.RootWindowInsets?.DisplayCutout?.BoundingRectTop;
+            return r is not null && r.Width() > 0 ? (r.Left, r.Top, r.Right, r.Bottom) : null;
         }
         catch
         {
-            // Best-effort: a failed write must not take down the game.
+            return null;
         }
     }
 

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- No action bar: the default theme's "Chess" title bar is NOT part of the SDL surface, so in
+         non-fullscreen mode it overlaid the top of our own chrome (the Move History label). SDL
+         draws edge-to-edge regardless; we own all on-screen chrome. windowBackground matches the
+         app background to avoid a launch flash. -->
+    <style name="AppTheme" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/app_background</item>
+    </style>
+</resources>
