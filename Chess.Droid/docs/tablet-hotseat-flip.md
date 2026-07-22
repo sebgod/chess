@@ -18,20 +18,19 @@ labels) stays upright. This feature is a **superset**: it rotates the *composite
 text included — so the far player reads the whole screen upright (their text is deliberately upside
 down from the near player's point of view). So it's not "flip the board", it's "rotate the window".
 
-## Design sketch
+## Mechanism
 
-Two ways to implement, roughly in increasing fidelity/cost:
+The 180° flip is one instance of a general, constrained **content→device transform** — see
+[`docs/device-transform.md`](../../docs/device-transform.md) for the full design. In short: the
+renderer holds a transform (rotation ∈ {0,90,180,270} + uniform scale + translation) that it folds into
+its projection, so the whole frame — **text included** — rotates for free on the GPU backends, and
+input is mapped back through the inverse at the host boundary (the whole-surface analogue of what
+`DisplayCell`/`LogicalCell` do for the board today). The hot-seat is just
+`renderer.DeviceTransform = new(Rotation90.Half, dpi, …)`.
 
-1. **Rotate the final composited image 180° (renderer-level).** Cheapest conceptually: draw the UI as
-   usual, then present it rotated 180°. The Vulkan renderer already applies a device `preTransform` for
-   screen rotation, so composing an extra content-space 180° is plausible. Text comes out upside down —
-   which is exactly what's wanted for the opposite player. Input must be transformed by the same 180°
-   (map touch `(x,y)` → `(W-x, H-y)`), the whole-surface analogue of what `DisplayCell`/`LogicalCell`
-   do for the board today.
-2. **Layout-level mirroring.** Re-lay-out each panel rotated. More faithful (could keep text upright if
-   ever wanted) but much more work and largely pointless here — upside-down text is the goal.
-
-Prefer (1).
+That design is a **sibling-repo** change (DIR.Lib + backends); this doc is the product-level driver for
+it. The old "re-lay-out each panel rotated" alternative is rejected — upside-down text is the goal, and
+a global transform gets it without touching layout.
 
 ## Open questions
 
@@ -41,16 +40,19 @@ Prefer (1).
 - **Scope of surface:** rotate the whole window, or just the game area (leaving a fixed toolbar)? Whole
   window is simplest and most legible.
 - **Safe-area / display cutout:** the notch is physically fixed, but a 180° content rotation flips which
-  logical edge it sits on. `PixelGameDisplay.SafeAreaInsets` would need the top/bottom (and left/right)
-  insets swapped for the rotated frame so content still clears the cutout. See the landscape handling in
+  logical edge it sits on. This is no longer a special case — transform the safe-area inset rectangle by
+  the same `M` before setting `PixelGameDisplay.SafeAreaInsets` (180° swaps top↔bottom and left↔right).
+  See [`docs/device-transform.md`](../../docs/device-transform.md) and the landscape handling in
   [`landscape-polish.md`](landscape-polish.md) for how insets already drive layout.
 - **Only tablets:** gate on a large-screen / flat-orientation check; pointless (and disorienting) on a
   phone held by one person.
 
 ## Where it would live
 
-- Renderer/host: the 180° present + input transform belongs near `MainActivity`'s render loop and the
-  SdlVulkan renderer's `preTransform` path (this is Android-specific; other heads don't have the
-  across-the-table use case).
+- Mechanism: `DeviceTransform` on the abstract renderer + backend support — a sibling-repo change (see
+  [`docs/device-transform.md`](../../docs/device-transform.md), phases 1 & 3).
+- Chess wiring: set the 180° content transform when hot-seat PvP swaps sides, and map `MainActivity`'s
+  tap coordinates through the inverse (phase 2). The across-the-table trigger stays Android-specific;
+  other heads don't have the use case, but the transform primitive itself is cross-cutting.
 - `GameUI.FlipBoard` stays the board-only primitive; this feature sits *above* it (you'd typically turn
   the per-colour board flip off in this mode, since the whole frame rotates instead).
