@@ -13,6 +13,13 @@ public sealed class HumanPlayer : IGamePlayer, IWidget
     {
         if (evt is InputEvent.KeyDown(InputKey.F11, _)) return false;
 
+        // Now that every pointer event arrives through the unified OnPointerInput path, only queue
+        // the ones TryMakeMove actually consumes — a key, a press, or a wheel tick. MouseMove/MouseUp
+        // would otherwise pile up (one per pixel of travel) behind the one-event-per-frame drain with
+        // no consumer; drop them here. A future drag interaction would opt them back in.
+        if (evt is not (InputEvent.KeyDown or InputEvent.MouseDown or InputEvent.Scroll))
+            return false;
+
         _eventQueue.Enqueue(evt);
         return true;
     }

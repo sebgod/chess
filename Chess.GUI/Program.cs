@@ -68,15 +68,21 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
         return activeWidget.HandleInput(new InputEvent.KeyDown(inputKey, inputMod));
     },
 
-    OnMouseDown = (button, x, y, _, _) =>
+    // One unified pointer path (SdlVulkan.Renderer 6.28) replaces the separate OnMouseDown +
+    // OnMouseWheel callbacks. Every press/move/release/scroll arrives here as an InputEvent and is
+    // forwarded whole to the active screen (menu → lobby → player). The wheel now carries its real
+    // (x, y) — it used to arrive as (0, 0), so the history panel had no position to hit-test.
+    OnPointerInput = evt =>
     {
-        if (button != 1) return false;
-        IWidget clickTarget = menu is { IsComplete: false } ? menu : lobby is not null ? lobby : player;
-        return clickTarget.HandleInput(new InputEvent.MouseDown(x, y));
+        // The UI only acts on the primary button, matching the old `button != 1` guard.
+        if (evt is InputEvent.MouseDown(_, _, not MouseButton.Left, _, _)
+                or InputEvent.MouseUp(_, _, not MouseButton.Left))
+        {
+            return false;
+        }
+        IWidget target = menu is { IsComplete: false } ? menu : lobby is not null ? lobby : player;
+        return target.HandleInput(evt);
     },
-
-    OnMouseWheel = (scrollY, _, _) =>
-        player.HandleInput(new InputEvent.Scroll(scrollY, 0, 0)),
 
     OnResize = (rw, rh) =>
         display?.OnResize((int)rw, (int)rh),
