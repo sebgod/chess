@@ -64,6 +64,12 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             sdlWindow.ToggleFullscreen();
             return true;
         }
+        // Page the history panel directly on this thread (its scroll model lives in the display).
+        if (display is not null && inputKey is InputKey.PageUp or InputKey.PageDown)
+        {
+            display.PageHistory(inputKey == InputKey.PageUp ? -1 : 1);
+            return true; // display.HasPendingUpdate (set by PageHistory) drives the redraw
+        }
         IWidget activeWidget = menu is { IsComplete: false } ? menu : lobby is not null ? lobby : player;
         return activeWidget.HandleInput(new InputEvent.KeyDown(inputKey, inputMod));
     },
@@ -79,6 +85,13 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                 or InputEvent.MouseUp(_, _, not MouseButton.Left))
         {
             return false;
+        }
+        // History scroll (wheel over the panel + scrollbar thumb/track drag) is served directly by
+        // the display on this thread — bypassing the per-move queue so it stays smooth and never
+        // races game state. Row taps aren't claimed here; they fall through to click-to-navigate.
+        if (display is not null && display.HandleHistoryPointer(evt))
+        {
+            return true; // display.HasPendingUpdate (set on consume) drives the redraw
         }
         IWidget target = menu is { IsComplete: false } ? menu : lobby is not null ? lobby : player;
         return target.HandleInput(evt);

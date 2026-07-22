@@ -24,6 +24,12 @@ public interface IPixelGameDisplay : IGameDisplay
 
     /// <inheritdoc cref="PixelGameDisplay{TSurface}.TopStripLabel"/>
     string? TopStripLabel { get; set; }
+
+    /// <inheritdoc cref="PixelGameDisplay{TSurface}.HandleHistoryPointer"/>
+    bool HandleHistoryPointer(InputEvent evt);
+
+    /// <inheritdoc cref="PixelGameDisplay{TSurface}.PageHistory"/>
+    void PageHistory(int direction);
 }
 
 /// <summary>
@@ -58,6 +64,21 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
     private GameUI? _gameUI;
     private volatile bool _hasPendingUpdate;
     private Game? _game;
+
+    // History-panel scroll model (DIR.Lib 6.15). Owned by the display and mutated ONLY on the
+    // render/event thread (SetExtent in Render, HandleHistoryPointer/PageHistory from the host's
+    // pointer/key dispatch) — never from the game thread, so it needs no queue funnel. Bottom anchor
+    // = tail-follow the latest move; SnapToAtom because a history atom is one whole move row.
+    private readonly ListScrollController _historyScroll = new()
+    {
+        Anchor = ScrollAnchor.Bottom,
+        Mode = ScrollBarMode.Interactive,
+        SnapToAtom = true,
+    };
+    private float _historyBarWidthPx;   // scrollbar column width from the last layout (for hit-testing)
+    private bool _historyBarDrag;       // a scrollbar thumb/track interaction is mid-drag
+    private int _lastSyncedPlaybackPly = -1;
+    private GameUIMode _lastSyncedMode = GameUIMode.Playing;
 
     public PixelGameDisplay(Renderer<TSurface> renderer) : base(renderer)
     {
@@ -301,22 +322,32 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         var plyCount = plies.Count;
         if (plyCount == 0) return;
 
-        var visibleRows = _gameUI.HistoryViewportRows;
-        var (moveCount, _, startMove) = _gameUI.HistoryWindow(visibleRows);
+        var moveCount = (plyCount + 1) / 2;
         var highlightPly = _gameUI.Mode == GameUIMode.Playback ? _gameUI.PlaybackPlyIndex : (int?)null;
 
-        var rowCount = Math.Min(visibleRows, moveCount - startMove);
-        if (rowCount <= 0) return;
+        // Feed the scroll controller this frame's geometry (rows measured in whole move-row atoms),
+        // then keep it in step with playback. Chess lays out in device pixels with font-derived
+        // sizing, so scale the DPI-independent scrollbar metrics up by the same font factor.
+        var contentY = rect.Y + headerH + 4;
+        var rowsRect = new RectF32(rect.X, contentY, rect.Width, rect.Height - (contentY - rect.Y));
+        var barScale = MathF.Max(1f, fontSize / 13f);
+        _historyBarWidthPx = ListScrollController.ScrollBarBaseWidthPx * barScale;
+        _historyScroll.SetExtent(rowsRect, rowH, moveCount, barScale);
+        SyncHistoryPlayback();
 
-        // Build the rows as a declarative Layout tree: an idx column + two proportional
-        // ply columns per row. RenderLayout draws each cell AND auto-binds its click region
-        // from the same arranged rect, so the history hit-targets cannot drift from what's
-        // drawn (replacing the previous hand-mirrored RegisterClickable coordinates).
+        var first = _historyScroll.FirstVisibleAtom;
+        var count = Math.Min(_historyScroll.VisibleAtoms, moveCount - first);
+        if (count <= 0) { _historyScroll.DrawScrollBar(FillRect); return; }
+
+        // Build the visible rows as a declarative Layout tree: an idx column + two proportional
+        // ply columns per row. RenderLayout draws each cell AND auto-binds its click region from the
+        // same arranged rect, so the history hit-targets cannot drift from what's drawn. Rows lay out
+        // in the controller's ContentArea, which reserves the scrollbar column when the list overflows.
         var idxColW = fontSize * 3.5f;
-        var rows = new Layout.Node[rowCount];
-        for (var i = 0; i < rowCount; i++)
+        var rows = new Layout.Node[count];
+        for (var i = 0; i < count; i++)
         {
-            var moveIdx = startMove + i;
+            var moveIdx = first + i;
             var whitePlyIdx = moveIdx * 2;
             var (idxStr, whitePly) = plies.GetRecordAndPGNIdx(whitePlyIdx);
             var hasBlack = whitePlyIdx + 1 < plyCount;
@@ -335,9 +366,10 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
             rows[i] = Layout.Builder.HStack(idxCell, whiteCell, blackCell).RowH(rowH);
         }
 
-        var contentY = rect.Y + headerH + 4;
-        var rowsRect = new RectF32(rect.X, contentY, rect.Width, rect.Height - (contentY - rect.Y));
-        RenderLayout(Layout.Builder.VStack(rows), rowsRect, _labelFont, dpiScale: 1f);
+        RenderLayout(Layout.Builder.VStack(rows), _historyScroll.ContentArea, _labelFont, dpiScale: 1f);
+        // Theme colours so the bar reads against the dark history panel (the DIR.Lib defaults are
+        // near-black and vanish here): the separator tone for the track, the index grey for the thumb.
+        _historyScroll.DrawScrollBar(FillRect, track: HistorySepColor, thumb: HistoryIndexColor);
     }
 
     /// <summary>Builds one clickable ply cell for the history tree, highlighting it during playback.</summary>
@@ -348,6 +380,84 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
             .Stretch()
             .Clickable(new HitResult.ListItemHit("History", plyIndex));
         return highlight ? cell.Bg(PlaybackHighlightBg) : cell;
+    }
+
+    /// <summary>
+    /// Keeps the scroll offset in step with GameUI's playback state (read-only here — the sync runs
+    /// on the render thread while GameUI is mutated on the game thread; a one-frame-stale int read is
+    /// harmless). During playback the current ply's row is scrolled into view; leaving playback snaps
+    /// back to the tail (re-arming the Bottom-anchor tail-follow).
+    /// </summary>
+    private void SyncHistoryPlayback()
+    {
+        if (_gameUI is null) return;
+        var mode = _gameUI.Mode;
+        if (mode == GameUIMode.Playback)
+        {
+            var ply = _gameUI.PlaybackPlyIndex;
+            if (ply != _lastSyncedPlaybackPly || _lastSyncedMode != GameUIMode.Playback)
+                _historyScroll.EnsureVisible(ply / 2);
+            _lastSyncedPlaybackPly = ply;
+        }
+        else if (_lastSyncedMode == GameUIMode.Playback)
+        {
+            _historyScroll.EnsureVisible(Math.Max(0, _historyScroll.TotalAtoms - 1));
+            _lastSyncedPlaybackPly = -1;
+        }
+        _lastSyncedMode = mode;
+    }
+
+    /// <summary>
+    /// Handles history-panel scroll input (mouse wheel over the panel + scrollbar thumb/track drag),
+    /// returning true when consumed. Called by the host's pointer dispatch BEFORE the game widget, on
+    /// the render/event thread. Row taps are deliberately NOT handled here — they fall through to the
+    /// click-to-navigate path (GameUI, game thread) so a tap still selects the exact ply (white vs
+    /// black column). Only the scrollbar column starts a drag here.
+    /// </summary>
+    public bool HandleHistoryPointer(InputEvent evt)
+    {
+        switch (evt)
+        {
+            case InputEvent.Scroll(_, var sx, var sy, _):
+                if (!_historyScroll.Viewport.Contains(sx, sy) || !_historyScroll.HandleInput(evt))
+                    return false;
+                _hasPendingUpdate = true;
+                return true;
+
+            case InputEvent.MouseDown(var dx, var dy, MouseButton.Left, _, _):
+                if (!PointInHistoryScrollBar(dx, dy)) return false;
+                _historyBarDrag = _historyScroll.HandleInput(evt);
+                if (_historyBarDrag) _hasPendingUpdate = true;
+                return _historyBarDrag;
+
+            case InputEvent.MouseMove when _historyBarDrag:
+                if (_historyScroll.HandleInput(evt)) _hasPendingUpdate = true;
+                return true;
+
+            case InputEvent.MouseUp(_, _, MouseButton.Left) when _historyBarDrag:
+                _historyScroll.HandleInput(evt);
+                _historyBarDrag = false;
+                _hasPendingUpdate = true;
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>Pages the history by (nearly) a viewport; direction -1 = up, +1 = down. Render thread.</summary>
+    public void PageHistory(int direction)
+    {
+        _historyScroll.AtomOffset += direction * Math.Max(1, _historyScroll.VisibleAtoms - 1);
+        _hasPendingUpdate = true;
+    }
+
+    /// <summary>Whether (x, y) lands in the history scrollbar column — only present when the list overflows.</summary>
+    private bool PointInHistoryScrollBar(float x, float y)
+    {
+        if (_historyScroll.TotalAtoms <= _historyScroll.VisibleAtoms) return false; // fits → no bar
+        var v = _historyScroll.Viewport;
+        return x >= v.Right - _historyBarWidthPx && x < v.Right && y >= v.Y && y < v.Bottom;
     }
 
     private void RenderStatusBar(RectF32 rect)
