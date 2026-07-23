@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using Android.App;
 using Android.Content;
 using Android.Content.PM;
@@ -128,18 +129,21 @@ public sealed class MainActivity : SdlVulkanActivity
         loop.OnResize = (w, h) =>
         {
             if (_display is null) return;
-            // Re-query the safe area on every resize — the cutout/gesture-bar insets move with
-            // rotation and can change on fold/resume. The setter relayouts only when they differ.
-            _display.SafeAreaInsets = SdlWindow.GetSafeAreaInsets();
-            _display.TopCutout = QueryTopCutout();
+            // Re-fit the hot-seat transform to the new surface size (its CenteredRotation translation
+            // depends on w/h); this also re-queries the safe area on every resize — the cutout/
+            // gesture-bar insets move with rotation and can change on fold/resume.
+            UpdateHotSeatTransform();
             _display.OnResize((int)w, (int)h);
         };
         // SDL synthesizes mouse-button events from single-finger touches, so a tap arrives here as a
-        // left button-down. Route it to the menu or the board depending on what's up.
+        // left button-down. Device → content: the renderer folds the hot-seat rotation into its
+        // projection, so the tap comes back through its inverse before anything hit-tests it — draw
+        // and hit-test can never drift. Route it to the menu or the board depending on what's up.
         loop.OnMouseDown = (button, x, y, _, _) =>
         {
             if (button != 1) return false;
-            return HandleTap((int)x, (int)y);
+            var p = _renderer.DeviceTransform.Invert(new Vector2(x, y));
+            return HandleTap((int)MathF.Round(p.X), (int)MathF.Round(p.Y));
         };
         // The menu is static between taps (each tap already forces a redraw), so only the in-play
         // display needs the external-update poll. The lobby (live peer list), a pending lobby/menu
@@ -177,6 +181,8 @@ public sealed class MainActivity : SdlVulkanActivity
     {
         CleanupNetwork(); // tear down any lobby/session/lock before returning to the menu
         _display = null;
+        // The menu renders through the same projection — never let it inherit a hot-seat-flipped frame.
+        _renderer.DeviceTransform = DeviceTransform.Identity;
         // No Play-by-Link on Android (no link driver), but Network game is on — Android can open
         // sockets. "Continue game" appears whenever an unfinished save exists (back button mid-game,
         // or a cold launch with one on disk) — returning to the menu must never cost the game; only
@@ -282,7 +288,43 @@ public sealed class MainActivity : SdlVulkanActivity
         _display.UI.HandleMouseDown(x, y);
         SaveGame();
         PlayAiReply();
+        UpdateHotSeatTransform(); // a committed PvP move flips the frame to face the player now to move
         return true;
+    }
+
+    // ── Across-the-table hot-seat (docs/tablet-hotseat-flip.md) ──────────────────────────────────
+
+    // The hot-seat flip only makes sense on a tablet lying flat between two players; on a phone held
+    // by one person a rotating frame is pure disorientation. sw600dp is the classic tablet cutoff.
+    private bool IsTablet => (Resources?.Configuration?.SmallestScreenWidthDp ?? 0) >= 600;
+
+    // Sets the renderer's whole-frame content transform for the current state and reapplies the safe
+    // area through it. Hot-seat PvP on a tablet faces the frame to the player to move — 180° while
+    // it's Black's turn, identity on White's — so the player opposite always reads board, history,
+    // and text upright. vs-AI and LAN have a single local side: they keep the identity transform and
+    // orient via GameUI.FlipBoard instead. Only the COMMITTED live side drives this, so scrubbing
+    // through playback never spins the frame.
+    private void UpdateHotSeatTransform()
+    {
+        var hotSeat = _display is not null && !_vsComputer && _netSession is null && IsTablet;
+        _renderer.DeviceTransform = hotSeat && _game is { CurrentSide: Side.Black }
+            ? DeviceTransform.CenteredRotation(Rotation90.Half, _renderer.Width, _renderer.Height)
+            : DeviceTransform.Identity;
+        ApplyDeviceInsets();
+    }
+
+    // Safe-area insets and the camera cutout are reported by the OS in DEVICE space; the display lays
+    // out in CONTENT space. Map them through the current transform — under the 180° flip the notch
+    // lands on the content's bottom edge (top↔bottom, left↔right swap), and the layout needs no
+    // special case. The SafeAreaInsets setter relayouts only when the value actually changes.
+    private void ApplyDeviceInsets()
+    {
+        if (_display is null) return;
+        var m = _renderer.DeviceTransform;
+        _display.SafeAreaInsets = DeviceContentMapping.ToContentInsets(SdlWindow.GetSafeAreaInsets(), m);
+        _display.TopCutout = QueryTopCutout() is { } cutout
+            ? DeviceContentMapping.ToContentRect(cutout, m)
+            : null;
     }
 
     private void StartGame(Game game, Side computerSide)
@@ -294,10 +336,10 @@ public sealed class MainActivity : SdlVulkanActivity
         _menu = null;
         _wizard = null;
         _display = new PixelGameDisplay<VulkanContext>(_renderer);
-        // Safe area BEFORE ResetGame so the first layout already clears the notch and the rounded
-        // bottom; the notch strip shows the mode left and the move counter right of the camera.
-        _display.SafeAreaInsets = SdlWindow.GetSafeAreaInsets();
-        _display.TopCutout = QueryTopCutout();
+        // Transform + safe area BEFORE ResetGame so the first layout already clears the notch and the
+        // rounded bottom (and a resumed PvP game with Black to move opens already flipped); the notch
+        // strip shows the mode left and the move counter right of the camera.
+        UpdateHotSeatTransform();
         // Short labels: the notch strip is status-bar-sized chrome, not a headline.
         _display.TopStripLabel = _vsComputer ? $"vs AI ({_humanSide})" : "PvP";
         // Touch-only: no keyboard hints in the status bar; playback exits via the history chip.
@@ -470,8 +512,7 @@ public sealed class MainActivity : SdlVulkanActivity
         _game = new Game();
         _vsComputer = false;
         _display = new PixelGameDisplay<VulkanContext>(_renderer);
-        _display.SafeAreaInsets = SdlWindow.GetSafeAreaInsets();
-        _display.TopCutout = QueryTopCutout();
+        UpdateHotSeatTransform(); // identity here (a LAN game has a local side) + insets/cutout
         _display.TopStripLabel = $"LAN ({_netLocalSide})";
         _display.KeyboardHints = false;
         _display.ResetGame(_game);

@@ -5,6 +5,7 @@ using Chess.Net;
 using Chess.UCI;
 using DIR.Lib;
 using SdlVulkan.Renderer;
+using System.Numerics;
 
 using var sdlWindow = SdlVulkanWindow.Create("Chess", 1050, 830);
 sdlWindow.GetSizeInPixels(out var w, out var h);
@@ -52,6 +53,47 @@ void SaveCurrentGame()
 
 VkStartupMenu? menu = new(CanContinue());
 
+// Map a pointer event's pixel coordinates from device space into content space through the renderer's
+// DeviceTransform — the inverse of what the projection applies, so draw and hit-test can never drift
+// (the whole-frame analogue of GameUI's DisplayCell/LogicalCell). Identity — all the desktop sets
+// today — returns the event untouched; this exists so any front-end that wires a whole-frame rotation
+// (the Android hot-seat) stays correct by construction.
+InputEvent MapPointerToContent(InputEvent evt)
+{
+    var m = renderer.DeviceTransform;
+    if (m.IsIdentity) return evt;
+    switch (evt)
+    {
+        case InputEvent.MouseDown e:
+        {
+            var p = m.Invert(new Vector2(e.X, e.Y));
+            return e with { X = p.X, Y = p.Y };
+        }
+        case InputEvent.MouseUp e:
+        {
+            var p = m.Invert(new Vector2(e.X, e.Y));
+            return e with { X = p.X, Y = p.Y };
+        }
+        case InputEvent.MouseMove e:
+        {
+            var p = m.Invert(new Vector2(e.X, e.Y));
+            return e with { X = p.X, Y = p.Y };
+        }
+        case InputEvent.Scroll e:
+        {
+            var p = m.Invert(new Vector2(e.X, e.Y));
+            return e with { X = p.X, Y = p.Y };
+        }
+        case InputEvent.Pinch e:
+        {
+            var p = m.Invert(new Vector2(e.X, e.Y));
+            return e with { X = p.X, Y = p.Y };
+        }
+        default:
+            return evt; // KeyDown / TextInput / PinchEnd carry no coordinates
+    }
+}
+
 var loop = new SdlEventLoop(sdlWindow, renderer)
 {
     // Same background the game display paints with — a re-typed literal here would band.
@@ -80,6 +122,9 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
     // (x, y) — it used to arrive as (0, 0), so the history panel had no position to hit-test.
     OnPointerInput = evt =>
     {
+        // Device → content: every consumer below (history panel, menu, board) hit-tests in content
+        // space, so map the event before any dispatch. Identity transform = returned untouched.
+        evt = MapPointerToContent(evt);
         // The UI only acts on the primary button, matching the old `button != 1` guard.
         if (evt is InputEvent.MouseDown(_, _, not MouseButton.Left, _, _)
                 or InputEvent.MouseUp(_, _, not MouseButton.Left))
