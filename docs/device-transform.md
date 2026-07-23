@@ -141,8 +141,10 @@ verified* end-to-end (the hot-seat), not a GPU-side limitation. The CPU backend 
   board, history, status, text — faces the player to move. Gated to plain PvP on tablets
   (smallestScreenWidthDp ≥ 500 — 8" tablets report ~533dp and qualify; phones stay under): vs-AI and
   LAN have a single local side and keep the identity
-  transform, and the board-only `GameUI.FlipBoard` stays off in hot-seat mode (the frame rotates
-  instead). The committed live side drives the flip, so playback scrubbing never spins the frame.
+  transform. In hot-seat mode `GameUI.FlipBoard` **tracks** the frame flip — the two 180° rotations
+  cancel for the board, so the armies keep their physical sides (like a real board on the table) and
+  only the text chrome turns. The committed live side drives the flip, so playback scrubbing never
+  spins the frame.
 - `MainActivity` maps tap coordinates through `M.Invert` at the SDL boundary; Chess.GUI's unified
   `OnPointerInput` does the same (identity on the desktop today — correct by construction).
 - Safe-area insets and the camera cutout come from the OS in device space and are mapped into content

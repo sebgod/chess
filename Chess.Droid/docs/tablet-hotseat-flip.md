@@ -41,6 +41,12 @@ a global transform gets it without touching layout.
   never mid-think, and never during playback scrubbing (the committed live side drives it, not the
   playback cursor). No manual toggle for now.
 - **Scope of surface:** the whole window rotates (simplest and most legible, as predicted).
+- **The board counter-flips (found on-device):** the frame flip alone put each army at the WRONG
+  elbow — rotating White's picture 180° lands White's pieces at Black's seat, i.e. the armies swapped
+  sides every move. A real board across a table never does that. Fix: `GameUI.FlipBoard` **tracks**
+  the frame flip in hot-seat mode, so the two 180° rotations cancel for the board — the armies stay
+  on their physical sides (White always nearest White's seat) and only the text chrome actually
+  turns. Hit-testing composes across both mappings (`M.Invert` then DisplayCell/LogicalCell).
 - **Safe-area / display cutout:** the OS reports them in device space; `DeviceContentMapping`
   (Chess.Lib.UI) maps them into content space by the same `M` before setting
   `PixelGameDisplay.SafeAreaInsets`/`TopCutout` — under 180° the notch lands on the content's bottom
@@ -58,5 +64,6 @@ a global transform gets it without touching layout.
 - Chess wiring: set the 180° content transform when hot-seat PvP swaps sides, and map `MainActivity`'s
   tap coordinates through the inverse (phase 2). The across-the-table trigger stays Android-specific;
   other heads don't have the use case, but the transform primitive itself is cross-cutting.
-- `GameUI.FlipBoard` stays the board-only primitive; this feature sits *above* it (you'd typically turn
-  the per-colour board flip off in this mode, since the whole frame rotates instead).
+- `GameUI.FlipBoard` stays the board-only primitive; this feature sits *above* it and, in hot-seat
+  mode, drives it — the board flip tracks the whole-frame flip so the board keeps physical-board
+  semantics while the chrome turns (see "The board counter-flips" above).

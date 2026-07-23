@@ -300,18 +300,28 @@ public sealed class MainActivity : SdlVulkanActivity
     // the across-the-table devices this is for, while phones top out around ~450dp.
     private bool IsTablet => (Resources?.Configuration?.SmallestScreenWidthDp ?? 0) >= 500;
 
+    // True for the across-the-table hot-seat: plain PvP on a tablet, where the frame turns to face
+    // the player to move. vs-AI and LAN have a single local side and never qualify.
+    private bool IsHotSeatPvP => _display is not null && !_vsComputer && _netSession is null && IsTablet;
+
     // Sets the renderer's whole-frame content transform for the current state and reapplies the safe
-    // area through it. Hot-seat PvP on a tablet faces the frame to the player to move — 180° while
-    // it's Black's turn, identity on White's — so the player opposite always reads board, history,
-    // and text upright. vs-AI and LAN have a single local side: they keep the identity transform and
-    // orient via GameUI.FlipBoard instead. Only the COMMITTED live side drives this, so scrubbing
+    // area through it. Hot-seat PvP turns the frame to face the player to move — 180° while it's
+    // Black's turn, identity on White's — so the player opposite always reads board, history, and
+    // text upright. FlipBoard TRACKS the frame flip: the two 180° rotations cancel for the board, so
+    // the armies stay on their physical sides exactly like a real board lying between the players
+    // (White always nearest White's seat) — only the text chrome actually turns. Without the tracking
+    // flip the armies would swap sides every move. vs-AI and LAN keep the identity transform and set
+    // FlipBoard by their local side instead. Driven by the COMMITTED live side only, so scrubbing
     // through playback never spins the frame.
     private void UpdateHotSeatTransform()
     {
-        var hotSeat = _display is not null && !_vsComputer && _netSession is null && IsTablet;
-        _renderer.DeviceTransform = hotSeat && _game is { CurrentSide: Side.Black }
+        var flip = IsHotSeatPvP && _game is { CurrentSide: Side.Black };
+        _renderer.DeviceTransform = flip
             ? DeviceTransform.CenteredRotation(Rotation90.Half, _renderer.Width, _renderer.Height)
             : DeviceTransform.Identity;
+        // StartGame calls this BEFORE ResetGame so the first layout already honors the transform;
+        // FlipBoard tracking has to wait for the UI to exist (the post-ResetGame line covers it).
+        if (IsHotSeatPvP && _display!.HasGameUI) _display.UI.FlipBoard = flip;
         ApplyDeviceInsets();
     }
 
@@ -348,8 +358,10 @@ public sealed class MainActivity : SdlVulkanActivity
         _display.KeyboardHints = false;
         _display.ResetGame(_game);
         // Orient the board to the local player (their pieces at the bottom) vs the AI; PvP stays
-        // White-at-bottom (_humanSide is White there).
-        _display.UI.FlipBoard = _humanSide == Side.Black;
+        // White-at-bottom (_humanSide is White there). In the tablet hot-seat FlipBoard tracks the
+        // frame flip (see UpdateHotSeatTransform — it can't reach the UI before ResetGame, so the
+        // resume-consistent value is set here).
+        _display.UI.FlipBoard = IsHotSeatPvP ? _game is { CurrentSide: Side.Black } : _humanSide == Side.Black;
 
         SaveGame();
         PlayAiReply(); // if the human chose Black, White (the AI) opens

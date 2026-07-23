@@ -92,6 +92,11 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
 
     public GameUI UI => _gameUI ?? throw new InvalidOperationException("Call ResetGame before accessing UI.");
 
+    /// <summary>True once <see cref="ResetGame"/> has created the game UI — hosts that order calls
+    /// before the first ResetGame (e.g. setting the renderer transform ahead of the first layout)
+    /// must check this before touching <see cref="UI"/>.</summary>
+    public bool HasGameUI => _gameUI is not null;
+
     /// <summary>
     /// When set, replaces the derived status-bar text (game status / setup / playback hints) —
     /// used by hosts to surface transient states the display can't infer, e.g. Chess.Web's
