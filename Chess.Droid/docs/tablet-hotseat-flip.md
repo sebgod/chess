@@ -1,6 +1,8 @@
 # Idea: "across-the-table" hot-seat — rotate the whole UI 180° (Android tablet)
 
-**Status:** idea, not started. Captures a design direction so it isn't lost.
+**Status:** shipped (initial cut). Auto-rotates to face the side to move after each committed move in
+hot-seat PvP on tablets (smallest-width ≥ 500dp gate — 8" tablets like the Tab M8 report 533dp and
+qualify; phones ≤ ~450dp stay out); vs-AI and LAN games keep the fixed orientation.
 
 ## The idea
 
@@ -32,20 +34,28 @@ That design is a **sibling-repo** change (DIR.Lib + backends); this doc is the p
 it. The old "re-lay-out each panel rotated" alternative is rejected — upside-down text is the goal, and
 a global transform gets it without touching layout.
 
-## Open questions
+## Decisions (as shipped)
 
-- **Trigger:** auto-rotate to face the side-to-move after each move, or a manual button? Auto is the
-  "wow", but rotating mid-think is jarring — likely rotate only once a move is *committed*, and only in
-  hot-seat PvP (no single local side). A manual toggle is the safe first cut.
-- **Scope of surface:** rotate the whole window, or just the game area (leaving a fixed toolbar)? Whole
-  window is simplest and most legible.
-- **Safe-area / display cutout:** the notch is physically fixed, but a 180° content rotation flips which
-  logical edge it sits on. This is no longer a special case — transform the safe-area inset rectangle by
-  the same `M` before setting `PixelGameDisplay.SafeAreaInsets` (180° swaps top↔bottom and left↔right).
-  See [`docs/device-transform.md`](../../docs/device-transform.md) and the landscape handling in
-  [`landscape-polish.md`](landscape-polish.md) for how insets already drive layout.
-- **Only tablets:** gate on a large-screen / flat-orientation check; pointless (and disorienting) on a
-  phone held by one person.
+- **Trigger:** auto-rotate to face the side-to-move, applied only once a move is *committed*
+  (`UpdateHotSeatTransform` runs after the tap that lands the move, on resize, and on game start) —
+  never mid-think, and never during playback scrubbing (the committed live side drives it, not the
+  playback cursor). No manual toggle for now.
+- **Scope of surface:** the whole window rotates (simplest and most legible, as predicted).
+- **The board counter-flips (found on-device):** the frame flip alone put each army at the WRONG
+  elbow — rotating White's picture 180° lands White's pieces at Black's seat, i.e. the armies swapped
+  sides every move. A real board across a table never does that. Fix: `GameUI.FlipBoard` **tracks**
+  the frame flip in hot-seat mode, so the two 180° rotations cancel for the board — the armies stay
+  on their physical sides (White always nearest White's seat) and only the text chrome actually
+  turns. Hit-testing composes across both mappings (`M.Invert` then DisplayCell/LogicalCell).
+- **Safe-area / display cutout:** the OS reports them in device space; `DeviceContentMapping`
+  (Chess.Lib.UI) maps them into content space by the same `M` before setting
+  `PixelGameDisplay.SafeAreaInsets`/`TopCutout` — under 180° the notch lands on the content's bottom
+  edge. No special-casing in the layout.
+- **Only tablets:** gated on `smallestScreenWidthDp >= 500` — pointless (and disorienting) on a phone
+  held by one person. 500 rather than the classic 600 because the classic cutoff excludes the 8"
+  budget tablets (533dp) this feature is for; phones stay under 500.
+- **Game end:** the frame faces the side that would be to move (i.e. the mated side) — consistent
+  with the in-play rule; a "both players" endgame orientation is a possible follow-up.
 
 ## Where it would live
 
@@ -54,5 +64,6 @@ a global transform gets it without touching layout.
 - Chess wiring: set the 180° content transform when hot-seat PvP swaps sides, and map `MainActivity`'s
   tap coordinates through the inverse (phase 2). The across-the-table trigger stays Android-specific;
   other heads don't have the use case, but the transform primitive itself is cross-cutting.
-- `GameUI.FlipBoard` stays the board-only primitive; this feature sits *above* it (you'd typically turn
-  the per-colour board flip off in this mode, since the whole frame rotates instead).
+- `GameUI.FlipBoard` stays the board-only primitive; this feature sits *above* it and, in hot-seat
+  mode, drives it — the board flip tracks the whole-frame flip so the board keeps physical-board
+  semantics while the chrome turns (see "The board counter-flips" above).

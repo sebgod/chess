@@ -1,6 +1,7 @@
 # Design: a constrained content→device transform (DPI + rotation, unified)
 
-**Status:** design proposal, not started. **Repo scope:** this describes a change to the
+**Status:** Phases 1a (Vulkan) and 2 (chess consumer) are **done** (see [Phasing](#phasing)); the
+WebGL compose (1b) and the CPU backend (3) are still pending. **Repo scope:** this describes a change to the
 **sibling rendering libraries** (`DIR.Lib` + its backends `SdlVulkan.Renderer`, `WebGl.Renderer`,
 and the CPU `RgbaImageRenderer`); chess is only a *consumer*. It lives here because chess is the
 driver use case (the [Android across-the-table hot-seat](../Chess.Droid/docs/tablet-hotseat-flip.md)),
@@ -39,13 +40,24 @@ construction (shear/anisotropy are unrepresentable):
 public readonly record struct DeviceTransform(Rotation90 Rotation, float Scale, float Tx, float Ty)
 {
     public static readonly DeviceTransform Identity = new(Rotation90.None, 1f, 0f, 0f);
-    public PointF Apply(PointF p);          // content → device
-    public PointF Invert(PointF p);         // device → content (trivial: Rᵀ · (p−t) / scale)
+    public bool IsIdentity { get; }
+    public Matrix3x2 ToMatrix3x2();          // canonical matrix form — a 2D affine, NOT 4×4
+    public Vector2 Apply(Vector2 content);   // content → device (Vector2.Transform via ToMatrix3x2)
+    public Vector2 Invert(Vector2 device);   // device → content (trivial: Rᵀ · (p−t) / scale)
     public DeviceTransform Compose(DeviceTransform inner);
+    // rotation about a surface centre — how a consumer builds the hot-seat 180°:
+    public static DeviceTransform CenteredRotation(Rotation90 rotation, float w, float h, float scale = 1f);
 }
 
-public enum Rotation90 { None, Cw90, Half, Cw270 }
+// backed int = clockwise quarter-turns (screen space, Y-down), so composition is a mod-4 add
+public enum Rotation90 { None = 0, Cw90 = 1, Half = 2, Cw270 = 3 }
 ```
+
+The matrix form is **2×3** (`Matrix3x2`), not 4×4: an affine map with no perspective and no z *is* its six
+coefficients, so the actual compose — `M · projection` — stays a `Matrix3x2` multiply (both operands are
+2D affines: the projection is just screen→NDC scale + translate). Only at the GPU boundary is the result
+widened into the `mat4` the vertex shader multiplies (`gl_Position = proj * vec4(pos, 0, 1)`) — six real
+floats placed into the mat4 slots plus the two z/w constants. A 4×4 multiply would waste half its lanes.
 
 `DpiScale` becomes a derived accessor (`DpiScale => transform.Scale`), not an independent field.
 
@@ -110,17 +122,31 @@ result on `PixelGameDisplay.SafeAreaInsets`. Under 180° that swaps top↔bottom
 
 ## Phasing
 
-| Phase | Scope | Where |
-|---|---|---|
-| 1 | `DeviceTransform` type + GPU projection compose; **180° only**; `DpiScale => Scale` accessor | DIR.Lib + SdlVulkan.Renderer + WebGl.Renderer |
-| 2 | Host input inverse-mapping + safe-area inset transform; wire the hot-seat 180° in Chess.Droid PvP | chess (consumer) |
-| 3 | CPU backend 90°/270°; retire the scalar `dpiScale`; consider subsuming `FlipBoard` | DIR.Lib + backends |
+| Phase | Scope | Where | Status |
+|---|---|---|---|
+| 1a | `DeviceTransform` type (+ `Matrix3x2`/`Vector2` algebra, unit tests) + Vulkan projection compose; all four 90° rotations work on the GPU | DIR.Lib + SdlVulkan.Renderer | **Done** — 180° flip verified via offscreen render + readback |
+| 1b | WebGL projection compose (the `uProj` `mat4` is built JS-side, so this composes there or pushes the full matrix from .NET) | WebGl.Renderer | Pending |
+| 2 | Host input inverse-mapping (`M.Invert`) + safe-area inset transform; wire the hot-seat 180° in Chess.Droid PvP | chess (consumer) | **Done** — `DeviceContentMapping` (Chess.Lib.UI) maps insets/cutout; taps inverted at both SDL hosts; Chess.Droid auto-flips hot-seat PvP to face the side to move (≥500dp smallest-width tablet gate) |
+| 3 | CPU backend `RgbaImageRenderer` remap (180° then 90°/270°); retire the scalar `dpiScale`; consider subsuming `FlipBoard` | DIR.Lib + backends | Pending |
 
-## How chess consumes it (once phases 1–2 land)
+Note on the "180° only" original scope: on a GPU backend the rotation folds into the projection, so all
+four quarter-turns render correctly for free — the 180° constraint is really about what is *wired and
+verified* end-to-end (the hot-seat), not a GPU-side limitation. The CPU backend (phase 3) is where
+90°/270° is genuinely harder (axis swap + glyph orientation), so it stays gated there.
 
-- Chess.Droid hot-seat PvP sets `renderer.DeviceTransform = new(Rotation90.Half, dpi, …)` to face the
-  player to move; the board-only `GameUI.FlipBoard` is turned **off** in this mode (the whole frame
-  rotates instead).
-- `MainActivity` maps `HandleTap` coordinates through `M.Invert` (replacing the ad-hoc pass-through).
-- Trigger, surface scope, and tablet-gating remain product questions — see
-  [`tablet-hotseat-flip.md`](../Chess.Droid/docs/tablet-hotseat-flip.md).
+## How chess consumes it (phases 1a + 2, landed)
+
+- Chess.Droid hot-seat PvP sets `renderer.DeviceTransform = DeviceTransform.CenteredRotation(Rotation90.Half, w, h)`
+  whenever Black is to move (identity on White's turn; recomputed on resize), so the whole frame —
+  board, history, status, text — faces the player to move. Gated to plain PvP on tablets
+  (smallestScreenWidthDp ≥ 500 — 8" tablets report ~533dp and qualify; phones stay under): vs-AI and
+  LAN have a single local side and keep the identity
+  transform. In hot-seat mode `GameUI.FlipBoard` **tracks** the frame flip — the two 180° rotations
+  cancel for the board, so the armies keep their physical sides (like a real board on the table) and
+  only the text chrome turns. The committed live side drives the flip, so playback scrubbing never
+  spins the frame.
+- `MainActivity` maps tap coordinates through `M.Invert` at the SDL boundary; Chess.GUI's unified
+  `OnPointerInput` does the same (identity on the desktop today — correct by construction).
+- Safe-area insets and the camera cutout come from the OS in device space and are mapped into content
+  space by `DeviceContentMapping` (Chess.Lib.UI): insets permute edges (180° swaps top↔bottom,
+  left↔right), the cutout rect inverts its corners. `PixelGameDisplay` layout is unchanged.
