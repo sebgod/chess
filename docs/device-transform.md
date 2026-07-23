@@ -126,7 +126,7 @@ result on `PixelGameDisplay.SafeAreaInsets`. Under 180° that swaps top↔bottom
 |---|---|---|---|
 | 1a | `DeviceTransform` type (+ `Matrix3x2`/`Vector2` algebra, unit tests) + Vulkan projection compose; all four 90° rotations work on the GPU | DIR.Lib + SdlVulkan.Renderer | **Done** — 180° flip verified via offscreen render + readback |
 | 1b | WebGL projection compose (the `uProj` `mat4` is built JS-side, so this composes there or pushes the full matrix from .NET) | WebGl.Renderer | Pending |
-| 2 | Host input inverse-mapping (`M.Invert`) + safe-area inset transform; wire the hot-seat 180° in Chess.Droid PvP | chess (consumer) | **Done** — `DeviceContentMapping` (Chess.Lib.UI) maps insets/cutout; taps inverted at both SDL hosts; Chess.Droid auto-flips hot-seat PvP to face the side to move (sw600dp tablet gate) |
+| 2 | Host input inverse-mapping (`M.Invert`) + safe-area inset transform; wire the hot-seat 180° in Chess.Droid PvP | chess (consumer) | **Done** — `DeviceContentMapping` (Chess.Lib.UI) maps insets/cutout; taps inverted at both SDL hosts; Chess.Droid auto-flips hot-seat PvP to face the side to move (≥500dp smallest-width tablet gate) |
 | 3 | CPU backend `RgbaImageRenderer` remap (180° then 90°/270°); retire the scalar `dpiScale`; consider subsuming `FlipBoard` | DIR.Lib + backends | Pending |
 
 Note on the "180° only" original scope: on a GPU backend the rotation folds into the projection, so all
@@ -139,7 +139,8 @@ verified* end-to-end (the hot-seat), not a GPU-side limitation. The CPU backend 
 - Chess.Droid hot-seat PvP sets `renderer.DeviceTransform = DeviceTransform.CenteredRotation(Rotation90.Half, w, h)`
   whenever Black is to move (identity on White's turn; recomputed on resize), so the whole frame —
   board, history, status, text — faces the player to move. Gated to plain PvP on tablets
-  (smallestScreenWidthDp ≥ 600): vs-AI and LAN have a single local side and keep the identity
+  (smallestScreenWidthDp ≥ 500 — 8" tablets report ~533dp and qualify; phones stay under): vs-AI and
+  LAN have a single local side and keep the identity
   transform, and the board-only `GameUI.FlipBoard` stays off in hot-seat mode (the frame rotates
   instead). The committed live side drives the flip, so playback scrubbing never spins the frame.
 - `MainActivity` maps tap coordinates through `M.Invert` at the SDL boundary; Chess.GUI's unified

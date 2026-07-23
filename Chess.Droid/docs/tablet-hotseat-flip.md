@@ -1,7 +1,8 @@
 # Idea: "across-the-table" hot-seat — rotate the whole UI 180° (Android tablet)
 
 **Status:** shipped (initial cut). Auto-rotates to face the side to move after each committed move in
-hot-seat PvP on tablets (sw600dp gate); vs-AI and LAN games keep the fixed orientation.
+hot-seat PvP on tablets (smallest-width ≥ 500dp gate — 8" tablets like the Tab M8 report 533dp and
+qualify; phones ≤ ~450dp stay out); vs-AI and LAN games keep the fixed orientation.
 
 ## The idea
 
@@ -44,8 +45,9 @@ a global transform gets it without touching layout.
   (Chess.Lib.UI) maps them into content space by the same `M` before setting
   `PixelGameDisplay.SafeAreaInsets`/`TopCutout` — under 180° the notch lands on the content's bottom
   edge. No special-casing in the layout.
-- **Only tablets:** gated on `smallestScreenWidthDp >= 600` — pointless (and disorienting) on a phone
-  held by one person.
+- **Only tablets:** gated on `smallestScreenWidthDp >= 500` — pointless (and disorienting) on a phone
+  held by one person. 500 rather than the classic 600 because the classic cutoff excludes the 8"
+  budget tablets (533dp) this feature is for; phones stay under 500.
 - **Game end:** the frame faces the side that would be to move (i.e. the mated side) — consistent
   with the in-play rule; a "both players" endgame orientation is a possible follow-up.
 
