@@ -295,8 +295,10 @@ public sealed class MainActivity : SdlVulkanActivity
     // ── Across-the-table hot-seat (docs/tablet-hotseat-flip.md) ──────────────────────────────────
 
     // The hot-seat flip only makes sense on a tablet lying flat between two players; on a phone held
-    // by one person a rotating frame is pure disorientation. sw600dp is the classic tablet cutoff.
-    private bool IsTablet => (Resources?.Configuration?.SmallestScreenWidthDp ?? 0) >= 600;
+    // by one person a rotating frame is pure disorientation. 500dp, NOT the classic sw600dp tablet
+    // cutoff: 8" budget tablets report ~533dp (the Tab M8 is 800px @ 240dpi = 533dp) and are exactly
+    // the across-the-table devices this is for, while phones top out around ~450dp.
+    private bool IsTablet => (Resources?.Configuration?.SmallestScreenWidthDp ?? 0) >= 500;
 
     // Sets the renderer's whole-frame content transform for the current state and reapplies the safe
     // area through it. Hot-seat PvP on a tablet faces the frame to the player to move — 180° while
