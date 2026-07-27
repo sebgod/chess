@@ -15,7 +15,6 @@ public enum LobbyState
     Connecting,      // we accepted; ACCEPT is going out (see Accept) — Session is not published yet
     Connected,       // Session is ready — start the game
     Declined,        // our invite was declined
-    Cancelled,       // we backed out
     Failed,          // couldn't reach the peer / it went away
 }
 
