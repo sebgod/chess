@@ -7,7 +7,7 @@ namespace Chess.Tests;
 
 /// <summary>
 /// Pure-math tests for <see cref="DeviceContentMapping"/> — the host's device→content mapping for
-/// safe-area insets and the display-cutout rect. The 180° hot-seat flip is the wired case: the camera
+/// safe-area insets and the display-cutout rect. The 180° across-the-table flip is the wired case: the camera
 /// notch must land on the content's BOTTOM edge when the frame faces the far player, or the board would
 /// slide UNDER the punch-hole the moment the frame rotates.
 /// </summary>
