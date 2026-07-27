@@ -134,6 +134,7 @@ public class Game
         if (_plies.Count > 0)
             throw new InvalidOperationException("Cannot modify board after game has started.");
         _board[position] = piece;
+        OnSetupBoardChanged();
     }
 
     /// <summary>
@@ -144,6 +145,26 @@ public class Game
         if (_plies.Count > 0)
             throw new InvalidOperationException("Cannot modify board after game has started.");
         _board[position] = Piece.None;
+        OnSetupBoardChanged();
+    }
+
+    /// <summary>
+    /// Re-derives what a setup edit changed. Two things track the board here:
+    /// <list type="bullet">
+    /// <item><description><c>Board</c> is a value type, so the history's entry 0 is a COPY taken at
+    /// construction — without refreshing it, "the position before the first ply" would stay the empty
+    /// setup board, wrong both for playback scrubbing and for a save that replays from the starting
+    /// position (<c>Chess.UCI.GameStore</c>).</description></item>
+    /// <item><description>The game status, because a Game constructed on an EMPTY board evaluates as
+    /// stalemate (no legal moves) — and <see cref="TryMove"/> refuses everything while
+    /// <see cref="IsFinished"/>, so a stale terminal status made a custom game set up from an empty
+    /// board impossible to actually play.</description></item>
+    /// </list>
+    /// </summary>
+    private void OnSetupBoardChanged()
+    {
+        _boardHistory[0] = _board;
+        _gameStatus = _board.DetermineGameResult(_plies, _currentSide);
     }
 
     public override string ToString() => $"{_board.ToFEN()} [{_plies.ToPGN()}] {_gameStatus.ToMessage(_currentSide)}";
