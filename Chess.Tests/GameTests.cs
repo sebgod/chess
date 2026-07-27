@@ -13,6 +13,38 @@ namespace Chess.Tests;
 
 public class GameTests
 {
+    [Fact]
+    public void SetupOnAnEmptyBoard_BecomesPlayableOncePiecesArePlaced()
+    {
+        // An empty board has no legal moves, so the ctor's status is stalemate — and TryMove refuses
+        // everything while the game is "finished". Setup edits must therefore re-derive the status,
+        // or a custom game started from an empty board can never be played at all.
+        var game = new Game(new Board(), White, []);
+        game.IsFinished.ShouldBeTrue("an empty board is a dead position");
+
+        game.SetPiece(E1, new Piece(King, White));
+        game.SetPiece(E8, new Piece(King, Black));
+        game.SetPiece(A1, new Piece(Rook, White));
+
+        game.IsFinished.ShouldBeFalse();
+        game.TryMove(A1, A7).IsMoveOrCapture().ShouldBeTrue();
+    }
+
+    [Fact]
+    public void SetupEdits_BecomeThePositionBeforeTheFirstPly()
+    {
+        // BoardAtPly(-1) is what playback scrubs back to and what GameStore replays a custom game
+        // from; Board is a value type, so the snapshot taken in the ctor has to be refreshed.
+        var game = new Game(new Board(), White, []);
+        game.SetPiece(E1, new Piece(King, White));
+        game.SetPiece(E8, new Piece(King, Black));
+
+        game.TryMove(E1, E2).IsMoveOrCapture().ShouldBeTrue();
+
+        game.BoardAtPly(-1)[E1].ShouldBe(new Piece(King, White));
+        game.BoardAtPly(-1)[E8].ShouldBe(new Piece(King, Black));
+    }
+
     [Theory]
     [MemberData(nameof(DataSource))]
     public void EvaluateMoves(Game game, Lib.Action action, ActionResult expectedResult, Board? expectedBoard, GameStatus expectedStatus, PieceType expectedCapture, PieceType expectedPromotion)
