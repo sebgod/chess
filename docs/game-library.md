@@ -171,9 +171,12 @@ card turning. Two caveats: the palette must then be stable across frames (or ban
 and **delivery is unmeasured** — the benchmark times encoding, not pushing tens of KB of escape
 sequences down a pty, which over SSH is likely the real ceiling.
 
-Note also that `BenchmarkDotNet.Artifacts/` in this repo is an **untracked orphan**: the benchmark
-project is not in the solution and the results predate the ImageMagick removal. Do not trust those
-numbers; a committed benchmark is a prerequisite for the video-mode work.
+There is deliberately **no benchmark in this repo right now**. An untracked `BenchmarkDotNet.Artifacts/`
+used to sit here holding `RenderBoardBenchmark` and `SixelEncoderBenchmark` reports from 2026-03-01,
+but the `Chess.Console.Benchmarks` project that produced them was gone from the solution, and the
+numbers predated the ImageMagick removal — stale results with no way to re-run them, which is worse
+than none, so they were deleted. The `.gitignore` entry stays for whatever replaces them. Standing up
+a committed benchmark is therefore a prerequisite for the video-mode work, not an optional extra.
 
 ## The partial-render path is under-tested
 
