@@ -4,6 +4,7 @@ using Chess.Lib;
 using Chess.Lib.UI;
 using Chess.Net;
 using DIR.Lib;
+using LAN.Lib;
 using SdlVulkan.Renderer;
 
 namespace Chess.GUI;
@@ -26,15 +27,13 @@ internal sealed class VkLanLobby : IWidget, IDisposable
 
     private readonly string _saveDir;
     private readonly Side _preferredColor;
-    private readonly string _peerId;
 
     private PixelMenuWidget<VulkanContext>? _menu;
     private string _typedName;
     private bool _nameCommitted;
 
     // Built once the name is committed, so the beacon announces the final name.
-    private UdpTcpLanTransport? _transport;
-    private LanDiscovery? _discovery;
+    private LanPlayStack? _lan;
     private LanLobby? _lobby;
 
     // What the widget currently shows — so we only Reset() (which snaps the selection back to 0) when
@@ -62,9 +61,7 @@ internal sealed class VkLanLobby : IWidget, IDisposable
     {
         _saveDir = saveDir;
         _preferredColor = preferredColor;
-        var identity = LanIdentity.Load(saveDir);
-        _peerId = identity.PeerId;
-        _typedName = identity.Name;
+        _typedName = LanProfile.Load(saveDir).Name;
     }
 
     public void Render(VkRenderer renderer)
@@ -200,11 +197,10 @@ internal sealed class VkLanLobby : IWidget, IDisposable
         _typedName = name;
 
         // Persist so the next launch prefills this name.
-        new LanIdentity(name, _peerId).Save(_saveDir);
+        new LanProfile(name).Save(_saveDir);
 
-        _transport = new UdpTcpLanTransport();
-        _discovery = new LanDiscovery(_transport, TimeProvider.System, _peerId, () => _typedName);
-        _lobby = new LanLobby(_transport, _discovery, new LanIdentity(name, _peerId), _preferredColor);
+        _lan = new LanPlayStack(name, _preferredColor, TimeProvider.System);
+        _lobby = _lan.Lobby;
         _lobby.Start();
 
         _nameCommitted = true;
@@ -237,9 +233,9 @@ internal sealed class VkLanLobby : IWidget, IDisposable
 
     public void Dispose()
     {
-        _lobby?.Dispose();
-        // Disposing the transport stops discovery/listening but does NOT close an established session
-        // connection — that TcpClient is owned by the NetworkSession handed to the host.
-        _ = _transport?.DisposeAsync();
+        // Disposing the stack sends the bye and closes the discovery/listening sockets, but does NOT
+        // close an established session connection — that TcpClient is owned by the NetworkSession
+        // handed to the host.
+        _ = _lan?.DisposeAsync();
     }
 }

@@ -11,6 +11,7 @@ using Chess.Lib.UI;
 using Chess.Net;
 using Chess.UCI;
 using DIR.Lib;
+using LAN.Lib;
 using SdlVulkan.Renderer;
 using static Android.Content.PM.ConfigChanges;
 using File = System.IO.File;
@@ -79,8 +80,7 @@ public sealed class MainActivity : SdlVulkanActivity
     // single-threaded). The lobby/discovery run only while browsing; the multicast lock lets us receive
     // UDP broadcast at all. Lobby is built on the SDL thread via the _pendingLobby* flags so the name
     // dialog (UI thread) never touches renderer objects across threads.
-    private UdpTcpLanTransport? _netTransport;
-    private LanDiscovery? _netDiscovery;
+    private LanPlayStack? _netLan;
     private LanLobby? _netLobby;
     private PixelMenuWidget<VulkanContext>? _lobbyMenu;
     private NetworkSession? _netSession;
@@ -89,7 +89,6 @@ public sealed class MainActivity : SdlVulkanActivity
     private volatile bool _pendingLobbyStart;
     private volatile bool _pendingShowMenu;
     private string _pendingLobbyName = "";
-    private string _pendingLobbyPeerId = "";
     private Side _pendingLobbyPreferred;
     private string _lobbyShownKey = "";
     private LanPeer[] _lobbyPeers = [];
@@ -392,12 +391,11 @@ public sealed class MainActivity : SdlVulkanActivity
     {
         _menu = null;
         _wizard = null;
-        var identity = LanIdentity.Load(FilesDir!.AbsolutePath);
-        _pendingLobbyPeerId = identity.PeerId;
+        var profile = LanProfile.Load(FilesDir!.AbsolutePath);
         _pendingLobbyPreferred = computerSide == Side.White ? Side.Black : Side.White;
-        var current = string.IsNullOrWhiteSpace(identity.Name)
+        var current = string.IsNullOrWhiteSpace(profile.Name)
             ? (Android.OS.Build.Model ?? "Player")
-            : identity.Name;
+            : profile.Name;
         PromptName(current);
     }
 
@@ -426,13 +424,11 @@ public sealed class MainActivity : SdlVulkanActivity
     private void StartLobby()
     {
         var name = _pendingLobbyName;
-        new LanIdentity(name, _pendingLobbyPeerId).Save(FilesDir!.AbsolutePath);
+        new LanProfile(name).Save(FilesDir!.AbsolutePath);
 
         AcquireMulticastLock();
-        _netTransport = new UdpTcpLanTransport();
-        _netDiscovery = new LanDiscovery(_netTransport, TimeProvider.System, _pendingLobbyPeerId, () => name);
-        _netLobby = new LanLobby(_netTransport, _netDiscovery,
-            new LanIdentity(name, _pendingLobbyPeerId), _pendingLobbyPreferred);
+        _netLan = new LanPlayStack(name, _pendingLobbyPreferred, TimeProvider.System);
+        _netLobby = _netLan.Lobby;
         _netLobby.Start();
         _lobbyMenu = new PixelMenuWidget<VulkanContext>(_renderer, FontPaths.DejaVuSans);
         _lobbyShownKey = "";
@@ -516,11 +512,9 @@ public sealed class MainActivity : SdlVulkanActivity
         _netSession = session;
         _netLocalSide = session.LocalSide;
 
-        _netLobby.Dispose();
         _netLobby = null;
-        _netDiscovery = null;
         _lobbyMenu = null;
-        if (_netTransport is not null) { _ = _netTransport.DisposeAsync(); _netTransport = null; }
+        if (_netLan is not null) { _ = _netLan.DisposeAsync(); _netLan = null; }
         ReleaseMulticastLock(); // discovery is done; the game socket stays open
 
         _game = new Game();
@@ -573,11 +567,9 @@ public sealed class MainActivity : SdlVulkanActivity
     {
         _netSession?.Dispose();
         _netSession = null;
-        _netLobby?.Dispose();
         _netLobby = null;
-        _netDiscovery = null;
         _lobbyMenu = null;
-        if (_netTransport is not null) { _ = _netTransport.DisposeAsync(); _netTransport = null; }
+        if (_netLan is not null) { _ = _netLan.DisposeAsync(); _netLan = null; }
         ReleaseMulticastLock();
         _pendingLobbyStart = false;
         _pendingShowMenu = false;

@@ -14,4 +14,14 @@
     <ProjectReference Include="..\Chess.UCI\Chess.UCI.csproj" />
   </ItemGroup>
 
+  <!-- LAN.Lib: peer discovery (the UDP beacon + peer table this project used to own, extracted and
+       generalised into its own repo). Chess keeps only the TCP session channel on top of it and
+       announces as service "chess". -->
+  <ItemGroup Condition="'$(UseLocalSiblings)' == 'true'">
+    <ProjectReference Include="..\..\LAN.Lib\src\LAN.Lib\LAN.Lib.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
+    <PackageReference Include="LAN.Lib" />
+  </ItemGroup>
+
 </Project>

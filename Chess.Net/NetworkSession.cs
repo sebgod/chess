@@ -40,25 +40,29 @@ public sealed class NetworkSession : IDisposable
         PeerName = peerName;
         _conn.LineReceived += OnLine;
         _conn.Closed += OnClosed;
+        // Idempotent: the lobby already started the connection to hear the invite handshake, but a
+        // session handed a fresh connection (or built in a test) must still receive — the session is
+        // the connection's owner from here on.
+        _conn.StartReceiving();
         // A close that fired between accept and here (peer bailed instantly) still gets caught.
         if (!_conn.IsConnected) _peerLeft = true;
     }
 
     /// <summary>Relay a move we just made to the peer.</summary>
-    public void SendMove(string uci) => _conn.Send(LanProtocol.EncodeMove(uci));
+    public void SendMove(string uci) => _conn.Send(SessionProtocol.EncodeMove(uci));
 
     /// <summary>Pop the next move the peer sent, if any.</summary>
     public bool TryDequeueMove([MaybeNullWhen(false)] out string uci) => _incomingMoves.TryDequeue(out uci);
 
     private void OnLine(string line)
     {
-        var msg = LanProtocol.Parse(line);
+        var msg = SessionProtocol.Parse(line);
         switch (msg.Kind)
         {
-            case LanMessageKind.Move:
+            case SessionMessageKind.Move:
                 _incomingMoves.Enqueue(msg.Move);
                 break;
-            case LanMessageKind.Resign:
+            case SessionMessageKind.Resign:
                 _peerLeft = true;
                 break;
         }
