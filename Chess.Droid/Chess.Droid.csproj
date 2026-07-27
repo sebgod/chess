@@ -12,8 +12,10 @@
     <ApplicationId>org.sebgod.chess</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
-    <!-- Android pilot head. Like Chess.Web, it lives OUTSIDE Chess.sln (CI has no Android SDK) and
-         is a local build/package artifact for now. -->
+    <!-- Android head. Like Chess.Web, it lives OUTSIDE Chess.sln, so that a solution build (and the
+         `test` CI job) doesn't drag in the android workload + JDK + Android SDK. It is not
+         ungated for that, though: the `android` job in .github/workflows/dotnet-desktop.yml
+         compiles it on every push and PR. Packaging a signed APK is still a local step. -->
   </PropertyGroup>
 
   <!-- Pin a coherent SDL managed+native pair for android, overriding the repo's 3.5.0-preview CPM
