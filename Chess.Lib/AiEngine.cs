@@ -183,6 +183,20 @@ public sealed class AiEngine(Side side, int maxDepth = AiEngine.DefaultDepth, Ti
             return new SearchResult(null, 0, 0, 0);
 
         NodesSearched = 0;
+
+        // A forced move needs no search: there is nothing to compare it against, so thinking about it
+        // only burns clock that the rest of the game could have used. Recaptures and single escapes
+        // from check make this common enough to be worth spotting.
+        if (OnlyLegalMove(game.Board, game.Plies, Side) is { } forced)
+        {
+            var (_, forcedBoard, _) = game.Board.EvaluateAction(game.Plies, forced, skipGameResultCheck: true);
+            NodesSearched = 1;
+
+            var onlyResult = new SearchResult(forced, Evaluate(forcedBoard, Side), 1, NodesSearched);
+            onDepthComplete?.Invoke(onlyResult);
+            return onlyResult;
+        }
+
         _abort = false;
         // Depth 1 is exempt from aborting (enabled once it completes, below). That exemption is what
         // guarantees we return a legal move however tight the budget is, and it is cheap: one ply
@@ -394,6 +408,33 @@ public sealed class AiEngine(Side side, int maxDepth = AiEngine.DefaultDepth, Ti
         var f = (int)file;
         // PST is from White's perspective (rank 0 = rank 1). Flip for Black.
         return side == Side.White ? r * 8 + f : (7 - r) * 8 + f;
+    }
+
+    /// <summary>
+    /// The single legal move in this position, or <c>null</c> if there is a choice (or none at all).
+    /// Stops the moment a second legal move turns up, so in an ordinary position this costs two
+    /// legality checks rather than a full move generation.
+    /// </summary>
+    private static Action? OnlyLegalMove(Board board, ImmutableList<RecordedPly> plies, Side side)
+    {
+        Action? only = null;
+
+        foreach (var (position, _) in board.AllPiecesOfSide(side))
+        {
+            foreach (var move in board.ValidMoves(plies, position, side))
+            {
+                // ValidMoves is pseudo-legal — EvaluateAction is what rejects moves that would leave
+                // our own king in check.
+                var ((result, _), _, _) = board.EvaluateAction(plies, move, skipGameResultCheck: true);
+                if (!result.IsMoveOrCapture()) continue;
+
+                if (only is not null) return null;
+
+                only = move;
+            }
+        }
+
+        return only;
     }
 
     private static List<Action> GenerateMoves(Board board, ImmutableList<RecordedPly> plies, Side side)

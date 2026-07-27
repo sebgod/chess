@@ -247,6 +247,54 @@ public sealed class AiEngineTests
     }
 
     [Fact]
+    public void Search_ForcedMove_PlaysItWithoutSearching()
+    {
+        // Ka1 is checked down the a-file by Ra8, and Rc2 covers the second rank, so a2 and b2 are out
+        // and Kb1 is the only legal move. There is nothing to compare it against, so spending the
+        // budget deciding would just be clock the rest of the game never gets back.
+        var board = new Board
+        {
+            [Position.A1] = (Side.White, PieceType.King),
+            [Position.A8] = (Side.Black, PieceType.Rook),
+            [Position.C2] = (Side.Black, PieceType.Rook),
+            [Position.H6] = (Side.Black, PieceType.King),
+        };
+
+        var game = new Game(board, Side.White, []);
+        var engine = new AiEngine(Side.White, maxDepth: 4);
+
+        var result = engine.Search(game, cancellationToken: Ct);
+
+        result.BestMove.ShouldNotBeNull();
+        result.BestMove.Value.From.ShouldBe(Position.A1);
+        result.BestMove.Value.To.ShouldBe(Position.B1);
+
+        // The single evaluated position, and no tree beneath it — this is what says "did not search".
+        result.Nodes.ShouldBe(1);
+    }
+
+    [Fact]
+    public void Search_ChoiceOfMoves_StillSearches()
+    {
+        // Guards the short circuit against firing when there is a genuine choice: the same position
+        // with the second rank uncovered has three king moves, and must be searched properly.
+        var board = new Board
+        {
+            [Position.A1] = (Side.White, PieceType.King),
+            [Position.A8] = (Side.Black, PieceType.Rook),
+            [Position.H6] = (Side.Black, PieceType.King),
+        };
+
+        var game = new Game(board, Side.White, []);
+        var engine = new AiEngine(Side.White, maxDepth: 2);
+
+        var result = engine.Search(game, cancellationToken: Ct);
+
+        result.BestMove.ShouldNotBeNull();
+        result.Nodes.ShouldBeGreaterThan(1);
+    }
+
+    [Fact]
     public void Search_ReportsMateDistanceFromRoot_NotFromTheDepthCap()
     {
         // Fool's mate again, but with a cap far deeper than the mate. Iterative deepening finds Qh4#
