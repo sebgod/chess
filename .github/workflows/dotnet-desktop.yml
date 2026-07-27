@@ -17,6 +17,38 @@ jobs:
         dotnet-version: 10.0.x
     - run: dotnet test --configuration Release
 
+  # The Android head is deliberately outside Chess.sln: an Android TFM in the solution
+  # would force the android workload (and a JDK, and the Android SDK) on everyone who
+  # builds it, the `test` job above included. The cost of staying out is that nothing
+  # compiled it -- a change to Chess.Lib/Chess.UCI/Chess.Net could break the Android head
+  # and still show green. This job is that missing gate. Same arrangement as Chess.Web,
+  # which has pages.yml for the same reason.
+  android:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.0.x
+    # The Android SDK itself is preinstalled on the runner, but pin the JDK: .NET Android
+    # wants 17, and the image's default has moved on.
+    - uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+    - run: dotnet workload install android
+    # Provisions any platform/build-tools the runner image happens to be missing, so a
+    # bump of the target API doesn't turn into a red build waiting on an image refresh.
+    - name: Install Android SDK dependencies
+      run: >
+        dotnet build Chess.Droid/Chess.Droid.csproj -t:InstallAndroidDependencies
+        -p:AndroidSdkDirectory="$ANDROID_HOME" -p:AcceptAndroidSDKLicenses=True
+        -p:UseLocalSiblings=false
+    # UseLocalSiblings=false: no sibling checkout here, so DIR.Lib and SdlVulkan.Renderer
+    # resolve from NuGet -- the same path a clean clone takes.
+    - name: Build Chess.Droid
+      run: dotnet build Chess.Droid/Chess.Droid.csproj -c Release -p:UseLocalSiblings=false --nologo
+
   publish:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
