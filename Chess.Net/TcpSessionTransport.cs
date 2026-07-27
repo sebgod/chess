@@ -9,49 +9,31 @@ using System.Threading.Tasks;
 namespace Chess.Net;
 
 /// <summary>
-/// The real <see cref="ILanTransport"/>: a UDP socket bound to <see cref="LanProtocol.DiscoveryPort"/>
-/// for broadcast discovery, and a TCP listener on an OS-assigned port for game sessions. Two socket
-/// setup details matter (learned from tianwen's AlpacaDeviceSource): <c>ReuseAddress</c> so several
-/// instances on one host (and our own send+receive) can share the discovery port, and
-/// <c>EnableBroadcast</c> so sending to 255.255.255.255 is permitted.
+/// The real <see cref="ISessionTransport"/>: a TCP listener on an OS-assigned port for game sessions,
+/// plus the dialer for outbound invites. The port is what the LAN.Lib discovery beacon advertises as
+/// our service port, so a peer that sees us knows exactly where to dial.
+///
+/// <para>The UDP half this class used to own moved out to <c>LAN.Lib.UdpLanTransport</c> when
+/// discovery was extracted — including the two socket-setup details that mattered (<c>ReuseAddress</c>
+/// so several instances on one host can share the discovery port, <c>EnableBroadcast</c> for
+/// 255.255.255.255).</para>
 /// </summary>
-public sealed class UdpTcpLanTransport : ILanTransport
+public sealed class TcpSessionTransport : ISessionTransport
 {
-    private readonly UdpClient _udp;
     private readonly TcpListener _listener;
     private readonly CancellationTokenSource _cts = new();
 
     public int ListenPort { get; }
 
-    public event Action<DiscoveryDatagram>? DatagramReceived;
     public event Action<ILanConnection>? ConnectionAccepted;
 
-    public UdpTcpLanTransport()
+    public TcpSessionTransport()
     {
-        _udp = new UdpClient();
-        _udp.Client.SetSocketOption(SocketOptionLevel.Socket, SocketOptionName.ReuseAddress, true);
-        _udp.Client.Bind(new IPEndPoint(IPAddress.Any, LanProtocol.DiscoveryPort));
-        _udp.EnableBroadcast = true;
-
         _listener = new TcpListener(IPAddress.Any, 0);
         _listener.Start();
         ListenPort = ((IPEndPoint)_listener.LocalEndpoint).Port;
 
-        _ = ReceiveLoopAsync(_cts.Token);
         _ = AcceptLoopAsync(_cts.Token);
-    }
-
-    public void Broadcast(string text)
-    {
-        try
-        {
-            var bytes = Encoding.UTF8.GetBytes(text);
-            _udp.Send(bytes, bytes.Length, new IPEndPoint(IPAddress.Broadcast, LanProtocol.DiscoveryPort));
-        }
-        catch
-        {
-            // No network / broadcast unavailable — discovery simply shows no peers, never crashes.
-        }
     }
 
     public async Task<ILanConnection> ConnectAsync(IPEndPoint endPoint, CancellationToken ct = default)
@@ -59,22 +41,6 @@ public sealed class UdpTcpLanTransport : ILanTransport
         var client = new TcpClient();
         await client.ConnectAsync(endPoint.Address, endPoint.Port, ct);
         return new TcpLanConnection(client);
-    }
-
-    private async Task ReceiveLoopAsync(CancellationToken ct)
-    {
-        while (!ct.IsCancellationRequested)
-        {
-            try
-            {
-                var result = await _udp.ReceiveAsync(ct);
-                var text = Encoding.UTF8.GetString(result.Buffer);
-                DatagramReceived?.Invoke(new DiscoveryDatagram(text, result.RemoteEndPoint.Address));
-            }
-            catch (OperationCanceledException) { break; }
-            catch (ObjectDisposedException) { break; }
-            catch (SocketException) { /* transient — keep listening */ }
-        }
     }
 
     private async Task AcceptLoopAsync(CancellationToken ct)
@@ -96,7 +62,6 @@ public sealed class UdpTcpLanTransport : ILanTransport
     {
         _cts.Cancel();
         try { _listener.Stop(); } catch { }
-        try { _udp.Dispose(); } catch { }
         _cts.Dispose();
         return ValueTask.CompletedTask;
     }
@@ -112,6 +77,7 @@ internal sealed class TcpLanConnection : ILanConnection
     private readonly CancellationTokenSource _cts = new();
     private readonly object _writeLock = new();
     private int _closed;
+    private int _reading;
 
     public IPEndPoint RemoteEndPoint { get; }
     public bool IsConnected => _client.Connected && _closed == 0;
@@ -127,7 +93,13 @@ internal sealed class TcpLanConnection : ILanConnection
         var stream = client.GetStream();
         _reader = new StreamReader(stream, Encoding.UTF8);
         _writer = new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = true };
-        _ = ReadLoopAsync(_cts.Token);
+        // NOT started here — see ILanConnection.StartReceiving.
+    }
+
+    public void StartReceiving()
+    {
+        if (Interlocked.Exchange(ref _reading, 1) == 0)
+            _ = ReadLoopAsync(_cts.Token);
     }
 
     public void Send(string line)

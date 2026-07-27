@@ -1,6 +1,8 @@
 using System.Linq;
+using System.Threading.Tasks;
 using Chess.Lib;
 using Chess.Net;
+using LAN.Lib;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 using Xunit;
@@ -9,13 +11,22 @@ namespace Chess.Tests.Lan;
 
 public class LanLobbyTests
 {
+    // The same two-layer wiring LanPlayStack does for real (LAN.Lib discovery + chess's session
+    // transport), but over the in-memory bus and with an explicit peer id so the assertions can name
+    // the peers. Announces chess's service, which is also what the lobby filters its peer list on.
     private static LanLobby MakePeer(
         FakeLanBus bus, FakeTimeProvider time, string address, int port, string peerId, string name, Side preferred)
     {
-        var transport = bus.CreateNode(address, port);
-        var identity = new LanIdentity(name, peerId);
-        var discovery = new LanDiscovery(transport, time, peerId, () => identity.Name);
-        return new LanLobby(transport, discovery, identity, preferred);
+        var node = bus.CreateNode(address, port);
+        var identity = new LanIdentity(peerId, NodeId: "");
+        var options = new LanDiscoveryOptions
+        {
+            ServiceName = SessionProtocol.ServiceName,
+            ServicePort = port,
+            NodeName = name,
+        };
+        var discovery = new LanDiscovery(node.Discovery, time, options, identity);
+        return new LanLobby(node.Session, discovery, identity, name, preferred);
     }
 
     private static (LanLobby Alice, LanLobby Bob) TwoVisiblePeers(
@@ -29,22 +40,22 @@ public class LanLobbyTests
     }
 
     [Fact]
-    public void BothStart_SeeEachOther()
+    public async Task BothStart_SeeEachOther()
     {
         var bus = new FakeLanBus();
         var (alice, bob) = TwoVisiblePeers(bus, new FakeTimeProvider());
-        using var _a = alice; using var _b = bob;
+        await using var _a = alice; await using var _b = bob;
 
         alice.Peers.Select(p => p.PeerId).ShouldContain("bob");
         bob.Peers.Select(p => p.PeerId).ShouldContain("alice");
     }
 
     [Fact]
-    public void Invite_Accept_BothConnected_WithOppositeColors()
+    public async Task Invite_Accept_BothConnected_WithOppositeColors()
     {
         var bus = new FakeLanBus();
         var (alice, bob) = TwoVisiblePeers(bus, new FakeTimeProvider(), aliceColor: Side.White);
-        using var _a = alice; using var _b = bob;
+        await using var _a = alice; await using var _b = bob;
 
         alice.Invite(alice.Peers.Single(p => p.PeerId == "bob"));
 
@@ -67,11 +78,11 @@ public class LanLobbyTests
     }
 
     [Fact]
-    public void InviterChoosingBlack_MakesInviteeWhite()
+    public async Task InviterChoosingBlack_MakesInviteeWhite()
     {
         var bus = new FakeLanBus();
         var (alice, bob) = TwoVisiblePeers(bus, new FakeTimeProvider(), aliceColor: Side.Black);
-        using var _a = alice; using var _b = bob;
+        await using var _a = alice; await using var _b = bob;
 
         alice.Invite(alice.Peers.Single(p => p.PeerId == "bob"));
         bob.Incoming!.YourSide.ShouldBe(Side.White);
@@ -82,11 +93,11 @@ public class LanLobbyTests
     }
 
     [Fact]
-    public void ConnectedSessions_ExchangeMovesBothWays()
+    public async Task ConnectedSessions_ExchangeMovesBothWays()
     {
         var bus = new FakeLanBus();
         var (alice, bob) = TwoVisiblePeers(bus, new FakeTimeProvider());
-        using var _a = alice; using var _b = bob;
+        await using var _a = alice; await using var _b = bob;
 
         alice.Invite(alice.Peers.Single(p => p.PeerId == "bob"));
         bob.Accept();
@@ -101,11 +112,11 @@ public class LanLobbyTests
     }
 
     [Fact]
-    public void Invite_Decline_InviterDeclined_InviteeBrowsing()
+    public async Task Invite_Decline_InviterDeclined_InviteeBrowsing()
     {
         var bus = new FakeLanBus();
         var (alice, bob) = TwoVisiblePeers(bus, new FakeTimeProvider());
-        using var _a = alice; using var _b = bob;
+        await using var _a = alice; await using var _b = bob;
 
         alice.Invite(alice.Peers.Single(p => p.PeerId == "bob"));
         bob.State.ShouldBe(LobbyState.IncomingInvite);

@@ -56,7 +56,7 @@ public class NetworkSessionTests
         var (a, b, rawA, _) = Connected();
         using var _a = a; using var _b = b;
 
-        rawA.Send(LanProtocol.EncodeResign()); // the far end resigns
+        rawA.Send(SessionProtocol.EncodeResign()); // the far end resigns
 
         b.PeerLeft.ShouldBeTrue();
     }

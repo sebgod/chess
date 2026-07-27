@@ -2,6 +2,7 @@ using System.Text;
 using Chess.Lib;
 using Chess.Net;
 using Console.Lib;
+using LAN.Lib;
 
 namespace Chess.Console;
 
@@ -31,15 +32,14 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
 
     protected override async Task<NetworkSession?> ShowAsyncCore(CancellationToken cancellationToken)
     {
-        var identity = LanIdentity.Load(_saveDir);
+        var profile = LanProfile.Load(_saveDir);
 
-        var name = await PromptNameAsync(identity.Name, cancellationToken);
+        var name = await PromptNameAsync(profile.Name, cancellationToken);
         if (name is null) return null; // cancelled
-        new LanIdentity(name, identity.PeerId).Save(_saveDir);
+        new LanProfile(name).Save(_saveDir);
 
-        await using var transport = new UdpTcpLanTransport();
-        using var discovery = new LanDiscovery(transport, _time, identity.PeerId, () => name);
-        using var lobby = new LanLobby(transport, discovery, new LanIdentity(name, identity.PeerId), _preferredColor);
+        await using var lan = new LanPlayStack(name, _preferredColor, _time);
+        var lobby = lan.Lobby;
         lobby.Start();
 
         var selected = 0;

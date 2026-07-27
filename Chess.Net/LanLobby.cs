@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Chess.Lib;
+using LAN.Lib;
 
 namespace Chess.Net;
 
@@ -28,6 +29,11 @@ public sealed record IncomingInvite(string PeerName, Side YourSide);
 /// list that updates, invites that arrive unprompted), which the wizard's synchronous
 /// <c>Confirm(int)</c> model can't express — the wizard only routes the user *into* this.
 ///
+/// <para>Two layers meet here: <c>LAN.Lib</c>'s <see cref="LanDiscovery"/> says who is out there
+/// (UDP beacon + peer table, shared with every SharpAstro app, hence the
+/// <see cref="SessionProtocol.ServiceName"/> filter on <see cref="Peers"/>), and chess's own
+/// <see cref="ISessionTransport"/> opens the TCP channel to one of them.</para>
+///
 /// <para>Colour rule: the inviter's chosen colour stands; the invitee plays the opposite. So when we
 /// invite we use our <paramref name="preferredColor"/>; when we're invited we ignore it and take the
 /// opposite of what the invite carried (surfaced in <see cref="Incoming"/> as YourSide).</para>
@@ -36,11 +42,12 @@ public sealed record IncomingInvite(string PeerName, Side YourSide);
 /// are volatile; multi-field transitions take <c>_lock</c> so an inbound invite and an outbound one
 /// can't interleave.</para>
 /// </summary>
-public sealed class LanLobby : IDisposable
+public sealed class LanLobby : IAsyncDisposable
 {
-    private readonly ILanTransport _transport;
+    private readonly ISessionTransport _transport;
     private readonly LanDiscovery _discovery;
     private readonly LanIdentity _identity;
+    private readonly string _localName;
     private readonly Side _preferredColor;
     private readonly object _lock = new();
 
@@ -53,11 +60,13 @@ public sealed class LanLobby : IDisposable
     private volatile NetworkSession? _session;
     private volatile string? _statusMessage;
 
-    public LanLobby(ILanTransport transport, LanDiscovery discovery, LanIdentity identity, Side preferredColor)
+    public LanLobby(ISessionTransport transport, LanDiscovery discovery, LanIdentity identity,
+        string localName, Side preferredColor)
     {
         _transport = transport;
         _discovery = discovery;
         _identity = identity;
+        _localName = localName;
         _preferredColor = preferredColor == Side.None ? Side.White : preferredColor;
         _transport.ConnectionAccepted += OnInboundConnection;
     }
@@ -66,11 +75,16 @@ public sealed class LanLobby : IDisposable
     public IncomingInvite? Incoming => _incoming;
     public NetworkSession? Session => _session;
     public string? StatusMessage => _statusMessage;
-    public string LocalName => _identity.Name;
-    public IReadOnlyList<LanPeer> Peers => _discovery.Peers;
+    public string LocalName => _localName;
 
-    /// <summary>Begin announcing/listening.</summary>
-    public void Start() => _discovery.Start();
+    /// <summary>The chess players on the LAN. Filtered by service: the discovery port is shared with
+    /// every other SharpAstro app, so an unfiltered table would list telescope rigs as opponents.</summary>
+    public IReadOnlyList<LanPeer> Peers => _discovery.PeersOf(SessionProtocol.ServiceName);
+
+    /// <summary>Begin announcing/listening. Fire-and-forget: the first beacon is a UDP send whose
+    /// failures the transport already swallows (as does the timer that repeats it), so there is
+    /// nothing here for a caller to await or observe.</summary>
+    public void Start() => _ = _discovery.StartAsync();
 
     /// <summary>Invite a discovered peer to play (we become the inviter; our colour stands).</summary>
     public async void Invite(LanPeer peer)
@@ -94,7 +108,8 @@ public sealed class LanLobby : IDisposable
                 conn.LineReceived += OnInviteReply;
                 conn.Closed += OnPendingClosed;
             }
-            conn.Send(LanProtocol.EncodeInvite(_identity.PeerId, _identity.Name, _pendingLocalSide));
+            conn.StartReceiving(); // handlers are wired — safe to deliver (see ILanConnection)
+            conn.Send(SessionProtocol.EncodeInvite(_identity.PeerId, _localName, _pendingLocalSide));
         }
         catch
         {
@@ -121,7 +136,7 @@ public sealed class LanLobby : IDisposable
         }
         // Outside the lock: sending can re-enter our callbacks (a synchronous transport may echo a
         // close back), and _pending is already cleared, so nothing here can be corrupted.
-        conn.Send(LanProtocol.EncodeAccept());
+        conn.Send(SessionProtocol.EncodeAccept());
     }
 
     /// <summary>Decline the invite currently in <see cref="Incoming"/>.</summary>
@@ -140,7 +155,7 @@ public sealed class LanLobby : IDisposable
         }
         // Send + dispose on the captured local, after the field is cleared — a close cascade from the
         // dispose can't null a field we still need (the bug this ordering fixes).
-        try { conn.Send(LanProtocol.EncodeDecline()); } catch { }
+        try { conn.Send(SessionProtocol.EncodeDecline()); } catch { }
         conn.Dispose();
     }
 
@@ -173,7 +188,7 @@ public sealed class LanLobby : IDisposable
             // Entertain one invite at a time; if we're mid-anything, politely refuse.
             if (_state != LobbyState.Browsing)
             {
-                try { conn.Send(LanProtocol.EncodeDecline()); } catch { }
+                try { conn.Send(SessionProtocol.EncodeDecline()); } catch { }
                 conn.Dispose();
                 return;
             }
@@ -181,12 +196,15 @@ public sealed class LanLobby : IDisposable
             conn.LineReceived += OnInboundLine;
             conn.Closed += OnPendingClosed;
         }
+        // Outside the lock: the peer's INVITE is already sitting in the socket buffer, so this can
+        // deliver it (and re-enter our handler) the moment it is called.
+        conn.StartReceiving();
     }
 
     private void OnInboundLine(string line)
     {
-        var msg = LanProtocol.Parse(line);
-        if (msg.Kind != LanMessageKind.Invite) return;
+        var msg = SessionProtocol.Parse(line);
+        if (msg.Kind != SessionMessageKind.Invite) return;
 
         lock (_lock)
         {
@@ -201,12 +219,12 @@ public sealed class LanLobby : IDisposable
 
     private void OnInviteReply(string line)
     {
-        var msg = LanProtocol.Parse(line);
+        var msg = SessionProtocol.Parse(line);
         lock (_lock)
         {
             if (_state != LobbyState.Inviting || _pending is null) return;
             var conn = _pending;
-            if (msg.Kind == LanMessageKind.Accept)
+            if (msg.Kind == SessionMessageKind.Accept)
             {
                 conn.LineReceived -= OnInviteReply;
                 conn.Closed -= OnPendingClosed;
@@ -214,7 +232,7 @@ public sealed class LanLobby : IDisposable
                 _pending = null;
                 _state = LobbyState.Connected;
             }
-            else if (msg.Kind == LanMessageKind.Decline)
+            else if (msg.Kind == SessionMessageKind.Decline)
             {
                 conn.LineReceived -= OnInviteReply;
                 conn.Closed -= OnPendingClosed;
@@ -250,12 +268,16 @@ public sealed class LanLobby : IDisposable
         }
     }
 
-    public void Dispose()
+    /// <summary>
+    /// Leaves the lobby. Asynchronous because saying goodbye is: the bye is a real UDP send, and
+    /// peers only drop us promptly if it actually goes out (expiry is the 5-second fallback).
+    /// </summary>
+    public async ValueTask DisposeAsync()
     {
         _transport.ConnectionAccepted -= OnInboundConnection;
-        try { _discovery.SendBye(); } catch { }
+        try { await _discovery.SendByeAsync().ConfigureAwait(false); } catch { /* best-effort */ }
         // If we never connected, drop the pending connection; once Connected the socket is owned by
-        // the NetworkSession and must survive this Dispose.
+        // the NetworkSession and must survive this teardown.
         lock (_lock)
         {
             if (_state != LobbyState.Connected && _pending is not null)

@@ -9,6 +9,10 @@
     <PackageVersion Include="Console.Lib" Version="3.12.*" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="DIR.Lib" Version="6.19.*" />
+    <!-- LAN.Lib: the LAN peer discovery (UDP announce beacon + self-expiring peer table) that was
+         extracted OUT of this repo's Chess.Net — chess is now a consumer, keeping only the
+         chess-specific TCP session layer on top. Same pin as tianwen's. -->
+    <PackageVersion Include="LAN.Lib" Version="1.1.*" />
     <PackageVersion Include="SharpAstro.Png" Version="3.6.*" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.7.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
