@@ -53,6 +53,19 @@ public class UciFormatterTests
         UciFormatter.Format(new UciCommand.Go(Depth: 5)).ShouldBe("go depth 5");
 
     [Fact]
+    public void FormatCommand_GoWithFullTimeControl() =>
+        UciFormatter.Format(new UciCommand.Go(WTime: 300000, BTime: 295000, WInc: 3000, BInc: 3000, MovesToGo: 40))
+            .ShouldBe("go wtime 300000 btime 295000 winc 3000 binc 3000 movestogo 40");
+
+    [Fact]
+    public void FormatCommand_GoWithTimeControl_RoundTripsThroughTheParser()
+    {
+        var original = new UciCommand.Go(WTime: 300000, BTime: 295000, WInc: 3000, BInc: 3000, MovesToGo: 40);
+
+        UciParser.ParseCommand(UciFormatter.Format(original)).ShouldBe(original);
+    }
+
+    [Fact]
     public void FormatResponse_UciOk() =>
         UciFormatter.Format(new UciResponse.UciOk()).ShouldBe("uciok");
 

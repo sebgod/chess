@@ -79,6 +79,21 @@ public static class UciFormatter
                 parts.Add("btime");
                 parts.Add(bt.ToString());
             }
+            if (go.WInc is { } wi)
+            {
+                parts.Add("winc");
+                parts.Add(wi.ToString());
+            }
+            if (go.BInc is { } bi)
+            {
+                parts.Add("binc");
+                parts.Add(bi.ToString());
+            }
+            if (go.MovesToGo is { } mtg)
+            {
+                parts.Add("movestogo");
+                parts.Add(mtg.ToString());
+            }
         }
 
         return string.Join(" ", parts);
