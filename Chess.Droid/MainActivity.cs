@@ -93,6 +93,25 @@ public sealed class MainActivity : SdlVulkanActivity
     private string _lobbyShownKey = "";
     private LanPeer[] _lobbyPeers = [];
 
+    // Tap-vs-drag tracking for the menus (see OnMouseDown): where the finger went down, and where it
+    // was last seen. How far it may travel and still count as a tap — a finger's worth of wobble,
+    // scaled to the surface so it means the same on a phone and a tablet.
+    private Vector2? _pointerDown;
+    private Vector2 _pointerLast;
+    private volatile bool _menuNeedsRedraw;
+
+    /// <summary>Consumes the "a released menu tap changed something" flag (see OnMouseUp).</summary>
+    private bool TakeMenuRedraw()
+    {
+        var pending = _menuNeedsRedraw;
+        _menuNeedsRedraw = false;
+        return pending;
+    }
+    private float TapSlop => MathF.Max(16f, _renderer.Height * 0.02f);
+
+    // A menu (startup wizard or LAN lobby) is on screen, so taps are committed on release.
+    private bool IsMenuUp => (_menu is not null && _wizard is not null) || (_lobbyMenu is not null && _netLobby is not null);
+
     protected override void OnRendererReady(VkRenderer renderer, SdlEventLoop loop)
     {
         // Route the renderer's loop diagnostics to logcat (Android has no console) — surfaces the
@@ -137,19 +156,47 @@ public sealed class MainActivity : SdlVulkanActivity
         // SDL synthesizes mouse-button events from single-finger touches, so a tap arrives here as a
         // left button-down. Device → content: the renderer folds the hot-seat rotation into its
         // projection, so the tap comes back through its inverse before anything hit-tests it — draw
-        // and hit-test can never drift. Route it to the menu or the board depending on what's up.
+        // and hit-test can never drift.
+        //
+        // A MENU tap is committed on release, not on touch-down, and only if the finger stayed put:
+        // menu items are big and close together, so acting on touch-down made a finger that slid even
+        // slightly (or the start of a scroll-ish gesture) pick an item the user hadn't decided on.
+        // A drag now just ends without a click. The BOARD keeps acting on touch-down — a chess move is
+        // already a deliberate two-tap sequence and immediate feedback is what makes it feel direct.
         loop.OnMouseDown = (button, x, y, _, _) =>
         {
             if (button != 1) return false;
             var p = _renderer.DeviceTransform.Invert(new Vector2(x, y));
+            _pointerDown = p;
+            _pointerLast = p;
+            if (IsMenuUp) return true; // deferred to OnMouseUp
             return HandleTap((int)MathF.Round(p.X), (int)MathF.Round(p.Y));
+        };
+        loop.OnMouseMove = (x, y) =>
+        {
+            _pointerLast = _renderer.DeviceTransform.Invert(new Vector2(x, y));
+            return false; // nothing hovers; this only tracks the finger for the tap-vs-drag test
+        };
+        loop.OnMouseUp = _ =>
+        {
+            // OnMouseUp carries no coordinates, hence the tracked position.
+            if (!IsMenuUp || _pointerDown is not { } down) { _pointerDown = null; return; }
+            _pointerDown = null;
+            var up = _pointerLast;
+            if (Vector2.Distance(down, up) > TapSlop) return; // dragged — not a tap, so not a click
+            HandleTap((int)MathF.Round(up.X), (int)MathF.Round(up.Y));
+            // A handler that RETURNS true tells the loop to repaint; OnMouseUp returns nothing, so a
+            // menu committed on release has to ask for the frame itself — without this the wizard
+            // advances invisibly and the next screen only appears on the following event.
+            _menuNeedsRedraw = true;
         };
         // The menu is static between taps (each tap already forces a redraw), so only the in-play
         // display needs the external-update poll. The lobby (live peer list), a pending lobby/menu
         // transition (set from the name dialog's UI thread), and an incoming network move all need the
         // ~16ms WaitEventTimeout poll to drive a redraw with no input event.
         loop.CheckNeedsRedraw = () =>
-            (_display?.HasPendingUpdate ?? false)
+            TakeMenuRedraw()
+            || (_display?.HasPendingUpdate ?? false)
             || _pendingLobbyStart || _pendingShowMenu || _netLobby is not null
             || (_netSession is { } s && (s.HasIncomingMove || s.PeerLeft));
         // Android's back button/gesture: SDL traps it before the activity's onBackPressed and
