@@ -111,6 +111,50 @@ public class LanLobbyTests
         m2.ShouldBe("e7e5");
     }
 
+    /// <summary>
+    /// The host starts the game — and may immediately send a move — the moment the lobby says
+    /// <c>Connected</c>. So ACCEPT has to be on the wire BEFORE that, or the invitee's first move can
+    /// overtake it and be dropped by an inviter still waiting in <c>Inviting</c>. Alice invites as
+    /// Black here, which is the case that bites: it makes Bob (the accepter) White, so his host is the
+    /// one with a move to make straight away.
+    /// </summary>
+    [Fact]
+    public async Task Accept_SendsAcceptBeforePublishingConnected()
+    {
+        var bus = new FakeLanBus();
+        var (alice, bob) = TwoVisiblePeers(bus, new FakeTimeProvider(), aliceColor: Side.Black);
+        await using var _a = alice; await using var _b = bob;
+
+        alice.Invite(alice.Peers.Single(p => p.PeerId == "bob"));
+        bob.Incoming!.YourSide.ShouldBe(Side.White);
+
+        LobbyState? stateAtAccept = null;
+        var sessionVisibleAtAccept = true;
+        bus.SessionSending = line =>
+        {
+            if (SessionProtocol.Parse(line).Kind != SessionMessageKind.Accept) return;
+            stateAtAccept = bob.State;
+            sessionVisibleAtAccept = bob.Session is not null;
+        };
+
+        bob.Accept();
+
+        // What a host polling Bob's lobby could have seen at the instant ACCEPT went out: not yet
+        // Connected, and no Session to take — so there was no way to race a move ahead of it.
+        stateAtAccept.ShouldBe(LobbyState.Connecting);
+        sessionVisibleAtAccept.ShouldBeFalse();
+
+        // …and once the send returns, the handshake completes as before.
+        bob.State.ShouldBe(LobbyState.Connected);
+        bob.Session.ShouldNotBeNull();
+        alice.State.ShouldBe(LobbyState.Connected);
+
+        // Bob is White: his first move must reach Alice, which is the whole point of the ordering.
+        bob.Session!.SendMove("e2e4");
+        alice.Session!.TryDequeueMove(out var first).ShouldBeTrue();
+        first.ShouldBe("e2e4");
+    }
+
     [Fact]
     public async Task Invite_Decline_InviterDeclined_InviteeBrowsing()
     {

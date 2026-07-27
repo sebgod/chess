@@ -33,6 +33,11 @@ internal sealed class FakeLanBus
         return node;
     }
 
+    /// <summary>Called for every session line the instant a node puts it on the wire, BEFORE the peer
+    /// is handed it — the seam for asserting what the sender had published at that moment (a host
+    /// reacts to <c>Connected</c>, so the ordering of state against sends is load-bearing).</summary>
+    public Action<string>? SessionSending { get; set; }
+
     public void Broadcast(FakeLanNode from, string text)
     {
         // Real UDP echoes a broadcast back to the sender too; LanDiscovery ignores its own peerId.
@@ -93,7 +98,7 @@ internal sealed class FakeSessionTransport(FakeLanBus bus, FakeLanNode node, int
         var target = bus.FindByPort(endPoint.Port)
             ?? throw new SocketException((int)SocketError.ConnectionRefused);
 
-        var (mine, theirs) = FakeLanConnection.CreatePair();
+        var (mine, theirs) = FakeLanConnection.CreatePair(bus);
         mine.RemoteEndPoint = endPoint;
         theirs.RemoteEndPoint = new IPEndPoint(node.Address, ListenPort);
         target.Session.ConnectionAccepted?.Invoke(theirs);
@@ -113,6 +118,7 @@ internal sealed class FakeLanConnection : ILanConnection
     /// <summary>Everything sent from this end (for assertions).</summary>
     public List<string> Sent { get; } = new();
 
+    private FakeLanBus? _bus;
     private FakeLanConnection? _peer;
 
     // Lines that arrived before StartReceiving, mirroring the real socket's contract: a peer writes
@@ -138,6 +144,7 @@ internal sealed class FakeLanConnection : ILanConnection
     public void Send(string line)
     {
         Sent.Add(line);
+        _bus?.SessionSending?.Invoke(line);
         _peer?.Deliver(line);
     }
 
@@ -162,12 +169,16 @@ internal sealed class FakeLanConnection : ILanConnection
         Closed?.Invoke();
     }
 
-    public static (FakeLanConnection A, FakeLanConnection B) CreatePair()
+    /// <param name="bus">The bus to report sends to; omitted by tests that drive a bare pair of
+    /// connections with no lobby around them (<c>NetworkSessionTests</c>).</param>
+    public static (FakeLanConnection A, FakeLanConnection B) CreatePair(FakeLanBus? bus = null)
     {
         var a = new FakeLanConnection();
         var b = new FakeLanConnection();
         a._peer = b;
         b._peer = a;
+        a._bus = bus;
+        b._bus = bus;
         return (a, b);
     }
 }

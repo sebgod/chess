@@ -12,7 +12,7 @@ public enum LobbyState
     Browsing,        // showing the peer list; can invite or receive an invite
     Inviting,        // we dialed a peer and are waiting for Accept/Decline
     IncomingInvite,  // a peer invited us; awaiting our Accept/Decline (see Incoming)
-    Connecting,      // (reserved) handshake in flight
+    Connecting,      // we accepted; ACCEPT is going out (see Accept) — Session is not published yet
     Connected,       // Session is ready — start the game
     Declined,        // our invite was declined
     Cancelled,       // we backed out
@@ -117,10 +117,21 @@ public sealed class LanLobby : IAsyncDisposable
         }
     }
 
-    /// <summary>Accept the invite currently in <see cref="Incoming"/>.</summary>
+    /// <summary>
+    /// Accept the invite currently in <see cref="Incoming"/>.
+    ///
+    /// <para>The handshake is published in two steps, and the order is the point. <c>Connected</c> is
+    /// the host's cue to start the game, and if we drew White (the inviter chose Black) the very next
+    /// thing that host may do is send a move. So <c>Connected</c> — and with it <see cref="Session"/> —
+    /// must not become visible until ACCEPT is actually on the wire: the inviter is still
+    /// <c>Inviting</c> until it reads ACCEPT, and <see cref="OnInviteReply"/> drops every line that
+    /// isn't ACCEPT/DECLINE, so a move that overtook the ACCEPT would be swallowed and both ends would
+    /// sit waiting for each other. <see cref="LobbyState.Connecting"/> covers that window.</para>
+    /// </summary>
     public void Accept()
     {
         ILanConnection conn;
+        NetworkSession session;
         lock (_lock)
         {
             if (_state != LobbyState.IncomingInvite || _pending is null) return;
@@ -128,15 +139,37 @@ public sealed class LanLobby : IAsyncDisposable
             conn.LineReceived -= OnInboundLine;
             conn.Closed -= OnPendingClosed;
             // Build the session (which subscribes to the connection) BEFORE sending ACCEPT so the
-            // first move the peer sends back (they may move first) can't slip through a gap.
-            _session = new NetworkSession(conn, _pendingLocalSide, _pendingPeerName);
+            // first move the peer sends back (they may move first) can't slip through a gap. It stays
+            // a local until the send returns — see the two-step note above.
+            session = new NetworkSession(conn, _pendingLocalSide, _pendingPeerName);
             _pending = null;
             _incoming = null;
-            _state = LobbyState.Connected;
+            _state = LobbyState.Connecting;
         }
+
         // Outside the lock: sending can re-enter our callbacks (a synchronous transport may echo a
         // close back), and _pending is already cleared, so nothing here can be corrupted.
         conn.Send(SessionProtocol.EncodeAccept());
+
+        lock (_lock)
+        {
+            // Still ours to finish? A Cancel(), or a close cascading out of the send, may have moved
+            // the lobby on while we were sending — then the session we built is orphaned.
+            if (_state == LobbyState.Connecting && !session.PeerLeft)
+            {
+                _session = session;
+                _state = LobbyState.Connected;
+                return;
+            }
+            if (_state == LobbyState.Connecting)
+            {
+                // The peer vanished mid-handshake: stay in the lobby and say so, rather than handing
+                // the host a session that is already dead.
+                _statusMessage = $"{_pendingPeerName} went away";
+                _state = LobbyState.Failed;
+            }
+        }
+        session.Dispose(); // outside the lock: disposing closes the socket, which re-enters callbacks
     }
 
     /// <summary>Decline the invite currently in <see cref="Incoming"/>.</summary>
