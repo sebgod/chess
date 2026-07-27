@@ -45,7 +45,8 @@ public class StartupWizardTests
         wizard.Confirm(0);
 
         wizard.IsComplete.ShouldBeTrue();
-        wizard.Result.ShouldBe((GameMode.PlayerVsPlayer, Side.None, Side.White));
+        // No engine in a hot-seat game, so difficulty is never asked for and keeps its default.
+        wizard.Result.ShouldBe((GameMode.PlayerVsPlayer, Side.None, Side.White, Difficulty.Normal));
     }
 
     [Theory]
@@ -60,9 +61,12 @@ public class StartupWizardTests
         wizard.Current.Prompt.ShouldBe("Play as:");
 
         wizard.Confirm(playAs);
+        wizard.IsComplete.ShouldBeFalse();
+        wizard.Current.Prompt.ShouldBe("Difficulty:");
+        wizard.Confirm(2); // Hard
 
         wizard.IsComplete.ShouldBeTrue();
-        wizard.Result.ShouldBe((GameMode.PlayerVsComputer, expectedComputer, Side.White));
+        wizard.Result.ShouldBe((GameMode.PlayerVsComputer, expectedComputer, Side.White, Difficulty.Hard));
     }
 
     [Fact]
@@ -77,9 +81,57 @@ public class StartupWizardTests
         wizard.Confirm(1); // Black moves first
         wizard.Current.Prompt.ShouldBe("Play as:");
         wizard.Confirm(0); // human is White → computer is Black
+        // A custom game is always against the engine, so this flow always asks the difficulty too.
+        wizard.Current.Prompt.ShouldBe("Difficulty:");
+        wizard.Confirm(0); // Easy
 
         wizard.IsComplete.ShouldBeTrue();
-        wizard.Result.ShouldBe((GameMode.CustomGameStandardBoard, Side.Black, Side.Black));
+        wizard.Result.ShouldBe((GameMode.CustomGameStandardBoard, Side.Black, Side.Black, Difficulty.Easy));
+    }
+
+    // ── Difficulty ─────────────────────────────────────────────────
+
+    [Fact]
+    public void Current_Difficulty_ListsTheSharedLevels()
+    {
+        var wizard = new StartupWizard();
+        wizard.Confirm(1); // Player vs Computer
+        wizard.Confirm(0); // play as White
+
+        // Generated from DifficultyExtensions.All, so a new level cannot appear in one front-end's
+        // menu and not another's.
+        wizard.Current.Items.ShouldBe(["Easy", "Normal", "Hard"]);
+    }
+
+    [Theory]
+    [InlineData(0, Difficulty.Easy)]
+    [InlineData(1, Difficulty.Normal)]
+    [InlineData(2, Difficulty.Hard)]
+    public void Confirm_Difficulty_SelectsTheLevelAtThatIndex(int selected, Difficulty expected)
+    {
+        var wizard = new StartupWizard();
+        wizard.Confirm(1); // Player vs Computer
+        wizard.Confirm(0); // play as White
+
+        wizard.Confirm(selected);
+
+        wizard.IsComplete.ShouldBeTrue();
+        wizard.Result.Difficulty.ShouldBe(expected);
+    }
+
+    [Fact]
+    public void Confirm_NetworkGame_SkipsDifficulty()
+    {
+        // The "computer side" of a LAN game is a remote human. Asking how hard they should play
+        // would be nonsense, and it would also strand the wizard on a step the host never answers.
+        var wizard = new StartupWizard(StartupWizardOptions.NetworkPlay);
+
+        wizard.Confirm(3); // Network game
+        wizard.Current.Prompt.ShouldBe("Play as:");
+        wizard.Confirm(0);
+
+        wizard.IsComplete.ShouldBeTrue();
+        wizard.Result.Mode.ShouldBe(GameMode.NetworkGame);
     }
 
     // ── Across the table ───────────────────────────────────────────
@@ -92,7 +144,7 @@ public class StartupWizardTests
         wizard.Confirm(1); // "Across the table", right after Player vs Player
 
         wizard.IsComplete.ShouldBeTrue();
-        wizard.Result.ShouldBe((GameMode.AcrossTheTable, Side.None, Side.White));
+        wizard.Result.ShouldBe((GameMode.AcrossTheTable, Side.None, Side.White, Difficulty.Normal));
     }
 
     [Theory]
@@ -127,8 +179,9 @@ public class StartupWizardTests
         wizard.Confirm(playAs);
 
         wizard.IsComplete.ShouldBeTrue();
-        // Result.ComputerSide carries "the side NOT locally controlled" — the remote player.
-        wizard.Result.ShouldBe((GameMode.PlayByLink, expectedRemote, Side.White));
+        // Result.ComputerSide carries "the side NOT locally controlled" — the remote player. A remote
+        // human has no strength setting, so link play completes at "Play as:" with no difficulty step.
+        wizard.Result.ShouldBe((GameMode.PlayByLink, expectedRemote, Side.White, Difficulty.Normal));
     }
 
     [Fact]

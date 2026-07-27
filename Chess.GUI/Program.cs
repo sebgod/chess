@@ -216,7 +216,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
         }
         else if (menu is { IsComplete: true } && gameTask is null)
         {
-            var (gameMode, computerSide, sideToMove) = menu.Result;
+            var (gameMode, computerSide, sideToMove, difficulty) = menu.Result;
 
             if (gameMode is GameMode.NetworkGame)
             {
@@ -262,7 +262,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                     timeProvider,
                     () => display,
                     () => player,
-                    (cs, tp) => new UciPlayer(UciPlayer.DefaultEnginePath, cs, tp)
+                    (cs, tp) => new UciPlayer(UciPlayer.DefaultEnginePath, cs, tp, difficulty)
                 );
 
                 gameTask = gameLoop.RunAsync(gameMode, computerSide, sideToMove, cts.Token, resumeGame);

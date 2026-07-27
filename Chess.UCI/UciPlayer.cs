@@ -10,7 +10,11 @@ namespace Chess.UCI;
 /// <summary>
 /// An AI player that communicates with a UCI engine process to make moves.
 /// </summary>
-public sealed class UciPlayer(string enginePath, Side side, TimeProvider timeProvider) : IEngineBasedPlayer
+public sealed class UciPlayer(
+    string enginePath,
+    Side side,
+    TimeProvider timeProvider,
+    Difficulty difficulty = Difficulty.Normal) : IEngineBasedPlayer
 {
     /// <summary>
     /// The bundled chess-engine executable next to the host binary — the path every desktop
@@ -51,7 +55,13 @@ public sealed class UciPlayer(string enginePath, Side side, TimeProvider timePro
         {
             var moves = UciMove.FormatMoves(game);
             var position = new UciCommand.SetPosition(_initialFen, moves);
-            var go = new UciCommand.Go(MoveTime: 1000);
+
+            // Depth, not time: an untimed game should answer as fast as the chosen strength allows
+            // rather than always spending a fixed think. (This used to ask for a fixed 1000 ms, which
+            // the engine ignored outright — now that it honours the clock, asking for time would mean
+            // waiting a second for every move of a casual game.) A real time control belongs here as
+            // wtime/btime once there is a clock to read it from.
+            var go = new UciCommand.Go(Depth: difficulty.ToSearchDepth());
             _pendingMove = _client.GoAsync(position, go);
         }
 

@@ -55,11 +55,14 @@
             <button class="new" @onclick="BackToMenuAsync" disabled="@_busy">↻ New game</button>
             @if (_vsComputer)
             {
-                <label>AI depth
-                    <select @onchange="OnDepthChanged" disabled="@_busy">
-                        <option value="2" selected="@(_aiDepth == 2)">2</option>
-                        <option value="3" selected="@(_aiDepth == 3)">3</option>
-                        <option value="4" selected="@(_aiDepth == 4)">4</option>
+                @* The wizard sets the starting level; this keeps the browser's ability to change it
+                   mid-game, which the other front-ends have no equivalent of. *@
+                <label>Difficulty
+                    <select @onchange="OnDifficultyChanged" disabled="@_busy">
+                        @foreach (var level in DifficultyExtensions.All)
+                        {
+                            <option value="@level" selected="@(_difficulty == level)">@level.ToLabel()</option>
+                        }
                     </select>
                 </label>
             }
@@ -169,7 +172,7 @@
     Side _setupSideToMove = Side.White;
 
     Side _humanSide = Side.White;
-    int _aiDepth = 3;
+    Difficulty _difficulty = Difficulty.Normal;
     bool _busy;
     bool _ready;
     string _status = "Loading…";
@@ -469,7 +472,8 @@
             return;
         }
 
-        var (mode, computerSide, sideToMove) = _wizard.Result;
+        var (mode, computerSide, sideToMove, difficulty) = _wizard.Result;
+        _difficulty = difficulty;
 
         if (mode == GameMode.PlayByLink)
         {
@@ -642,7 +646,7 @@
             await RenderBoardAsync();
             await Task.Delay(20);
 
-            var ai = new AiEngine(_game.CurrentSide, maxDepth: _aiDepth);
+            var ai = new AiEngine(_game.CurrentSide, maxDepth: _difficulty.ToSearchDepth());
             var move = ai.PickMove(_game);
             if (move is not { } mv) break;
             _game.TryMove(mv);
@@ -698,9 +702,9 @@
         }
     }
 
-    void OnDepthChanged(ChangeEventArgs e)
+    void OnDifficultyChanged(ChangeEventArgs e)
     {
-        if (int.TryParse((string?)e.Value, out var d)) _aiDepth = d;
+        if (Enum.TryParse<Difficulty>((string?)e.Value, out var level)) _difficulty = level;
     }
 
     // ---- status ---------------------------------------------------------------------------------

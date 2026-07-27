@@ -50,7 +50,7 @@ public class AsciiGameIntegrationTests
         using var cts = new CancellationTokenSource();
 
         var menu = new StartupMenu(terminal, timeProvider);
-        var (gameMode, computerSide, _) = await menu.ShowAsync(cts.Token);
+        var (gameMode, computerSide, _, _) = await menu.ShowAsync(cts.Token);
 
         gameMode.ShouldBe(GameMode.PlayerVsPlayer);
         computerSide.ShouldBe(Side.None);

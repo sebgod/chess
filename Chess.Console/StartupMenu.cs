@@ -11,9 +11,9 @@ namespace Chess.Console;
 /// PixelMenuWidget.
 /// </summary>
 internal class StartupMenu(IVirtualTerminal terminal, TimeProvider timeProvider)
-    : MenuBase<(GameMode Mode, Side ComputerSide, Side SideToMove)>(terminal, timeProvider)
+    : MenuBase<(GameMode Mode, Side ComputerSide, Side SideToMove, Difficulty Difficulty)>(terminal, timeProvider)
 {
-    protected override async Task<(GameMode Mode, Side ComputerSide, Side SideToMove)> ShowAsyncCore(CancellationToken cancellationToken)
+    protected override async Task<(GameMode Mode, Side ComputerSide, Side SideToMove, Difficulty Difficulty)> ShowAsyncCore(CancellationToken cancellationToken)
     {
         // The console can open sockets, so it offers LAN "Network game" (routes into ConsoleLanLobby).
         var wizard = new StartupWizard(StartupWizardOptions.NetworkPlay);

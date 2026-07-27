@@ -26,7 +26,7 @@ internal sealed class VkStartupMenu(bool includeContinue = false) : IWidget
     private PixelMenuWidget<VulkanContext>? _menu;
 
     public bool IsComplete => _wizard.IsComplete;
-    public (GameMode Mode, Side ComputerSide, Side SideToMove) Result => _wizard.Result;
+    public (GameMode Mode, Side ComputerSide, Side SideToMove, Difficulty Difficulty) Result => _wizard.Result;
 
 #if DEBUG
     /// <summary>The underlying pixel widget, so the DEBUG inspector can read its clickable regions +
