@@ -4,7 +4,7 @@
 WebGL compose (1b) and the CPU backend (3) are still pending. **Repo scope:** this describes a change to the
 **sibling rendering libraries** (`DIR.Lib` + its backends `SdlVulkan.Renderer`, `WebGl.Renderer`,
 and the CPU `RgbaImageRenderer`); chess is only a *consumer*. It lives here because chess is the
-driver use case (the [Android across-the-table hot-seat](../Chess.Droid/docs/tablet-hotseat-flip.md)),
+driver use case (the [Android "across the table" mode](../Chess.Droid/docs/across-the-table-flip.md)),
 but it can't be implemented in this repo — the sibling libs must ship the capability first.
 
 ## Why
@@ -16,13 +16,13 @@ Three things in the rendering stack are really the same thing wearing different 
   `PixelWidgetBase.DpiScale`).
 - **Device/screen rotation** — today delegated to the Vulkan compositor via `preTransform`
   (`VulkanContext` prefers `Identity` and lets the presentation engine rotate).
-- **The hot-seat 180° flip** — an *app-driven* rotation of the whole composited frame so the player
-  across a flat tablet reads everything (text included) upright.
+- **The "across the table" 180° flip** — an *app-driven* rotation of the whole composited frame so the
+  player sitting opposite across a flat tablet reads everything (text included) upright.
 
 Each is an affine map from content coordinates to device pixels. DPI is the **scale** component;
 rotation is the **rotation** component; safe-area/letterbox offset is the **translation** component.
-Modelling them separately is why `dpiScale` is a lonely scalar and why the hot-seat looks like it needs
-bespoke renderer surgery. Model them as **one transform** and they collapse into a single concept.
+Modelling them separately is why `dpiScale` is a lonely scalar and why the across-the-table flip looks
+like it needs bespoke renderer surgery. Model them as **one transform** and they collapse into a single concept.
 
 ## The primitive
 
@@ -45,7 +45,7 @@ public readonly record struct DeviceTransform(Rotation90 Rotation, float Scale, 
     public Vector2 Apply(Vector2 content);   // content → device (Vector2.Transform via ToMatrix3x2)
     public Vector2 Invert(Vector2 device);   // device → content (trivial: Rᵀ · (p−t) / scale)
     public DeviceTransform Compose(DeviceTransform inner);
-    // rotation about a surface centre — how a consumer builds the hot-seat 180°:
+    // rotation about a surface centre — how a consumer builds the across-the-table 180°:
     public static DeviceTransform CenteredRotation(Rotation90 rotation, float w, float h, float scale = 1f);
 }
 
@@ -114,7 +114,7 @@ result on `PixelGameDisplay.SafeAreaInsets`. Under 180° that swaps top↔bottom
 1. **Content transform, not device transform.** `M` is an *app-driven content* transform layered **on
    top of** the compositor's surface orientation (Vulkan `preTransform`, currently `Identity`). Device/
    screen rotation stays the compositor's job exactly as today; `M` carries DPI-scale × app-rotation
-   (the 180° hot-seat). Making `M` *replace* `preTransform` would mean rendering pre-rotated on every
+   (the 180° across-the-table flip). Making `M` *replace* `preTransform` would mean rendering pre-rotated on every
    device turn and owning orientation correctness — more invasive, rejected.
 2. **Unify DPI incrementally.** Introduce `DeviceTransform` **alongside** the existing `dpiScale`
    (`DpiScale => transform.Scale`) first; retire the scalar second (it touches every consumer —
@@ -126,25 +126,31 @@ result on `PixelGameDisplay.SafeAreaInsets`. Under 180° that swaps top↔bottom
 |---|---|---|---|
 | 1a | `DeviceTransform` type (+ `Matrix3x2`/`Vector2` algebra, unit tests) + Vulkan projection compose; all four 90° rotations work on the GPU | DIR.Lib + SdlVulkan.Renderer | **Done** — 180° flip verified via offscreen render + readback |
 | 1b | WebGL projection compose (the `uProj` `mat4` is built JS-side, so this composes there or pushes the full matrix from .NET) | WebGl.Renderer | Pending |
-| 2 | Host input inverse-mapping (`M.Invert`) + safe-area inset transform; wire the hot-seat 180° in Chess.Droid PvP | chess (consumer) | **Done** — `DeviceContentMapping` (Chess.Lib.UI) maps insets/cutout; taps inverted at both SDL hosts; Chess.Droid auto-flips hot-seat PvP to face the side to move (≥500dp smallest-width tablet gate) |
+| 2 | Host input inverse-mapping (`M.Invert`) + safe-area inset transform; wire the across-the-table 180° in Chess.Droid | chess (consumer) | **Done** — `DeviceContentMapping` (Chess.Lib.UI) maps insets/cutout; taps inverted at both SDL hosts; the explicit `GameMode.AcrossTheTable` flips the frame to face the side to move (board counter-rotates via `FlipBoard`, chrome mirror-swaps via `MirrorChrome`) |
 | 3 | CPU backend `RgbaImageRenderer` remap (180° then 90°/270°); retire the scalar `dpiScale`; consider subsuming `FlipBoard` | DIR.Lib + backends | Pending |
 
 Note on the "180° only" original scope: on a GPU backend the rotation folds into the projection, so all
 four quarter-turns render correctly for free — the 180° constraint is really about what is *wired and
-verified* end-to-end (the hot-seat), not a GPU-side limitation. The CPU backend (phase 3) is where
+verified* end-to-end (the across-the-table flip), not a GPU-side limitation. The CPU backend (phase 3) is where
 90°/270° is genuinely harder (axis swap + glyph orientation), so it stays gated there.
 
 ## How chess consumes it (phases 1a + 2, landed)
 
-- Chess.Droid hot-seat PvP sets `renderer.DeviceTransform = DeviceTransform.CenteredRotation(Rotation90.Half, w, h)`
+- Chess.Droid's **"across the table"** mode (`GameMode.AcrossTheTable`, a startup-menu choice right
+  after "Player vs Player") sets `renderer.DeviceTransform = DeviceTransform.CenteredRotation(Rotation90.Half, w, h)`
   whenever Black is to move (identity on White's turn; recomputed on resize), so the whole frame —
-  board, history, status, text — faces the player to move. Gated to plain PvP on tablets
-  (smallestScreenWidthDp ≥ 500 — 8" tablets report ~533dp and qualify; phones stay under): vs-AI and
-  LAN have a single local side and keep the identity
-  transform. In hot-seat mode `GameUI.FlipBoard` **tracks** the frame flip — the two 180° rotations
-  cancel for the board, so the armies keep their physical sides (like a real board on the table) and
-  only the text chrome turns. The committed live side drives the flip, so playback scrubbing never
-  spins the frame.
+  board, history, status, text — faces the player to move. It's an explicit mode, not a guess: plain
+  same-seat *Player vs Player* never turns, and vs-AI and LAN (a single local side) keep the identity
+  transform. `MainActivity.UpdateAcrossTheTableTransform` drives three things off one flag
+  (`flip = Black to move`):
+  - **`renderer.DeviceTransform`** — the frame rotation; text turns with it via the GPU projection.
+  - **`GameUI.FlipBoard` tracks the frame flip** — the two 180° rotations cancel for the board, so the
+    armies keep their physical sides (like a real board on the table) and only the chrome turns.
+  - **`PixelGameDisplay.MirrorChrome`** mirror-swaps the chrome in content space (history panel to the
+    other side of the board), so board and panel land at the same physical spots after the frame turns
+    instead of visibly jumping side each move.
+
+  The committed live side drives the flag, so playback scrubbing never spins the frame.
 - `MainActivity` maps tap coordinates through `M.Invert` at the SDL boundary; Chess.GUI's unified
   `OnPointerInput` does the same (identity on the desktop today — correct by construction).
 - Safe-area insets and the camera cutout come from the OS in device space and are mapped into content

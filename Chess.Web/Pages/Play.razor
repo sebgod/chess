@@ -163,7 +163,7 @@
     // The shared wizard state machine (Chess.Lib.UI) — same flow/content as desktop + console;
     // this page only presents Current through the menu widget and forwards confirms. The web is
     // (so far) the only front-end that can produce/consume game links, so only it opts in.
-    StartupWizard _wizard = new(includeLinkPlay: true);
+    StartupWizard _wizard = new(StartupWizardOptions.LinkPlay);
     bool _vsComputer = true;
     // Side to move for a custom game, from the wizard; consumed when setup finishes.
     Side _setupSideToMove = Side.White;
@@ -531,7 +531,7 @@
             await JS.InvokeVoidAsync("chessCanvas.replaceStateFragment", "");
         }
         _screen = Screen.Menu;
-        _wizard = new StartupWizard(includeLinkPlay: true);
+        _wizard = new StartupWizard(StartupWizardOptions.LinkPlay);
         ShowWizardStep();
         await RenderMenuAsync();
     }

@@ -38,8 +38,9 @@ namespace Chess.Droid;
 /// (<see cref="PixelGameDisplay{TSurface}"/>), routing touches into whichever is active.
 ///
 /// Player-vs-Computer runs the engine IN-PROCESS (<see cref="AiEngine"/>, on a background thread) —
-/// there is no engine child process on Android, exactly like Chess.Web. Custom games currently start
-/// from the standard board (interactive piece-placement setup is a follow-up).
+/// there is no engine child process on Android, exactly like Chess.Web. Custom games open in setup
+/// mode (tap a square, pick a piece from the popup) and start on the display's "▶ Start" chip,
+/// the touch stand-in for the desktop's s key.
 /// </summary>
 [Activity(
     Label = "Chess",
@@ -74,6 +75,13 @@ public sealed class MainActivity : SdlVulkanActivity
     // slower/stronger engine later). It's the AI's turn while it runs, so no input races.
     private bool _vsComputer;
     private Side _humanSide;
+
+    // Across-the-table PvP (GameMode.AcrossTheTable): the two players sit OPPOSITE each other at a
+    // flat tablet, and the frame turns 180° to face whoever is to move. Same-seat pass-and-play
+    // (Player vs Player) never flips — the seating is the user's explicit menu choice, not a guess.
+    private bool _acrossTheTable;
+    // The mode the current game was started in — persisted with the save so Continue can restore it.
+    private GameMode _mode = GameMode.PlayerVsPlayer;
 
     // LAN network play (Chess.Net). Android has no GameLoop, so the session is driven directly here:
     // taps send our move, and DrainNetworkMoves applies the peer's on the SDL/render thread (GameUI is
@@ -138,8 +146,8 @@ public sealed class MainActivity : SdlVulkanActivity
         // Resume an unfinished game across a process kill (Android reclaims backgrounded apps freely);
         // otherwise open the startup menu. A background->foreground return keeps the in-memory state, so
         // this only runs on a cold launch.
-        if (TryLoadGame() is { } saved && !saved.Game.IsFinished)
-            StartGame(saved.Game, saved.ComputerSide);
+        if (TryLoadGame() is { } saved && IsResumable(saved))
+            StartGame(saved.Game, saved.ComputerSide, saved.Mode, setUp: IsMidSetup(saved));
         else
             ShowMenu();
 
@@ -147,16 +155,16 @@ public sealed class MainActivity : SdlVulkanActivity
         loop.OnResize = (w, h) =>
         {
             if (_display is null) return;
-            // Re-fit the hot-seat transform to the new surface size (its CenteredRotation translation
-            // depends on w/h); this also re-queries the safe area on every resize — the cutout/
-            // gesture-bar insets move with rotation and can change on fold/resume.
-            UpdateHotSeatTransform();
+            // Re-fit the across-the-table transform to the new surface size (its CenteredRotation
+            // translation depends on w/h); this also re-queries the safe area on every resize — the
+            // cutout/gesture-bar insets move with rotation and can change on fold/resume.
+            UpdateAcrossTheTableTransform();
             _display.OnResize((int)w, (int)h);
         };
         // SDL synthesizes mouse-button events from single-finger touches, so a tap arrives here as a
-        // left button-down. Device → content: the renderer folds the hot-seat rotation into its
-        // projection, so the tap comes back through its inverse before anything hit-tests it — draw
-        // and hit-test can never drift.
+        // left button-down. Device → content: the renderer folds the across-the-table rotation into
+        // its projection, so the tap comes back through its inverse before anything hit-tests it —
+        // draw and hit-test can never drift.
         //
         // A MENU tap is committed on release, not on touch-down, and only if the finger stayed put:
         // menu items are big and close together, so acting on touch-down made a finger that slid even
@@ -227,14 +235,17 @@ public sealed class MainActivity : SdlVulkanActivity
     {
         CleanupNetwork(); // tear down any lobby/session/lock before returning to the menu
         _display = null;
-        // The menu renders through the same projection — never let it inherit a hot-seat-flipped frame.
+        // The menu renders through the same projection — never let it inherit a turned frame.
         _renderer.DeviceTransform = DeviceTransform.Identity;
         // No Play-by-Link on Android (no link driver), but Network game is on — Android can open
         // sockets. "Continue game" appears whenever an unfinished save exists (back button mid-game,
         // or a cold launch with one on disk) — returning to the menu must never cost the game; only
         // starting a new one overwrites it.
-        var canContinue = TryLoadGame() is { } s && !s.Game.IsFinished;
-        _wizard = new StartupWizard(includeContinue: canContinue, includeNetworkPlay: true);
+        var canContinue = TryLoadGame() is { } s && IsResumable(s);
+        _wizard = new StartupWizard(
+            (canContinue ? StartupWizardOptions.Continue : StartupWizardOptions.None)
+            | StartupWizardOptions.NetworkPlay
+            | StartupWizardOptions.AcrossTheTable);
         _menu = new PixelMenuWidget<VulkanContext>(_renderer, FontPaths.DejaVuSans);
         var (title, prompt, items) = _wizard.Current;
         _menu.Reset(title, prompt, [.. items]);
@@ -280,7 +291,7 @@ public sealed class MainActivity : SdlVulkanActivity
                 _wizard.Confirm(_menu.SelectedIndex);
                 if (_wizard.IsComplete)
                 {
-                    var (mode, computerSide, _) = _wizard.Result;
+                    var (mode, computerSide, sideToMove) = _wizard.Result;
                     _menu = null;
                     _wizard = null;
                     if (mode == GameMode.Continue)
@@ -289,14 +300,21 @@ public sealed class MainActivity : SdlVulkanActivity
                         // fails NOW, re-showing the menu (without Continue) is the safe move — a
                         // silent fresh StartGame would overwrite the very game being continued.
                         if (TryLoadGame() is { } saved)
-                            StartGame(saved.Game, saved.ComputerSide);
+                            StartGame(saved.Game, saved.ComputerSide, saved.Mode, setUp: IsMidSetup(saved));
                         else
                             ShowMenu();
                     }
                     else if (mode == GameMode.NetworkGame)
                         EnterNetworkLobby(computerSide);
+                    else if (mode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard)
+                    {
+                        // Both wizard answers are honoured: the board it starts from and who moves
+                        // first. Then setup mode, exactly like the desktop's GameLoop does it.
+                        var board = mode == GameMode.CustomGameEmpty ? new Board() : Board.StandardBoard;
+                        StartGame(new Game(board, sideToMove, []), computerSide, mode, setUp: true);
+                    }
                     else
-                        StartGame(new Game(), computerSide); // Custom -> standard board for now
+                        StartGame(new Game(), mode == GameMode.AcrossTheTable ? Side.None : computerSide, mode);
                 }
                 else
                 {
@@ -331,43 +349,41 @@ public sealed class MainActivity : SdlVulkanActivity
         }
 
         // In-game: apply the human's tap, then let the engine reply (synchronously) if it's PvC.
+        // Not while setting up a custom game — the position is still being built, and one AI move
+        // there would both jump the gun and lock the board (SetPiece throws once a ply exists).
         _display.UI.HandleMouseDown(x, y);
         SaveGame();
-        PlayAiReply();
-        UpdateHotSeatTransform(); // a committed PvP move flips the frame to face the player now to move
+        if (!_display.UI.IsSetupMode) PlayAiReply();
+        UpdateAcrossTheTableTransform(); // a committed PvP move turns the frame to face the player now to move
         return true;
     }
 
-    // ── Across-the-table hot-seat (docs/tablet-hotseat-flip.md) ──────────────────────────────────
+    // ── Across-the-table PvP (docs/across-the-table-flip.md) ─────────────────────────────────────
 
-    // The hot-seat flip only makes sense on a tablet lying flat between two players; on a phone held
-    // by one person a rotating frame is pure disorientation. 500dp, NOT the classic sw600dp tablet
-    // cutoff: 8" budget tablets report ~533dp (the Tab M8 is 800px @ 240dpi = 533dp) and are exactly
-    // the across-the-table devices this is for, while phones top out around ~450dp.
-    private bool IsTablet => (Resources?.Configuration?.SmallestScreenWidthDp ?? 0) >= 500;
-
-    // True for the across-the-table hot-seat: plain PvP on a tablet, where the frame turns to face
-    // the player to move. vs-AI and LAN have a single local side and never qualify.
-    private bool IsHotSeatPvP => _display is not null && !_vsComputer && _netSession is null && IsTablet;
+    // True when the current game is an across-the-table PvP game: two players opposite each other
+    // at a flat tablet, the frame turning to face the player to move. Chosen explicitly in the menu
+    // (GameMode.AcrossTheTable) — same-seat pass-and-play (Player vs Player) never qualifies, and
+    // neither do vs-AI / LAN (they orient via GameUI.FlipBoard for their single local side).
+    private bool IsAcrossTheTable => _display is not null && _acrossTheTable && _netSession is null;
 
     // Sets the renderer's whole-frame content transform for the current state and reapplies the safe
-    // area through it. Hot-seat PvP turns the frame to face the player to move — 180° while it's
-    // Black's turn, identity on White's — so the player opposite always reads board, history, and
-    // text upright. FlipBoard TRACKS the frame flip: the two 180° rotations cancel for the board, so
-    // the armies stay on their physical sides exactly like a real board lying between the players
-    // (White always nearest White's seat) — only the text chrome actually turns. Without the tracking
-    // flip the armies would swap sides every move. vs-AI and LAN keep the identity transform and set
-    // FlipBoard by their local side instead. Driven by the COMMITTED live side only, so scrubbing
-    // through playback never spins the frame.
-    private void UpdateHotSeatTransform()
+    // area through it. While Black is to move the frame turns 180° (identity on White's turn) so the
+    // player opposite always reads history, status and text upright. Three things track the same
+    // flag: the DeviceTransform (turns the frame), FlipBoard (counter-turns the BOARD so the armies
+    // keep their physical sides — a real board never swaps them), and MirrorChrome (swaps the chrome
+    // layout's side in content space so the board and panel keep their physical POSITIONS on screen
+    // under the turn — only the text orientation changes, nothing visibly jumps). Driven by the
+    // COMMITTED live side only, so scrubbing through playback never turns the frame.
+    private void UpdateAcrossTheTableTransform()
     {
-        var flip = IsHotSeatPvP && _game is { CurrentSide: Side.Black };
+        var flip = IsAcrossTheTable && _game is { CurrentSide: Side.Black };
         _renderer.DeviceTransform = flip
             ? DeviceTransform.CenteredRotation(Rotation90.Half, _renderer.Width, _renderer.Height)
             : DeviceTransform.Identity;
         // StartGame calls this BEFORE ResetGame so the first layout already honors the transform;
         // FlipBoard tracking has to wait for the UI to exist (the post-ResetGame line covers it).
-        if (IsHotSeatPvP && _display!.HasGameUI) _display.UI.FlipBoard = flip;
+        if (IsAcrossTheTable && _display!.HasGameUI) _display.UI.FlipBoard = flip;
+        if (_display is not null) _display.MirrorChrome = flip;
         ApplyDeviceInsets();
     }
 
@@ -385,10 +401,14 @@ public sealed class MainActivity : SdlVulkanActivity
             : null;
     }
 
-    private void StartGame(Game game, Side computerSide)
+    /// <param name="setUp">Custom game: open in setup mode so the player can place pieces, and don't
+    /// let the engine move until they tap "▶ Start" (the touch stand-in for the desktop's s key).</param>
+    private void StartGame(Game game, Side computerSide, GameMode mode, bool setUp = false)
     {
         _game = game;
+        _mode = mode;
         _vsComputer = computerSide != Side.None;
+        _acrossTheTable = mode == GameMode.AcrossTheTable;
         _humanSide = computerSide == Side.White ? Side.Black : Side.White;
 
         _menu = null;
@@ -397,20 +417,35 @@ public sealed class MainActivity : SdlVulkanActivity
         // Transform + safe area BEFORE ResetGame so the first layout already clears the notch and the
         // rounded bottom (and a resumed PvP game with Black to move opens already flipped); the notch
         // strip shows the mode left and the move counter right of the camera.
-        UpdateHotSeatTransform();
+        UpdateAcrossTheTableTransform();
         // Short labels: the notch strip is status-bar-sized chrome, not a headline.
-        _display.TopStripLabel = _vsComputer ? $"vs AI ({_humanSide})" : "PvP";
+        _display.TopStripLabel = _vsComputer ? $"vs AI ({_humanSide})" : _acrossTheTable ? "Across the table" : "PvP";
+        // Touch has no s key, so the display offers a "▶ Start" chip while setting up.
+        _display.SetupStartRequested = FinishSetup;
         // Touch-only: no keyboard hints in the status bar; playback exits via the history chip.
         _display.KeyboardHints = false;
         _display.ResetGame(_game);
+        if (setUp) _display.UI.IsSetupMode = true;
         // Orient the board to the local player (their pieces at the bottom) vs the AI; PvP stays
-        // White-at-bottom (_humanSide is White there). In the tablet hot-seat FlipBoard tracks the
-        // frame flip (see UpdateHotSeatTransform — it can't reach the UI before ResetGame, so the
+        // White-at-bottom (_humanSide is White there). Across the table, FlipBoard tracks the frame
+        // turn (see UpdateAcrossTheTableTransform — it can't reach the UI before ResetGame, so the
         // resume-consistent value is set here).
-        _display.UI.FlipBoard = IsHotSeatPvP ? _game is { CurrentSide: Side.Black } : _humanSide == Side.Black;
+        _display.UI.FlipBoard = IsAcrossTheTable ? _game is { CurrentSide: Side.Black } : _humanSide == Side.Black;
 
         SaveGame();
-        PlayAiReply(); // if the human chose Black, White (the AI) opens
+        if (!setUp) PlayAiReply(); // if the human chose Black, White (the AI) opens
+    }
+
+    // Leaves custom-game setup and starts play: the pieces on the board become the starting position
+    // (Game.SetPiece keeps it as ply -1, so the save replays from it), and the engine opens if the
+    // side to move is its own. Reached from the display's "▶ Start" chip.
+    private void FinishSetup()
+    {
+        if (_display is null || !_display.HasGameUI || !_display.UI.IsSetupMode) return;
+        _display.UI.CancelPlacement(); // a picker left open would keep its scrim over the live board
+        _display.UI.IsSetupMode = false;
+        SaveGame();
+        PlayAiReply();
     }
 
     // Plays the engine's reply in-process while it's the computer's turn. Synchronous: at AiDepth the
@@ -565,9 +600,11 @@ public sealed class MainActivity : SdlVulkanActivity
         ReleaseMulticastLock(); // discovery is done; the game socket stays open
 
         _game = new Game();
+        _mode = GameMode.NetworkGame;
         _vsComputer = false;
+        _acrossTheTable = false; // a LAN game has a single local side — never turns the frame
         _display = new PixelGameDisplay<VulkanContext>(_renderer);
-        UpdateHotSeatTransform(); // identity here (a LAN game has a local side) + insets/cutout
+        UpdateAcrossTheTableTransform(); // identity here + insets/cutout
         _display.TopStripLabel = $"LAN ({_netLocalSide})";
         _display.KeyboardHints = false;
         _display.ResetGame(_game);
@@ -631,14 +668,25 @@ public sealed class MainActivity : SdlVulkanActivity
     // Persistence lives in the shared Chess.UCI.GameStore so every front-end (desktop GUI too) uses
     // the same file format and replay logic; these wrappers just supply the path, the computer side
     // (derived from this activity's mode state), and the logcat sink.
-    private (Game Game, Side ComputerSide)? TryLoadGame()
+    private SavedGame? TryLoadGame()
         => GameStore.TryLoad(GamePath, m => SdlEventLoop.DiagnosticLog?.Invoke(m));
+
+    // A custom game saved before its first move is still being SET UP: the position is half-built, so
+    // it resumes straight back into setup mode (and the save carries the pieces placed so far).
+    private static bool IsMidSetup(SavedGame s) =>
+        s.Mode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard && s.Game.PlyCount == 0;
+
+    // Worth resuming when the game isn't over — or when it is still being set up, where "finished"
+    // means nothing: a board with no pieces on it has no legal moves and reads as a dead position.
+    private static bool IsResumable(SavedGame s) => !s.Game.IsFinished || IsMidSetup(s);
 
     private void SaveGame()
     {
         if (_game is null) return;
         var computerSide = _vsComputer ? (_humanSide == Side.White ? Side.Black : Side.White) : Side.None;
-        GameStore.Save(GamePath, _game, computerSide, m => SdlEventLoop.DiagnosticLog?.Invoke(m));
+        // The mode goes in the save too: across-the-table and plain PvP are both engine-less, so
+        // without it a resumed across-the-table game came back as hot-seat and stopped turning.
+        GameStore.Save(GamePath, _game, computerSide, _mode, m => SdlEventLoop.DiagnosticLog?.Invoke(m));
     }
 
     // The exact camera punch-hole bounds, so the notch strip lines its text up with the camera's row

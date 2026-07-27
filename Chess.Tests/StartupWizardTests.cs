@@ -20,10 +20,19 @@ public class StartupWizardTests
     [Fact]
     public void Current_IncludeLinkPlay_AppendsFourthItem()
     {
-        var wizard = new StartupWizard(includeLinkPlay: true);
+        var wizard = new StartupWizard(StartupWizardOptions.LinkPlay);
 
         wizard.Current.Items.ShouldBe(
             ["Player vs Player", "Player vs Computer", "Custom Game", "Play by Link"]);
+    }
+
+    [Fact]
+    public void Current_IncludeAcrossTheTable_InsertsAfterPlayerVsPlayer()
+    {
+        var wizard = new StartupWizard(StartupWizardOptions.AcrossTheTable);
+
+        wizard.Current.Items.ShouldBe(
+            ["Player vs Player", "Across the table", "Player vs Computer", "Custom Game"]);
     }
 
     // ── Existing flows unchanged (regression for the explicit-index rewrite) ──
@@ -73,6 +82,35 @@ public class StartupWizardTests
         wizard.Result.ShouldBe((GameMode.CustomGameStandardBoard, Side.Black, Side.Black));
     }
 
+    // ── Across the table ───────────────────────────────────────────
+
+    [Fact]
+    public void Confirm_AcrossTheTable_CompletesWithNoComputer()
+    {
+        var wizard = new StartupWizard(StartupWizardOptions.AcrossTheTable);
+
+        wizard.Confirm(1); // "Across the table", right after Player vs Player
+
+        wizard.IsComplete.ShouldBeTrue();
+        wizard.Result.ShouldBe((GameMode.AcrossTheTable, Side.None, Side.White));
+    }
+
+    [Theory]
+    [InlineData(0, GameMode.PlayerVsPlayer)]   // before the inserted item: unchanged
+    [InlineData(2, GameMode.PlayerVsComputer)] // shifted +1 by the insert
+    public void Confirm_AcrossTheTable_KeepsStandardEntriesAtShiftedIndices(int selected, GameMode expected)
+    {
+        var wizard = new StartupWizard(StartupWizardOptions.AcrossTheTable);
+
+        wizard.Confirm(selected);
+
+        wizard.Result.Mode.ShouldBe(expected);
+        if (expected is GameMode.PlayerVsComputer)
+            wizard.Current.Prompt.ShouldBe("Play as:"); // PvC moves to the PlayAs step
+        else
+            wizard.IsComplete.ShouldBeTrue();
+    }
+
     // ── Play by Link ───────────────────────────────────────────────
 
     [Theory]
@@ -80,7 +118,7 @@ public class StartupWizardTests
     [InlineData(1, Side.White)] // creator plays Black → remote correspondent is White
     public void Confirm_PlayByLink_PlayAsAssignsRemoteSide(int playAs, Side expectedRemote)
     {
-        var wizard = new StartupWizard(includeLinkPlay: true);
+        var wizard = new StartupWizard(StartupWizardOptions.LinkPlay);
 
         wizard.Confirm(3);
         wizard.IsComplete.ShouldBeFalse();
