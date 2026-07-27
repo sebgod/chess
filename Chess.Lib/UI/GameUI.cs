@@ -1134,7 +1134,9 @@ public class GameUI
         if (MoveLockSide is { } lockSide && Game.CurrentSide != lockSide)
             return (UIResponse.None, []);
 
-        var prevLastMove = LastMove;
+        // The full triple, not just LastMove's destination: retiring the arrow has to invalidate
+        // where it started too (see the clip rects below).
+        var prevArrow = LastMoveFull;
 
         if (action is { IsMove: true } promotion and not { Promoted: PieceType.None })
         {
@@ -1170,9 +1172,18 @@ public class GameUI
                 clipRects.Add(SquareRect(action.From));
                 clipRects.Add(SquareRect(action.To));
 
-                if (prevLastMove is (var prevMove, _))
+                // Last-move arrows run centre-to-centre, so they paint over squares that neither end
+                // owns; both the arrow being drawn and the one being retired need their whole span
+                // invalidated. Only the retired arrow's *destination* used to be, which left its tail
+                // on screen whenever the origin fell outside the repainted region — a partial-render
+                // artifact only the console displays could show, since PixelGameDisplay repaints its
+                // whole content rect and never consults these. Spans rather than end squares so this
+                // also holds for a backend that scissors each rect instead of unioning them.
+                clipRects.Add(SquareRect(action.From).Union(SquareRect(action.To)));
+
+                if (prevArrow is (var prevFrom, var prevTo, _))
                 {
-                    clipRects.Add(SquareRect(prevMove));
+                    clipRects.Add(SquareRect(prevFrom).Union(SquareRect(prevTo)));
                 }
 
                 if (result is ActionResult.Castling)

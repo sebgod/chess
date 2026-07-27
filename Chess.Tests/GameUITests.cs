@@ -137,6 +137,36 @@ public class GameUITests
     }
 
     [Fact]
+    public void Move_ClipRects_CoverThePreviousMoveArrow()
+    {
+        // The last-move arrow is drawn from the origin square's centre to the destination's, so it
+        // covers ground that neither end square owns. When the next move retires it, every pixel it
+        // touched has to be invalidated or it survives as a ghost: the console displays union the
+        // clip rects into one bounding box and repaint only that, leaving everything outside as it
+        // was. Invalidating just the previous destination is not enough.
+        var ui = CreateStandardUI();
+
+        // 1. Nf3 — arrow g1->f3, deliberately a knight so it is neither rank- nor file-aligned.
+        ui.TryPerformAction(G1);
+        ui.TryPerformAction(F3);
+
+        // 1... e5 — far enough away that the new move's own rects cannot cover g1 by accident.
+        ui.TryPerformAction(E7);
+        var (_, clips) = ui.TryPerformAction(E5);
+
+        var union = clips[0];
+        for (var i = 1; i < clips.Length; i++)
+        {
+            union = union.Union(clips[i]);
+        }
+
+        ui.SquareRect(G1).IsContainedWithin(union).ShouldBeTrue(
+            "the retired arrow started on g1, so g1 must be repainted or the arrow tail lingers");
+        ui.SquareRect(F3).IsContainedWithin(union).ShouldBeTrue(
+            "the retired arrow ended on f3");
+    }
+
+    [Fact]
     public void Move_Capture_IncludesCapturedTextRects()
     {
         // Set up position where white can capture
