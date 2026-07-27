@@ -96,6 +96,32 @@ public class UciParserTests
     }
 
     [Fact]
+    public void ParseCommand_GoWithIncrementsAndMovesToGo()
+    {
+        // The shape a GUI actually sends for a 5|3 game with a move count in the period.
+        var cmd = UciParser.ParseCommand("go wtime 300000 btime 295000 winc 3000 binc 3000 movestogo 40")
+            .ShouldBeOfType<UciCommand.Go>();
+
+        cmd.WTime.ShouldBe(300000);
+        cmd.BTime.ShouldBe(295000);
+        cmd.WInc.ShouldBe(3000);
+        cmd.BInc.ShouldBe(3000);
+        cmd.MovesToGo.ShouldBe(40);
+    }
+
+    [Fact]
+    public void ParseCommand_GoWithTimes_LeavesIncrementsUnset()
+    {
+        // Absent is not zero: sudden death has no increment at all, and the budget treats the two the
+        // same only by choice, not because the parser conflated them.
+        var cmd = UciParser.ParseCommand("go wtime 60000 btime 60000").ShouldBeOfType<UciCommand.Go>();
+
+        cmd.WInc.ShouldBeNull();
+        cmd.BInc.ShouldBeNull();
+        cmd.MovesToGo.ShouldBeNull();
+    }
+
+    [Fact]
     public void ParseCommand_ExtraWhitespace()
     {
         var cmd = UciParser.ParseCommand("  position   startpos   moves   e2e4  ").ShouldBeOfType<UciCommand.SetPosition>();

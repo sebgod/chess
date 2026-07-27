@@ -74,7 +74,7 @@ public static class UciParser
 
     private static UciCommand.Go ParseGo(string[] tokens)
     {
-        int? moveTime = null, depth = null, wTime = null, bTime = null;
+        int? moveTime = null, depth = null, wTime = null, bTime = null, wInc = null, bInc = null, movesToGo = null;
         var infinite = false;
 
         for (var i = 1; i < tokens.Length; i++)
@@ -89,12 +89,18 @@ public static class UciParser
                     wTime = wt; i++; break;
                 case "btime" when i + 1 < tokens.Length && int.TryParse(tokens[i + 1], out var bt):
                     bTime = bt; i++; break;
+                case "winc" when i + 1 < tokens.Length && int.TryParse(tokens[i + 1], out var wi):
+                    wInc = wi; i++; break;
+                case "binc" when i + 1 < tokens.Length && int.TryParse(tokens[i + 1], out var bi):
+                    bInc = bi; i++; break;
+                case "movestogo" when i + 1 < tokens.Length && int.TryParse(tokens[i + 1], out var mtg):
+                    movesToGo = mtg; i++; break;
                 case "infinite":
                     infinite = true; break;
             }
         }
 
-        return new UciCommand.Go(moveTime, depth, infinite, wTime, bTime);
+        return new UciCommand.Go(moveTime, depth, infinite, wTime, bTime, wInc, bInc, movesToGo);
     }
 
     private static UciResponse.BestMove ParseBestMove(string[] tokens)
