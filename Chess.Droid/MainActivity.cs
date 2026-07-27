@@ -55,7 +55,9 @@ namespace Chess.Droid;
         Keyboard | KeyboardHidden | Navigation)]
 public sealed class MainActivity : SdlVulkanActivity
 {
-    private const int AiDepth = 3; // modest depth: responsive on a phone (tune later)
+    // Chosen in the startup wizard. Capped by Difficulty's own ladder, which stops at depth 4 partly
+    // because this host searches on the UI thread — see DifficultyExtensions.ToSearchDepth.
+    private Difficulty _difficulty = Difficulty.Normal;
 
     protected override string WindowTitle => "Chess";
 
@@ -70,9 +72,10 @@ public sealed class MainActivity : SdlVulkanActivity
     private Game? _game;
 
     // Player-vs-Computer state. The engine runs in-process and SYNCHRONOUSLY right after the human's
-    // move: at AiDepth=3 the search is a few tens of ms, so it doesn't need a background thread (and a
-    // struct move can't be handed across threads via volatile — that'd need a lock, only worth it for a
-    // slower/stronger engine later). It's the AI's turn while it runs, so no input races.
+    // move: across the offered difficulty levels the search is tens of milliseconds to a few hundred,
+    // so it doesn't need a background thread (and a struct move can't be handed across threads via
+    // volatile — that'd need a lock, only worth it for a slower/stronger engine later). It's the AI's
+    // turn while it runs, so no input races. This is one of the reasons Difficulty stops at depth 4.
     private bool _vsComputer;
     private Side _humanSide;
 
@@ -291,7 +294,10 @@ public sealed class MainActivity : SdlVulkanActivity
                 _wizard.Confirm(_menu.SelectedIndex);
                 if (_wizard.IsComplete)
                 {
-                    var (mode, computerSide, sideToMove) = _wizard.Result;
+                    var (mode, computerSide, sideToMove, difficulty) = _wizard.Result;
+                    // Continue/network keep whatever is already set; the wizard only asks when an
+                    // engine is actually involved.
+                    _difficulty = difficulty;
                     _menu = null;
                     _wizard = null;
                     if (mode == GameMode.Continue)
@@ -448,16 +454,16 @@ public sealed class MainActivity : SdlVulkanActivity
         PlayAiReply();
     }
 
-    // Plays the engine's reply in-process while it's the computer's turn. Synchronous: at AiDepth the
-    // search is brief, and it's not the human's turn, so blocking the loop for it is acceptable and far
-    // simpler than a background thread + cross-thread struct handoff. (Loop handles a chain in case a
-    // future mode has the AI move more than once.)
+    // Plays the engine's reply in-process while it's the computer's turn. Synchronous: at the offered
+    // depths the search is brief, and it's not the human's turn, so blocking the loop for it is
+    // acceptable and far simpler than a background thread + cross-thread struct handoff. (Loop handles
+    // a chain in case a future mode has the AI move more than once.)
     private void PlayAiReply()
     {
         if (!_vsComputer || _game is null) return;
         while (!_game.IsFinished && _game.CurrentSide != _humanSide)
         {
-            var move = new AiEngine(_game.CurrentSide, maxDepth: AiDepth).PickMove(_game);
+            var move = new AiEngine(_game.CurrentSide, maxDepth: _difficulty.ToSearchDepth()).PickMove(_game);
             if (move is not { } mv) break;
             _game.TryMove(mv);
             SaveGame();

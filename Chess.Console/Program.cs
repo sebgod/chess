@@ -133,12 +133,13 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
         GameMode gameMode;
         Side computerSide;
         Side sideToMove;
+        var difficulty = Difficulty.Normal;
 
         var modeArg = parseResult.GetValue(modeOption);
         if (modeArg is null)
         {
             var startupMenu = new StartupMenu(terminal, timeProvider);
-            (gameMode, computerSide, sideToMove) = await startupMenu.ShowAsync(cancellationToken);
+            (gameMode, computerSide, sideToMove, difficulty) = await startupMenu.ShowAsync(cancellationToken);
         }
         else
         {
@@ -189,7 +190,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
                 timeProvider,
                 displayFactory,
                 () => new HumanPlayer(terminal),
-                (cs, tp) => new UciPlayer(UciPlayer.DefaultEnginePath, cs, tp)
+                (cs, tp) => new UciPlayer(UciPlayer.DefaultEnginePath, cs, tp, difficulty)
             );
         }
 

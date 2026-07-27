@@ -23,7 +23,7 @@ public sealed class StartupFlowTests
         wizard.Confirm(0); // Player vs Player
 
         wizard.IsComplete.ShouldBeTrue();
-        var (mode, computerSide, _) = wizard.Result;
+        var (mode, computerSide, _, _) = wizard.Result;
         mode.ShouldBe(GameMode.PlayerVsPlayer);
         computerSide.ShouldBe(Side.None); // pass-and-play: no opponent process
     }
@@ -38,11 +38,15 @@ public sealed class StartupFlowTests
         wizard.Current.Prompt.ShouldBe("Play as:");
 
         wizard.Confirm(0); // human plays White
+        wizard.IsComplete.ShouldBeFalse();
+        wizard.Current.Prompt.ShouldBe("Difficulty:"); // there IS an engine here, so ask how hard
+        wizard.Confirm(1); // Normal
 
         wizard.IsComplete.ShouldBeTrue();
-        var (mode, computerSide, _) = wizard.Result;
+        var (mode, computerSide, _, difficulty) = wizard.Result;
         mode.ShouldBe(GameMode.PlayerVsComputer);
         computerSide.ShouldBe(Side.Black); // human White => engine is Black
+        difficulty.ShouldBe(Difficulty.Normal);
     }
 
     [Fact]
@@ -79,7 +83,7 @@ public sealed class StartupFlowTests
         wizard.Confirm(0); // I play White
 
         wizard.IsComplete.ShouldBeTrue();
-        var (mode, computerSide, _) = wizard.Result;
+        var (mode, computerSide, _, _) = wizard.Result;
         mode.ShouldBe(GameMode.NetworkGame);
         computerSide.ShouldBe(Side.Black); // I'm White => the remote peer is Black
     }

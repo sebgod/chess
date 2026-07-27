@@ -53,7 +53,7 @@ public sealed class StartupWizard(StartupWizardOptions options = StartupWizardOp
     /// <summary>♚ Chess ♔ — the wizard title shown on every step.</summary>
     public const string Title = "♚ Chess ♔";
 
-    private enum Phase { GameMode, PlayAs, BoardType, SideToMove, HumanSide }
+    private enum Phase { GameMode, PlayAs, BoardType, SideToMove, HumanSide, Difficulty }
 
     private readonly StartupWizardOptions _options = options;
     private bool Has(StartupWizardOptions flag) => (_options & flag) != 0;
@@ -61,6 +61,7 @@ public sealed class StartupWizard(StartupWizardOptions options = StartupWizardOp
     private GameMode _gameMode;
     private Side _computerSide;
     private Side _sideToMove = Side.White;
+    private Difficulty _difficulty = Difficulty.Normal;
 
     /// <summary>True once the flow has produced a <see cref="Result"/>; <see cref="Confirm"/>
     /// must not be called after this.</summary>
@@ -69,9 +70,11 @@ public sealed class StartupWizard(StartupWizardOptions options = StartupWizardOp
     /// <summary>The chosen configuration. <c>ComputerSide</c> is the side NOT locally
     /// controlled: the engine's colour for Player vs Computer / custom games, the remote
     /// correspondent's colour for <see cref="GameMode.PlayByLink"/>, and <c>Side.None</c> for
-    /// Player vs Player (no opponent process at all). Only valid once
-    /// <see cref="IsComplete"/>.</summary>
-    public (GameMode Mode, Side ComputerSide, Side SideToMove) Result => (_gameMode, _computerSide, _sideToMove);
+    /// Player vs Player (no opponent process at all). <c>Difficulty</c> is only asked for when an
+    /// engine is actually involved and stays at its default otherwise — a remote human has no
+    /// strength setting, and neither does hot-seat. Only valid once <see cref="IsComplete"/>.</summary>
+    public (GameMode Mode, Side ComputerSide, Side SideToMove, Difficulty Difficulty) Result =>
+        (_gameMode, _computerSide, _sideToMove, _difficulty);
 
     /// <summary>The current step's menu content.</summary>
     public (string Title, string Prompt, string[] Items) Current => _phase switch
@@ -87,6 +90,7 @@ public sealed class StartupWizard(StartupWizardOptions options = StartupWizardOp
         Phase.BoardType => (Title, "Starting board:", ["Empty Board", "Standard Board"]),
         Phase.SideToMove => (Title, "Side to move first:", ["White", "Black"]),
         Phase.HumanSide => (Title, "Play as:", ["White", "Black"]),
+        Phase.Difficulty => (Title, "Difficulty:", [.. DifficultyExtensions.All.Select(d => d.ToLabel())]),
         _ => ("", "", []),
     };
 
@@ -173,7 +177,16 @@ public sealed class StartupWizard(StartupWizardOptions options = StartupWizardOp
 
             case Phase.PlayAs:
                 _computerSide = selected == 0 ? Side.Black : Side.White;
-                IsComplete = true;
+                // Link and network play reuse this step, but their "computer side" is a remote human.
+                // Only ask how hard to play when there is actually an engine to answer for.
+                if (_gameMode is GameMode.PlayerVsComputer)
+                {
+                    _phase = Phase.Difficulty;
+                }
+                else
+                {
+                    IsComplete = true;
+                }
                 break;
 
             case Phase.BoardType:
@@ -188,6 +201,13 @@ public sealed class StartupWizard(StartupWizardOptions options = StartupWizardOp
 
             case Phase.HumanSide:
                 _computerSide = selected == 0 ? Side.Black : Side.White;
+                // A custom game is always played against the engine (see the class docs), so this one
+                // always continues to the difficulty step.
+                _phase = Phase.Difficulty;
+                break;
+
+            case Phase.Difficulty:
+                _difficulty = DifficultyExtensions.All[selected];
                 IsComplete = true;
                 break;
         }
