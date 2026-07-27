@@ -11,6 +11,11 @@ internal sealed class ChessUciEngine : IUciEngine
     private Game _game = new();
     private bool _debug;
 
+    // Cancels the search currently in flight. Written by OnGo and read by OnStop, which UciServer
+    // dispatches from the read loop while the search runs on another thread.
+    private readonly Lock _searchLock = new();
+    private CancellationTokenSource? _searchCts;
+
     public void OnUci(TextWriter output)
     {
         UciServer.WriteResponse(output, new UciResponse.Id("name", "SharpChess"));
@@ -56,29 +61,82 @@ internal sealed class ChessUciEngine : IUciEngine
     public void OnGo(UciCommand.Go goParams, TextWriter output)
     {
         var side = _game.CurrentSide;
-        var depth = goParams.Depth ?? AiEngine.DefaultDepth;
+        var budget = UciTimeBudget.ForMove(goParams, side);
+
+        // Depth cap policy: an explicit "go depth n" means exactly that. Otherwise, if the GUI gave us
+        // a clock, time is the real bound and depth is only there to terminate — iterative deepening
+        // goes as deep as the budget allows. With neither, fall back to the fixed default so a bare
+        // "go" still answers promptly.
+        var depth = goParams.Depth ?? (budget is not null || goParams.Infinite
+            ? AiEngine.MaxSearchDepth
+            : AiEngine.DefaultDepth);
+
+        var searchCts = new CancellationTokenSource();
+
+        lock (_searchLock)
+        {
+            _searchCts = searchCts;
+        }
+
         var aiEngine = new AiEngine(side, depth);
+        AiEngine.SearchResult result;
 
-        var result = aiEngine.Search(_game, onDepthComplete: info =>
+        try
         {
-            UciServer.WriteResponse(output, new UciResponse.Info(
-                $"depth {info.Depth} score cp {info.Score} nodes {info.Nodes}"));
-        });
+            result = aiEngine.Search(
+                _game,
+                onDepthComplete: info => UciServer.WriteResponse(output, new UciResponse.Info(
+                    $"depth {info.Depth} score {FormatScore(info.Score, info.Depth)} nodes {info.Nodes}")),
+                moveTime: budget,
+                cancellationToken: searchCts.Token);
+        }
+        finally
+        {
+            // Clear the field before disposing, both under the lock OnStop uses, so a concurrent stop
+            // either cancels a live source or sees nothing — never cancels a disposed one.
+            lock (_searchLock)
+            {
+                if (ReferenceEquals(_searchCts, searchCts))
+                {
+                    _searchCts = null;
+                }
+            }
 
-        if (result.BestMove is { } move)
-        {
-            UciServer.WriteResponse(output, new UciResponse.BestMove(UciMove.Format(move)));
+            searchCts.Dispose();
         }
-        else
-        {
-            UciServer.WriteResponse(output, new UciResponse.BestMove("0000"));
-        }
+
+        // A search that was cut short still owes the GUI a move — "0000" is reserved for positions
+        // with no legal move at all, and depth 1 always completes precisely so this stays true.
+        UciServer.WriteResponse(output, new UciResponse.BestMove(
+            result.BestMove is { } move ? UciMove.Format(move) : "0000"));
     }
 
     public void OnStop(TextWriter output)
     {
-        // Search is instant for now, so stop is a no-op
-        // But we should still respond with bestmove if we have one
+        // Cancelling is cooperative: the search notices within a few thousand nodes, keeps the best
+        // move from its last completed iteration, and OnGo writes the bestmove as usual.
+        lock (_searchLock)
+        {
+            _searchCts?.Cancel();
+        }
+    }
+
+    /// <summary>
+    /// Formats a score the way UCI wants it: a forced mate is reported as <c>mate n</c> in moves (not
+    /// plies, and negative when we are the one being mated), anything else as centipawns.
+    /// </summary>
+    private static string FormatScore(int score, int depth)
+    {
+        var distanceFromMate = AiEngine.MateScore - Math.Abs(score);
+
+        if (distanceFromMate > depth)
+        {
+            return $"cp {score}";
+        }
+
+        // distanceFromMate counts plies to the mate; UCI counts moves, rounding a half move up.
+        var moves = (distanceFromMate + 1) / 2;
+        return $"mate {(score > 0 ? moves : -moves)}";
     }
 
     public void OnDebug(bool on)
