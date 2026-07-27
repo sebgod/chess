@@ -7,7 +7,7 @@ namespace Chess.Lib.UI;
 /// Maps host-reported DEVICE-space values (safe-area insets, the display-cutout rect) into content
 /// space for a renderer <see cref="DeviceTransform"/> — the layout-side mirror of the renderer folding
 /// the same transform into its projection and of pointer input coming back through
-/// <see cref="DeviceTransform.Invert"/> at the host boundary. Under a 180° hot-seat flip the camera
+/// <see cref="DeviceTransform.Invert"/> at the host boundary. Under a 180° across-the-table flip the camera
 /// notch sits on the content's BOTTOM edge, so the insets swap top↔bottom and left↔right; the
 /// <see cref="PixelGameDisplay{TSurface}"/> layout just consumes the mapped values and never learns why.
 /// </summary>

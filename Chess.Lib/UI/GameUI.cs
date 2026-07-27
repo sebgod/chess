@@ -48,7 +48,13 @@ public class GameUI
     private readonly int _topMargin;
     private readonly int _topOffset;
     private readonly int _leftOffset;
+    // The leftOffset the host passed, BEFORE the centering slack was folded into _leftOffset — the
+    // x-side counterpart of _topOffset. Resize round-trips this one, not the computed offset, or the
+    // centering would be added again on every resize and walk the board off the right edge.
+    private readonly int _leftInset;
     private readonly int _boardEnd;
+    private readonly int _capturedCellHeight;
+    private readonly CapturedPiecesLayout _capturedLayout;
     private readonly (uint X, uint Y)? _alignment;
 
     private readonly string _labelFont;
@@ -96,7 +102,11 @@ public class GameUI
     private const float SquaresNeededX = 9.5f;
     // Vertical: topMargin(~0.6) + margin(0.5) + 8 board squares + margin(0.5) + capturedHeight(~0.6) = ~10.2, plus padding
     private const float SquaresNeededY = 10.5f;
-    
+    // Same, minus the two captured strips (CapturedPiecesLayout.External): margin(0.5) + 8 board
+    // squares + margin(0.5) = 9, plus padding. No topMargin term — with no strip to keep on-screen
+    // the content simply centres in whatever it is given (see minTopMargin below).
+    private const float SquaresNeededYNoStrips = 9.2f;
+
     public GameUI(
         Game game,
         uint uiSizeX,
@@ -110,32 +120,42 @@ public class GameUI
         (uint X, uint Y)? alignment = null,
         Func<int, int, int?>? resolveHistoryClick = null,
         int topOffset = 0,
-        int leftOffset = 0)
+        int leftOffset = 0,
+        CapturedPiecesLayout capturedLayout = CapturedPiecesLayout.Strips)
     {
         Game = game;
         ResolveHistoryClick = resolveHistoryClick;
         _alignment = alignment;
         _topOffset = topOffset;
         _leftOffset = leftOffset;
-        _squareSize = CalculateSquareSize(uiSizeX, uiSizeY);
+        _leftInset = leftOffset;
+        _capturedLayout = capturedLayout;
+        _squareSize = CalculateSquareSize(uiSizeX, uiSizeY, capturedLayout);
 
         if (alignment is (var alignX, var alignY))
         {
             var unit = Lcm(alignX, alignY);
             _squareSize = AlignDown(_squareSize, unit);
             _margin = AlignDown(_squareSize / 2, unit);
-            var capturedHeight = (int)MathF.Round(_squareSize * 0.4f * 1.4f);
-            var minTopMargin = AlignUp(Math.Max(_squareSize / 2, capturedHeight), unit);
-            var contentHeight = 8 * _squareSize + 2 * _margin + 2 * capturedHeight;
-            _topMargin = Math.Max(minTopMargin, AlignDown(((int)uiSizeY - contentHeight) / 2 + capturedHeight, unit));
+            _capturedCellHeight = CapturedCellHeight(_squareSize);
+            // Only the in-board strips take vertical space; External hands them to the host, and the
+            // board grows into the space they no longer occupy.
+            var stripHeight = capturedLayout == CapturedPiecesLayout.Strips ? _capturedCellHeight : 0;
+            var minTopMargin = stripHeight > 0 ? AlignUp(Math.Max(_squareSize / 2, stripHeight), unit) : 0;
+            var contentHeight = 8 * _squareSize + 2 * _margin + 2 * stripHeight;
+            _topMargin = Math.Max(minTopMargin, AlignDown(((int)uiSizeY - contentHeight) / 2 + stripHeight, unit));
         }
         else
         {
             _margin = _squareSize / 2;
-            var capturedHeight = (int)MathF.Round(_squareSize * 0.4f * 1.4f);
-            var minTopMargin = Math.Max((int)(_squareSize * 0.5), capturedHeight);
-            var contentHeight = 8 * _squareSize + 2 * _margin + 2 * capturedHeight;
-            _topMargin = Math.Max(minTopMargin, ((int)uiSizeY - contentHeight) / 2 + capturedHeight);
+            _capturedCellHeight = CapturedCellHeight(_squareSize);
+            var stripHeight = capturedLayout == CapturedPiecesLayout.Strips ? _capturedCellHeight : 0;
+            // A floor only where something has to stay on-screen above the board — the top captured
+            // strip. Without it (External) the floor is 0, so the content centres cleanly instead of
+            // being pushed down past the bottom of the area it was given.
+            var minTopMargin = stripHeight > 0 ? Math.Max((int)(_squareSize * 0.5), stripHeight) : 0;
+            var contentHeight = 8 * _squareSize + 2 * _margin + 2 * stripHeight;
+            _topMargin = Math.Max(minTopMargin, ((int)uiSizeY - contentHeight) / 2 + stripHeight);
         }
 
         // Every y-coordinate (draw AND hit-test) flows through _topMargin, so folding the offset in
@@ -147,6 +167,22 @@ public class GameUI
         _topMargin += topOffset;
 
         _boardEnd = _squareSize * 8 + _margin;
+
+        // Horizontal centering, the symmetric counterpart to _topMargin's vertical centering: if the
+        // given width has slack beyond the board+labels content, fold half of it into _leftOffset.
+        // Every x-origin site (board, labels, captured strips, popups) AND both hit-test/draw mappings
+        // (SquareRect, FindSelected) already read _leftOffset, so this one addition centers them all
+        // together — draw==hit-test is preserved. When the host hands a surface-centered area this
+        // puts the board on the surface centre, which is invariant under the across-the-table 180°
+        // flip (so the board no longer drifts each turn). Left-aligned when there is no slack.
+        var contentWidth = _boardEnd + _margin; // left rank-label margin + 8 squares + right margin
+        var leftCentering = ((int)uiSizeX - contentWidth) / 2;
+        if (leftCentering > 0)
+        {
+            if (alignment is (var alignCenterX, var alignCenterY))
+                leftCentering = AlignDown(leftCentering, Lcm(alignCenterX, alignCenterY));
+            _leftOffset += leftCentering;
+        }
 
         _mainFontColor = mainFontColor ?? FontColorBlack;
         _backgroundColor = backgroundColor ?? FontColorWhite;
@@ -162,10 +198,22 @@ public class GameUI
         PendingPromotion = pendingPromotion;
     }
 
-    public static int CalculateSquareSize(uint uiSizeX, uint uiSizeY)
+    /// <summary>
+    /// The square size that fits a board (plus its label margins and, with
+    /// <see cref="CapturedPiecesLayout.Strips"/>, the captured strips) into the given area. Hosts
+    /// also use it to COST a candidate layout in board squares before committing to one — see
+    /// <c>PixelGameDisplay.UseSideHistory</c>.
+    /// </summary>
+    public static int CalculateSquareSize(uint uiSizeX, uint uiSizeY,
+        CapturedPiecesLayout capturedLayout = CapturedPiecesLayout.Strips)
     {
-        return (int)MathF.Min(uiSizeX / SquaresNeededX, uiSizeY / SquaresNeededY);
+        var neededY = capturedLayout == CapturedPiecesLayout.Strips ? SquaresNeededY : SquaresNeededYNoStrips;
+        return (int)MathF.Min(uiSizeX / SquaresNeededX, uiSizeY / neededY);
     }
+
+    /// <summary>The captured piles' row height for a given square size — one line of the captured
+    /// font (0.4 square) with its line spacing.</summary>
+    private static int CapturedCellHeight(int squareSize) => (int)MathF.Round(squareSize * 0.4f * 1.4f);
 
     public Game Game { get; }
 
@@ -302,12 +350,36 @@ public class GameUI
 
     public int SquareSize => _squareSize;
 
+    /// <summary>The natural width of a captured tray — a [count][piece] row pair. Hosts size the
+    /// gutter slice they hand <see cref="RenderCapturedColumn{TSurface, TRenderer}"/> with it.</summary>
+    public int CapturedColumnWidth => 2 * _capturedCellHeight;
+
+    /// <summary>
+    /// The drawn board's bounding box in surface coordinates: the 8×8 grid, its rank/file label
+    /// margins, and — with <see cref="CapturedPiecesLayout.Strips"/> — the captured strips above and
+    /// below. Hosts lay their chrome against this instead of re-deriving the square math, so a panel
+    /// always meets the board's real edge however much centering slack the board absorbed.
+    /// </summary>
+    public RectInt ContentRect
+    {
+        get
+        {
+            var strip = _capturedLayout == CapturedPiecesLayout.Strips ? _capturedCellHeight : 0;
+            return new RectInt(
+                (_leftOffset + _boardEnd + _margin, _topMargin + _boardEnd + _margin + strip),
+                (_leftOffset, _topMargin - strip));
+        }
+    }
+
     /// <summary>
     /// Creates a new <see cref="GameUI"/> with the given dimensions, preserving game state, selection,
     /// and style. Pass <paramref name="topOffset"/> when the safe-area top inset changed with the
-    /// resize (rotation moves the cutout); null keeps the current offset.
+    /// resize (rotation moves the cutout); null keeps the current offset. Pass
+    /// <paramref name="capturedLayout"/> when the resize crosses a layout boundary (a rotation that
+    /// gains or loses the side gutters that host the piles); null keeps the current one.
     /// </summary>
-    public GameUI Resize(uint uiSizeX, uint uiSizeY, int? topOffset = null, int? leftOffset = null)
+    public GameUI Resize(uint uiSizeX, uint uiSizeY, int? topOffset = null, int? leftOffset = null,
+        CapturedPiecesLayout? capturedLayout = null)
     {
         var resized = new GameUI(
             Game, uiSizeX, uiSizeY,
@@ -320,7 +392,8 @@ public class GameUI
             alignment: _alignment,
             resolveHistoryClick: ResolveHistoryClick,
             topOffset: topOffset ?? _topOffset,
-            leftOffset: leftOffset ?? _leftOffset);
+            leftOffset: leftOffset ?? _leftInset,
+            capturedLayout: capturedLayout ?? _capturedLayout);
         resized.Mode = Mode;
         resized.PlaybackPlyIndex = PlaybackPlyIndex;
         resized.PlacementSide = PlacementSide;
@@ -381,40 +454,29 @@ public class GameUI
 
         var currentSide = Game.CurrentSide;
 
-        // captured pieces (skip during setup mode)
-        if (Mode != GameUIMode.Setup)
+        // captured pieces (skip during setup mode, and when the host draws them itself)
+        if (Mode != GameUIMode.Setup && _capturedLayout == CapturedPiecesLayout.Strips)
         {
-            var plies = Game.Plies;
-            var plyCount = Mode == GameUIMode.Playback ? PlaybackPlyIndex + 1 : plies.Count;
-
 #if DEBUG
             Span<byte> capturedPieceCounts = new byte[2 * PieceTypeStride];
 #else
             Span<byte> capturedPieceCounts = stackalloc byte[2 * PieceTypeStride];
 #endif
-            for (var plyIdx = 0; plyIdx < plyCount; plyIdx++)
-            {
-                var (_, ply) = plies.GetRecordAndPGNIdx(plyIdx);
-
-                if (ply is { Result: ActionResult.Capture or ActionResult.CaptureAndPromotion } and not { Captured: PieceType.None })
-                {
-                    var idx = plyIdx % 2 * PieceTypeStride + (int)ply.Captured;
-                    capturedPieceCounts[idx]++;
-                }
-            }
+            CountCaptured(capturedPieceCounts);
 
             var capturedTextX = _leftOffset + _margin;
-            var whiteCapturedTextY = _topMargin + _boardEnd + _margin;
-            if (clip.Contains(capturedTextX, whiteCapturedTextY))
+            var (topStripSide, bottomStripSide) = CapturedStripSides();
+
+            var bottomCapturedTextY = _topMargin + _boardEnd + _margin;
+            if (clip.Contains(capturedTextX, bottomCapturedTextY))
             {
-                DrawCapturedText<TRenderer, TSurface>(renderer, capturedPieceCounts, Side.White, capturedTextX, whiteCapturedTextY);
+                DrawCapturedText<TRenderer, TSurface>(renderer, capturedPieceCounts, bottomStripSide, capturedTextX, bottomCapturedTextY);
             }
 
-            var capturedCellHeight = (int)MathF.Round(_capturedFontSize * 1.4f);
-            var blackCapturedTextY = _topMargin - capturedCellHeight;
-            if (clip.Contains(capturedTextX, blackCapturedTextY))
+            var topCapturedTextY = _topMargin - _capturedCellHeight;
+            if (clip.Contains(capturedTextX, topCapturedTextY))
             {
-                DrawCapturedText<TRenderer, TSurface>(renderer, capturedPieceCounts, Side.Black, capturedTextX, blackCapturedTextY);
+                DrawCapturedText<TRenderer, TSurface>(renderer, capturedPieceCounts, topStripSide, capturedTextX, topCapturedTextY);
             }
         }
 
@@ -483,6 +545,99 @@ public class GameUI
 
             var message = Game.GameStatus.ToMessage(Game.IsFinished ? Game.Winner : Game.CurrentSide);
             renderer.DrawText(message, _labelFont, _capturedFontSize, _mainFontColor, boardRect, vertAlignment: TextAlign.Center);
+        }
+    }
+
+    /// <summary>
+    /// Tallies both sides' captures (indexed <c>(side - 1) * PieceTypeStride + pieceType</c>) up to
+    /// the ply on display — during playback that's the scrubbed position's piles, not the game's
+    /// final ones.
+    /// </summary>
+    private void CountCaptured(Span<byte> capturedPieceCounts)
+    {
+        var plies = Game.Plies;
+        var plyCount = Mode == GameUIMode.Playback ? PlaybackPlyIndex + 1 : plies.Count;
+
+        for (var plyIdx = 0; plyIdx < plyCount; plyIdx++)
+        {
+            var (_, ply) = plies.GetRecordAndPGNIdx(plyIdx);
+
+            if (ply is { Result: ActionResult.Capture or ActionResult.CaptureAndPromotion } and not { Captured: PieceType.None })
+            {
+                var idx = plyIdx % 2 * PieceTypeStride + (int)ply.Captured;
+                capturedPieceCounts[idx]++;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Which side's pile belongs at the display's top and bottom ends. A player's captures stand at
+    /// THEIR end of the board (the pieces you took, beside your own back rank), so this tracks
+    /// <see cref="FlipBoard"/> just like the board itself does — which is what keeps each player's
+    /// trophies physically in front of them under the across-the-table 180° flip.
+    /// </summary>
+    private (Side Top, Side Bottom) CapturedStripSides() =>
+        FlipBoard ? (Side.White, Side.Black) : (Side.Black, Side.White);
+
+    /// <summary>
+    /// Draws both captured piles as vertical trays inside <paramref name="rect"/> — a host's side
+    /// gutter, for displays that took the piles out of the board area with
+    /// <see cref="CapturedPiecesLayout.External"/> (which is what buys their board the ~1.2 squares
+    /// the in-board strips would have cost). Each tray hugs the gutter end where its owner's back
+    /// rank sits; see <see cref="CapturedStripSides"/>.
+    /// </summary>
+    public void RenderCapturedColumn<TSurface, TRenderer>(TRenderer renderer, in RectInt rect)
+        where TRenderer : Renderer<TSurface>
+    {
+        if (Mode == GameUIMode.Setup) return;
+
+#if DEBUG
+        Span<byte> capturedPieceCounts = new byte[2 * PieceTypeStride];
+#else
+        Span<byte> capturedPieceCounts = stackalloc byte[2 * PieceTypeStride];
+#endif
+        CountCaptured(capturedPieceCounts);
+
+        // A tray row is [count][piece] — two captured-font cells wide, centred in the gutter, and
+        // never wider than the gutter the host handed over.
+        var trayWidth = Math.Min((int)rect.Width, 2 * _capturedCellHeight);
+        var x = rect.UpperLeft.X + ((int)rect.Width - trayWidth) / 2;
+        var (topSide, bottomSide) = CapturedStripSides();
+
+        DrawCapturedTray<TRenderer, TSurface>(renderer, capturedPieceCounts, topSide, x, trayWidth,
+            rect.UpperLeft.Y, step: 1);
+        DrawCapturedTray<TRenderer, TSurface>(renderer, capturedPieceCounts, bottomSide, x, trayWidth,
+            (int)rect.LowerRight.Y - _capturedCellHeight, step: -1);
+    }
+
+    /// <summary>
+    /// Draws one side's pile as a vertical tray of [count][piece] rows starting at
+    /// <paramref name="y0"/> and growing in <paramref name="step"/> (+1 = downwards from the gutter's
+    /// top edge, -1 = upwards from its bottom edge).
+    /// </summary>
+    private void DrawCapturedTray<TRenderer, TSurface>(TRenderer renderer, ReadOnlySpan<byte> capturedPieceCounts,
+        Side side, int x, int width, int y0, int step)
+        where TRenderer : Renderer<TSurface>
+    {
+        var cell = _capturedCellHeight;
+        var half = width / 2;
+        var capturedSide = side.ToOpposite();
+        var y = y0;
+
+        for (var pieceIdx = 1; pieceIdx < PieceTypeStride; pieceIdx++)
+        {
+            var count = capturedPieceCounts[((int)side - 1) * PieceTypeStride + pieceIdx];
+            if (count == 0) continue;
+
+            // Backing fill per row, so the stacked rows read as one tray (the strips fill their band
+            // the same way).
+            renderer.FillRectangle(new RectInt((x + width, y + cell), (x, y)), _capturedAreaColor);
+            renderer.DrawText(Convert.ToString(count), _labelFont, _capturedFontSize, _mainFontColor,
+                new RectInt((x + half, y + cell), (x, y)), TextAlign.Center, vertAlignment: TextAlign.Center);
+            DrawPiece<TRenderer, TSurface>(renderer, new Piece((PieceType)pieceIdx, capturedSide),
+                new RectInt((x + width, y + cell), (x + half, y)), _capturedFontSize);
+
+            y += step * cell;
         }
     }
 
@@ -823,20 +978,24 @@ public class GameUI
     }
 
     /// <summary>
-    /// Returns the display rects for both captured-piece text areas (white and black).
+    /// Returns the display rects for both captured-piece strips (the top and bottom bands), for
+    /// partial-redraw clipping. Empty with <see cref="CapturedPiecesLayout.External"/> — the piles
+    /// are then outside the board area entirely and the host repaints them itself.
     /// </summary>
-    private (RectInt White, RectInt Black) CapturedTextRects()
+    private (RectInt Top, RectInt Bottom) CapturedTextRects()
     {
-        var cellSize = (int)MathF.Round(_capturedFontSize * 1.4f);
+        if (_capturedLayout != CapturedPiecesLayout.Strips) return (default, default);
+
+        var cellSize = _capturedCellHeight;
         var maxWidth = _boardEnd - _margin;
         var x = _margin + _leftOffset;
 
-        var whiteY = _topMargin + _boardEnd + _margin;
-        var blackY = _topMargin - cellSize;
+        var bottomY = _topMargin + _boardEnd + _margin;
+        var topY = _topMargin - cellSize;
 
         return (
-            new RectInt((x + maxWidth, whiteY + cellSize), (x, whiteY)),
-            new RectInt((x + maxWidth, blackY + cellSize), (x, blackY))
+            new RectInt((x + maxWidth, topY + cellSize), (x, topY)),
+            new RectInt((x + maxWidth, bottomY + cellSize), (x, bottomY))
         );
     }
 
@@ -911,7 +1070,10 @@ public class GameUI
                 return SetupSelect(selected);
             }
 
-            return (UIResponse.None, []);
+            // Off the board: fall through to the chrome, so a touch-only host's "start the game" chip
+            // is reachable while setting up (the desktop presses s). Swallowing the tap here is what
+            // made the chip dead on Android.
+            return TryHistoryClick(x, y);
         }
 
         if (PendingPromotion is { } pendingPromotion)
@@ -1028,9 +1190,9 @@ public class GameUI
 
                 if (result.IsCapture())
                 {
-                    var (whiteCaptured, blackCaptured) = CapturedTextRects();
-                    clipRects.Add(whiteCaptured);
-                    clipRects.Add(blackCaptured);
+                    var (topCaptured, bottomCaptured) = CapturedTextRects();
+                    clipRects.Add(topCaptured);
+                    clipRects.Add(bottomCaptured);
                 }
 
                 if (Game.GameStatus is GameStatus.Check || prevStatus is GameStatus.Check)
