@@ -1,8 +1,9 @@
 # Design: carving a board-game library out of chess
 
-**Status:** exploration + one shipped prerequisite. Nothing is extracted yet. The Sixel colour-extent
-optimization (Console.Lib) and the last-move-arrow clip-rect fix (this repo) have landed; the tick
-model, the optional chess clock, and the extraction tiers below are proposed, not built.
+**Status:** exploration + shipped prerequisites. Nothing is extracted yet. The Sixel colour-extent
+optimization (Console.Lib), the last-move-arrow clip-rect fix, and the engine's deadline-aware search
+have landed; the tick model, the clock's UI half, and the extraction tiers below are proposed, not
+built.
 
 **Scope:** a second board game — "Memory" (concentration) — would live in its **own repo**, the way
 Chess.Web and Chess.Droid are their own heads. The question this document answers is what, if
@@ -88,6 +89,22 @@ and eventually move animation.
 
 Crucially, **a timed state transition is not an animation**. "Reveal, then hide 800 ms later" is two
 redraws 800 ms apart, not 48 frames. Board games need the cheap thing; tweening is separable polish.
+
+**The engine's half of this is now done.** `AiEngine.Search` takes an optional move-time budget and a
+`CancellationToken`, checks both every 2048 nodes (a power-of-two mask, so the non-checking path is one
+bool test), and on expiry discards the unfinished iteration and returns the deepest one that completed.
+Depth 1 is exempt from aborting, which is what guarantees a legal move comes back however tight the
+clock. `UciTimeBudget` turns `wtime`/`btime`/`winc`/`binc`/`movestogo` into that budget, and `UciServer`
+now runs the search off its read loop so `stop` and `isready` can arrive mid-search — previously they
+could not, by construction, since `OnGo` blocked the reader.
+
+Three decisions were settled in the process, recorded here so they are not re-litigated:
+
+| Decision | Outcome |
+|---|---|
+| Time-control format | `base+increment` in seconds (`"300+5"`), as PGN's `TimeControl` tag and every online site already write it. Milliseconds internally, matching UCI. |
+| Does the engine get `go wtime/btime`? | **Yes** — it is the primary time mechanism in the spec, universally implemented, and `Chess.UCI` already parsed it. Only the engine ignored it. |
+| Does LAN play sync clocks? | **No.** Turn-based play needs agreement on *elapsed time per move*, and moves are already the sync points, so the mover piggybacks its remaining time on the move message. An NTP-style estimator would correct ~1 ms on a LAN — deferred as [LAN.Lib#3](https://github.com/SharpAstro/LAN.Lib/issues/3), which also records why LAN.Lib's broadcast-only transport is the wrong home for it. |
 
 ### 2. Turn model
 
@@ -197,8 +214,8 @@ specifically, and ideally a test of the same shape as
 
 1. **Optional chess clock** — the tick model's first consumer: a `TimeProvider`-driven clock model in
    `Chess.Lib.UI`, rendered via `StatusLine()`, polled from all three drivers, with flag-fall entering
-   `GameStatus`. Off by default. Decisions still open: time-control format, whether the engine gets
-   `go wtime/btime`, and whether LAN play syncs clocks or each side tracks its own.
+   `GameStatus`. Off by default. The engine half of this is **done** (see below); what remains is the
+   clock itself and the UI.
 2. **Committed sixel benchmark**, replacing the orphaned artifacts, measuring single-region encode
    *and* write time.
 3. **Sixel video mode** — inter-frame band diffing, gated on (2).
