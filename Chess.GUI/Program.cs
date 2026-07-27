@@ -26,6 +26,9 @@ var cts = new CancellationTokenSource();
 PixelGameDisplay<VulkanContext>? display = null;
 Task<bool>? gameTask = null;
 var currentComputerSide = Side.None;
+// Saved alongside the game: PvP and across-the-table are both engine-less, so the computer side alone
+// can't say which mode to resume into.
+var currentGameMode = GameMode.PlayerVsPlayer;
 
 // The LAN lobby sits between the menu and the game while the user picks/invites a peer.
 VkLanLobby? lobby = null;
@@ -48,7 +51,7 @@ void SaveCurrentGame()
         try { System.IO.File.Delete(savePath); } catch { /* best-effort */ }
         return;
     }
-    GameStore.Save(savePath, g, currentComputerSide);
+    GameStore.Save(savePath, g, currentComputerSide, currentGameMode);
 }
 
 VkStartupMenu? menu = new(CanContinue());
@@ -57,7 +60,7 @@ VkStartupMenu? menu = new(CanContinue());
 // DeviceTransform — the inverse of what the projection applies, so draw and hit-test can never drift
 // (the whole-frame analogue of GameUI's DisplayCell/LogicalCell). Identity — all the desktop sets
 // today — returns the event untouched; this exists so any front-end that wires a whole-frame rotation
-// (the Android hot-seat) stays correct by construction.
+// (the Android across-the-table flip) stays correct by construction.
 InputEvent MapPointerToContent(InputEvent evt)
 {
     var m = renderer.DeviceTransform;
@@ -190,6 +193,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                 var (netLoop, computerSide, sideToMove) =
                     NetworkGame.CreateLoop(TimeProvider.System, () => display, () => player, session);
                 currentComputerSide = computerSide;
+                currentGameMode = GameMode.NetworkGame;
 
                 gameTask = netLoop.RunAsync(GameMode.NetworkGame, computerSide, sideToMove, cts.Token);
             }
@@ -237,7 +241,11 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                         resumeGame = saved.Game;
                         computerSide = saved.ComputerSide;
                         sideToMove = saved.Game.CurrentSide;
-                        gameMode = saved.ComputerSide == Side.None ? GameMode.PlayerVsPlayer : GameMode.PlayerVsComputer;
+                        // The save carries the mode; a resumed custom game is already set up, so it
+                        // continues as a normal game against the engine rather than re-entering setup.
+                        gameMode = saved.Mode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard
+                            ? (saved.ComputerSide == Side.None ? GameMode.PlayerVsPlayer : GameMode.PlayerVsComputer)
+                            : saved.Mode;
                     }
                     else
                     {
@@ -245,6 +253,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                     }
                 }
                 currentComputerSide = computerSide;
+                currentGameMode = gameMode;
 
                 display = new PixelGameDisplay<VulkanContext>(renderer) { Bus = bus };
                 var timeProvider = TimeProvider.System;

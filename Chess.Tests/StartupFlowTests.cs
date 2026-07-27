@@ -25,7 +25,7 @@ public sealed class StartupFlowTests
         wizard.IsComplete.ShouldBeTrue();
         var (mode, computerSide, _) = wizard.Result;
         mode.ShouldBe(GameMode.PlayerVsPlayer);
-        computerSide.ShouldBe(Side.None); // hot-seat: no opponent process
+        computerSide.ShouldBe(Side.None); // pass-and-play: no opponent process
     }
 
     [Fact]
@@ -51,14 +51,14 @@ public sealed class StartupFlowTests
         // Chess.Droid offers "Continue game" when an unfinished save exists (back button returns to
         // the menu mid-game) — it must NOT shift the standard entries' behavior (order is
         // load-bearing; Confirm normalizes the index).
-        var wizard = new StartupWizard(includeContinue: true);
+        var wizard = new StartupWizard(StartupWizardOptions.Continue);
         wizard.Current.Items[0].ShouldBe("Continue game");
 
         wizard.Confirm(0);
         wizard.IsComplete.ShouldBeTrue();
         wizard.Result.Mode.ShouldBe(GameMode.Continue);
 
-        var shifted = new StartupWizard(includeContinue: true);
+        var shifted = new StartupWizard(StartupWizardOptions.Continue);
         shifted.Confirm(2); // "Player vs Computer", one below its base index
         shifted.IsComplete.ShouldBeFalse();
         shifted.Current.Prompt.ShouldBe("Play as:"); // the PvC side question
@@ -69,7 +69,7 @@ public sealed class StartupFlowTests
     {
         // Network game (opt-in like Play-by-Link) uses the same PlayAs step as PvC: the result's
         // ComputerSide is the REMOTE peer's colour.
-        var wizard = new StartupWizard(includeNetworkPlay: true);
+        var wizard = new StartupWizard(StartupWizardOptions.NetworkPlay);
         wizard.Current.Items[^1].ShouldBe("Network game"); // appended last
 
         wizard.Confirm(3); // Network game (index 3 when it's the only trailing entry)
@@ -89,7 +89,7 @@ public sealed class StartupFlowTests
     {
         // With BOTH optional trailing entries the order is: …Custom(2), Play by Link(3), Network(4).
         // A stray index must never misroute (explicit index math, not a catch-all else).
-        var wizard = new StartupWizard(includeLinkPlay: true, includeNetworkPlay: true);
+        var wizard = new StartupWizard(StartupWizardOptions.LinkPlay | StartupWizardOptions.NetworkPlay);
         wizard.Current.Items[3].ShouldBe("Play by Link");
         wizard.Current.Items[4].ShouldBe("Network game");
 
@@ -103,7 +103,7 @@ public sealed class StartupFlowTests
     public void Wizard_ContinueAndNetwork_together_route_correctly()
     {
         // Continue is PREPENDED, Network APPENDED: [Continue(0), PvP(1), PvC(2), Custom(3), Network(4)].
-        var wizard = new StartupWizard(includeContinue: true, includeNetworkPlay: true);
+        var wizard = new StartupWizard(StartupWizardOptions.Continue | StartupWizardOptions.NetworkPlay);
         wizard.Current.Items[0].ShouldBe("Continue game");
         wizard.Current.Items[^1].ShouldBe("Network game");
 

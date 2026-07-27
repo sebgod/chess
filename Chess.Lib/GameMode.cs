@@ -6,6 +6,14 @@ namespace Chess.Lib;
 public enum GameMode : byte
 {
     PlayerVsPlayer,
+
+    /// <summary>Two humans at one device sitting OPPOSITE each other across a flat tablet — the
+    /// frame turns 180° to face the player to move (see Chess.Droid/docs/across-the-table-flip.md).
+    /// Distinguished from <see cref="PlayerVsPlayer"/> (same-seat pass-and-play, which never flips)
+    /// so hosts know to arm the flip; otherwise plays exactly like Player vs Player. Opt-in via
+    /// <c>StartupWizard(includeAcrossTheTable:)</c> — today only Chess.Droid offers it.</summary>
+    AcrossTheTable,
+
     PlayerVsComputer,
     CustomGameEmpty,
     CustomGameStandardBoard,
