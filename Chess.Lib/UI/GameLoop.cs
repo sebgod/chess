@@ -1,5 +1,15 @@
 namespace Chess.Lib.UI;
 
+/// <summary>
+/// The <b>pull</b> driver for <see cref="GameSession"/>: owns a thread, polls the session, paints what
+/// it reports, and sleeps when nothing happened. Chess.Console and Chess.GUI use it; the push
+/// front-ends (Chess.Droid's SDL callbacks, Chess.Web's browser events) tick the same session from
+/// their own loops instead.
+///
+/// <para>Everything that is actually about chess lives in <see cref="GameSession"/>. What is left here
+/// is the loop and the painting — the two things that cannot be shared, because a browser cannot own a
+/// blocking loop and its rendering is awaited interop.</para>
+/// </summary>
 public class GameLoop(
     TimeProvider timeProvider,
     Func<IGameDisplay> displayFactory,
@@ -7,6 +17,9 @@ public class GameLoop(
     Func<Side, TimeProvider, IEngineBasedPlayer> engineBasedPlayerFactory
 )
 {
+    private static readonly TimeSpan IdleDelay = TimeSpan.FromMilliseconds(16);
+
+    /// <summary>Runs until cancelled or restarted. Returns true when the caller should show the menu again.</summary>
     public async Task<bool> RunAsync(
         GameMode gameMode,
         Side computerSide,
@@ -15,137 +28,51 @@ public class GameLoop(
         Game? resumeGame = null
     )
     {
-        // resumeGame (Continue): use the loaded game as-is so its full ply history drives both the
-        // display's move list/playback AND the engine, which rebuilds "position ... moves ..." from
-        // the live plies each turn. Reset (F9) still rebuilds from the mode's baseline below, so
-        // "New game" always means a fresh standard game, never the resumed midpoint.
-        var game = resumeGame
-            ?? (gameMode is GameMode.CustomGameEmpty
-                ? new Game(new Board(), sideToMove, [])
-                : new Game());
-
         using var gameDisplay = displayFactory();
-        gameDisplay.ResetGame(game);
 
-        // Custom game setup phase
-        if (gameMode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard)
-        {
-            var setupPlayer = playerFactory();
-
-            gameDisplay.UI.IsSetupMode = true;
-            gameDisplay.RenderInitial(game);
-
-            try
-            {
-                while (!cancellationToken.IsCancellationRequested && gameDisplay.UI.IsSetupMode)
-                {
-                    var result = setupPlayer.TryMakeMove(gameDisplay.UI);
-
-                    if (result is { } setupResult)
-                    {
-                        gameDisplay.RenderMove(game, setupResult.Response, setupResult.ClipRects);
-                    }
-                    else
-                    {
-                        await Task.Delay(TimeSpan.FromMilliseconds(16), timeProvider, cancellationToken);
-                    }
-
-                    gameDisplay.HandleResize(game);
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                return false;
-            }
-
-            // Transition from setup to gameplay: create a fresh game from the setup board
-            var setupBoard = game.Board;
-            game = new Game(setupBoard, sideToMove, []);
-            gameDisplay.ResetGame(game);
-        }
-
-        var initialBoard = game.Board;
-        var sideToMoveChar = sideToMove == Side.Black ? "b" : "w";
-        var initialFen = gameMode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard
-            ? initialBoard.ToFEN() + $" {sideToMoveChar} - - 0 1"
-            : null;
-
-        IGamePlayer whitePlayer, blackPlayer;
-        IEngineBasedPlayer? opponent;
-
-        var humanPlayer = playerFactory();
-        // The "other" player is engine-shaped for PvC/custom AND for a LAN game: a remote peer is a
-        // drop-in IEngineBasedPlayer (Chess.Net.NetworkPlayer) here, with computerSide = the peer's
-        // colour, so the pairing below wires the local human to the local colour automatically.
-        if (gameMode is GameMode.PlayerVsComputer or GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard or GameMode.NetworkGame)
-        {
-            opponent = engineBasedPlayerFactory(computerSide, timeProvider);
-
-            await opponent.InitAsync(initialFen, cancellationToken);
-
-            if (computerSide is Side.White)
-            {
-                (whitePlayer, blackPlayer) = (opponent, humanPlayer);
-            }
-            else
-            {
-                (whitePlayer, blackPlayer) = (humanPlayer, opponent);
-            }
-        }
-        else
-        {
-            opponent = null;
-            (whitePlayer, blackPlayer) = (humanPlayer, humanPlayer);
-        }
-
-        // Orient the board to the local player's colour (their pieces at the bottom) when there's a
-        // single local human facing an engine/remote opponent; hot-seat (PvP) stays White-at-bottom.
-        // computerSide is the opponent's colour, so the local human is the opposite — flip exactly
-        // when the opponent plays White. Ctrl+F still overrides at runtime.
-        var flipForLocalSide = opponent is not null && computerSide is Side.White;
-        gameDisplay.UI.FlipBoard = flipForLocalSide;
-
-        gameDisplay.RenderInitial(game);
+        var session = GameSession.Create(
+            gameDisplay,
+            gameMode,
+            computerSide,
+            sideToMove,
+            playerFactory,
+            engineBasedPlayerFactory,
+            resumeGame);
 
         try
         {
+            if (session.IsSetupMode)
+            {
+                gameDisplay.RenderInitial(session.Game);
+
+                while (!cancellationToken.IsCancellationRequested && session.IsSetupMode)
+                {
+                    await PumpAsync(session, gameDisplay, cancellationToken);
+                }
+
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return false;
+                }
+            }
+
+            await session.StartAsync(timeProvider, cancellationToken);
+            gameDisplay.RenderInitial(session.Game);
+
             while (!cancellationToken.IsCancellationRequested)
             {
-                var currentPlayer = gameDisplay.UI.Mode == GameUIMode.Playback || game.IsFinished
-                    ? humanPlayer
-                    : (game.CurrentSide == Side.White ? whitePlayer : blackPlayer);
-                var result = currentPlayer.TryMakeMove(gameDisplay.UI);
+                var tick = await PumpAsync(session, gameDisplay, cancellationToken);
 
-                if (result is { } moveResult)
+                if (tick.Outcome is SessionOutcome.NeedsRestart)
                 {
-                    if (moveResult.Response.HasFlag(UIResponse.NeedsRestart))
-                    {
-                        return true;
-                    }
-
-                    if (moveResult.Response.HasFlag(UIResponse.NeedsReset))
-                    {
-                        game = initialFen is null
-                            ? new Game()
-                            : new Game(initialBoard, sideToMove, []);
-                        gameDisplay.ResetGame(game);
-                        gameDisplay.UI.FlipBoard = flipForLocalSide; // ResetGame builds a fresh GameUI
-                        gameDisplay.RenderInitial(game);
-                        if (opponent is not null)
-                        {
-                            await opponent.NewGameAsync(initialFen, cancellationToken);
-                        }
-                        continue;
-                    }
-
-                    gameDisplay.RenderMove(game, moveResult.Response, moveResult.ClipRects);
-                }
-                else
-                {
-                    await Task.Delay(TimeSpan.FromMilliseconds(16), timeProvider, cancellationToken);
+                    return true;
                 }
 
-                gameDisplay.HandleResize(game);
+                if (tick.Outcome is SessionOutcome.NeedsReset)
+                {
+                    await session.ResetAsync(cancellationToken);
+                    gameDisplay.RenderInitial(session.Game);
+                }
             }
         }
         catch (OperationCanceledException)
@@ -154,9 +81,31 @@ public class GameLoop(
         }
         finally
         {
-            if (opponent is not null) await opponent.DisposeAsync();
+            await session.DisposeAsync();
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// One turn of the pull loop: tick, paint whatever moved, idle if nothing did. Control outcomes
+    /// are handed back to the caller rather than acted on here.
+    /// </summary>
+    private async Task<SessionTick> PumpAsync(
+        GameSession session, IGameDisplay gameDisplay, CancellationToken cancellationToken)
+    {
+        var tick = session.Tick();
+
+        if (tick.Outcome is SessionOutcome.Moved)
+        {
+            gameDisplay.RenderMove(session.Game, tick.Response, tick.ClipRects);
+        }
+        else if (tick.Outcome is SessionOutcome.Idle)
+        {
+            await Task.Delay(IdleDelay, timeProvider, cancellationToken);
+        }
+
+        gameDisplay.HandleResize(session.Game);
+        return tick;
     }
 }
