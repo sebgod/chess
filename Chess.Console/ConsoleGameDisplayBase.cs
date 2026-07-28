@@ -243,6 +243,13 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         if (!ArrangeFrame())
             return;
 
+        // Sixel pixels are NOT erased by drawing a smaller image over them, and a cell repaint does not
+        // touch them either: shrinking the terminal leaves the whole previous, larger frame on screen
+        // around the new one -- old board, old labels, old captured strips. Everything below repaints all
+        // three widgets from scratch, so blanking first is both correct and no more work. It happens once
+        // per real geometry change, not once per pump, because of the guard above.
+        _terminal.Clear();
+
         var (width, height) = _boardCanvas.PixelSize;
 
         // A terminal too small to leave the board any cells has nothing to render into, and resizing a

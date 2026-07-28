@@ -29,6 +29,9 @@ public class ConsoleGameDisplayLayoutTests
 
         public (int Width, int Height) Size { get; set; } = (width, height);
 
+        /// <summary>How often the app blanked the screen — the sixel-artifact remedy.</summary>
+        public int ClearCount { get; private set; }
+
         // ITerminalViewport
         public (int Column, int Row) Offset => (0, 0);
         public TermCell CellSize => new(CellWidth, CellHeight);
@@ -48,7 +51,7 @@ public class ConsoleGameDisplayLayoutTests
         public bool IsOutputRedirected => false;
         public void EnterAlternateScreen() { }
         public bool IsAlternateScreen => false;
-        public void Clear() => _output.Clear();
+        public void Clear() { ClearCount++; _output.Clear(); }
         public bool HasInput() => false;
         public ConsoleInputEvent TryReadInput() => default;
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -171,6 +174,36 @@ public class ConsoleGameDisplayLayoutTests
 
         // 20 rows - 1 status - 1 header = 18.
         display.UI.HistoryViewportRows.ShouldBe(18);
+    }
+
+    /// <summary>
+    /// Shrinking the terminal used to leave the previous, larger frame on screen around the new one:
+    /// sixel pixels are not erased by drawing a smaller image over them, and repainting cells does not
+    /// touch them. Observed in a real terminal as a stale board, stale rank labels and stale captured
+    /// strips surrounding the live one.
+    /// </summary>
+    [Fact]
+    public void Resize_BlanksTheScreenBeforeRepainting()
+    {
+        var (display, terminal, game) = Setup();
+        var before = terminal.ClearCount;
+
+        terminal.Size = (50, 10);
+        display.HandleResize(game);
+
+        terminal.ClearCount.ShouldBe(before + 1);
+    }
+
+    [Fact]
+    public void Resize_WithNothingChanged_DoesNotBlankTheScreen()
+    {
+        // HandleResize runs every pump, so clearing unconditionally would blank the terminal continuously.
+        var (display, terminal, game) = Setup();
+        var before = terminal.ClearCount;
+
+        display.HandleResize(game);
+
+        terminal.ClearCount.ShouldBe(before);
     }
 
     [Fact]
