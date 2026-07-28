@@ -140,6 +140,9 @@ public sealed class GameSession
     /// <c>null</c> for front-ends that never face an engine or a peer.</param>
     /// <param name="resumeGame">A loaded game to continue, used as-is so its whole ply history drives
     /// the move list and the engine's <c>position … moves …</c>.</param>
+    /// <param name="beginInSetup">Overrides whether to open in setup mode. Defaults to "yes for a
+    /// custom game", which is right when starting one fresh but wrong when <em>resuming</em> one that
+    /// is already past its setup — the mode says custom for the rest of the game's life.</param>
     public static GameSession Create(
         IGameDisplay display,
         GameMode gameMode,
@@ -147,7 +150,8 @@ public sealed class GameSession
         Side sideToMove,
         Func<IGamePlayer> playerFactory,
         Func<Side, TimeProvider, IGamePlayer>? opponentFactory = null,
-        Game? resumeGame = null)
+        Game? resumeGame = null,
+        bool? beginInSetup = null)
     {
         var game = resumeGame
             ?? (gameMode is GameMode.CustomGameEmpty
@@ -159,7 +163,7 @@ public sealed class GameSession
 
         display.ResetGame(game);
 
-        if (gameMode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard)
+        if (beginInSetup ?? gameMode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard)
         {
             session._setupPlayer = playerFactory();
             display.UI.IsSetupMode = true;
@@ -226,6 +230,26 @@ public sealed class GameSession
         UI.FlipBoard = _flipForLocalSide;
 
         _phase = Phase.Playing;
+    }
+
+    /// <summary>
+    /// <see cref="StartAsync"/> for a driver that cannot leave its thread — Chess.Droid starts games
+    /// from an SDL callback. Valid whenever the opponent comes up without genuinely awaiting anything:
+    /// the in-process engine has nothing to do, and a LAN peer's socket is already open by this point.
+    /// Throws rather than blocking if some future opponent really does need to wait.
+    /// </summary>
+    public void Start(TimeProvider timeProvider)
+    {
+        var starting = StartAsync(timeProvider);
+
+        if (!starting.IsCompleted)
+        {
+            throw new InvalidOperationException(
+                "This opponent's start-up is genuinely asynchronous — call StartAsync and await it.");
+        }
+
+        // Completed already, so this only observes an exception; it cannot block.
+        starting.GetAwaiter().GetResult();
     }
 
     /// <summary>
