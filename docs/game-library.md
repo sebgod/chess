@@ -1,9 +1,9 @@
 # Design: carving a board-game library out of chess
 
-**Status:** exploration + shipped prerequisites. Nothing is extracted yet. The Sixel colour-extent
-optimization (Console.Lib), the last-move-arrow clip-rect fix, and the engine's deadline-aware search
-have landed; the tick model, the clock's UI half, and the extraction tiers below are proposed, not
-built.
+**Status:** exploration + shipped prerequisites. The Sixel colour-extent optimization (Console.Lib),
+the last-move-arrow clip-rect fix, the engine's deadline-aware search, and **the shared turn model
+(`GameSession`, now driving all three front-ends)** have landed. The clock and the extraction tiers
+below are proposed, not built.
 
 **Scope:** a second board game — "Memory" (concentration) — would live in its **own repo**, the way
 Chess.Web and Chess.Droid are their own heads. The question this document answers is what, if
@@ -67,7 +67,7 @@ with chess colours and chess semantics baked in.
 | 1 | Cell annotations: arrows, dots, rings, borders, scrims | `GameUI`, private, `Position`-typed | **High** — `ExplicitArrows` already proves the data-driven form |
 | 2 | Frame layout: board + side panel + status bar + insets + centring | `PixelGameDisplay` | Medium — captured-pieces gutter is chess |
 | 2 | Wizard state machine | `StartupWizard` | Medium — shape generic, content chess |
-| 2 | Turn loop | `GameLoop` | Medium — see the gaps below |
+| 2 | Turn model | `GameSession` (extracted from `GameLoop`; all three drivers host it) | **High for the shape** — it survived contact with a pull driver, a sync push driver and an async single-threaded one. Still chess-*typed* (`Game`, `Side`, `GameUI`) |
 | 2 | LAN lobby, invite dance, session transport | `Chess.Net` | **High** — only `Magic="CHESSLAN"`, `ServiceName="chess"` and a UCI `Move` payload are chess |
 | 3 | Rules, `Board`, `AiEngine`, FEN/SAN/UCI | `Chess.Lib` | Never |
 
@@ -118,7 +118,40 @@ its own board type.
 
 ## The tick model
 
-There is no single game loop to hang a timer on. There are three drivers in two paradigms:
+**Resolved — there is now one turn model, `Chess.Lib.UI.GameSession`, and all three drivers host it.**
+The section below describes the situation it replaced; it is kept because the constraints are still
+real and still shape anything built on top (a clock, animation, a second game).
+
+What made the split possible was separating the two things `GameLoop` used to do together:
+
+- **The session never renders.** It reports what changed; the driver paints. Web's CPU-backend blit is
+  `await`ed JS interop, so a session that painted could not run in a browser at all.
+- **`Tick()` advances at most one ply and is synchronous.** One ply, so a driver can repaint between an
+  engine's consecutive moves — Web must get "thinking…" on screen before a search blocks its only
+  thread, which is what `IsEngineTurn` signals. Synchronous, so Droid can tick from the SDL thread
+  without a second thread touching the same `GameUI`. All async work (opponent start-up, reset,
+  teardown) lives in explicitly async members.
+
+`SessionTick.PlyCommitted` is reported separately from `UIResponse`, because `IsUpdate` also fires for
+playback navigation. All three front-ends had hand-rolled a before/after ply-count diff to work around
+that — for saving, for relaying a LAN move, and for rewriting the link fragment.
+
+Two shared `IGamePlayer` implementations let the push drivers stop bypassing the abstraction:
+`QueuedInputPlayer` (driver pushes an event, the next tick applies it) and `LocalEnginePlayer` (the
+in-process engine, searching on the calling thread).
+
+**Still driver-owned, deliberately:** Chess.Droid's LAN path (`DrainNetworkMoves`), because retiring it
+also means moving the local-turn gate to `GameUI.MoveLockSide` — never set on that front-end — and
+moving socket ownership into `NetworkPlayer.DisposeAsync`; and Chess.Web's Setup screen, which is a
+piece-placement editor with no turns to advance.
+
+**A bug fixed rather than ported:** `GameLoop` only polled the player whose turn it was, so
+`NetworkPlayer` — the only thing that reports `PeerLeft` — went unasked while the local human was on
+move. A LAN peer that resigned went unnoticed on desktop until you played something. The session polls
+the opponent every tick regardless of turn, which is safe because every opponent checks the side to
+move first, and is skipped during playback where it really could be the remote's turn.
+
+### The three drivers (what the split had to accommodate)
 
 | | Driver | Paradigm | Idle tick available? |
 |---|---|---|---|
@@ -133,7 +166,15 @@ the main thread, reconciled through the signal bus (`PixelGameDisplay { Bus = bu
 in-process AI needs no cross-thread move handoff. Chess.Web is single-threaded WASM and cannot block
 at all — its AI must yield explicitly.
 
-**Consequence:** the clock must be a self-contained `TimeProvider`-driven model in `Chess.Lib.UI`
+**Consequence for the clock:** a clock still must be a self-contained `TimeProvider`-driven model that
+any driver polls, rather than logic inside a loop. `GameSession` is now where it hangs — every driver
+ticks it — but the idle-tick column above is still the constraint: **Web has no timer**, and it does
+not need one today only because its opponent is synchronous. A clock is the first thing that would
+change that, since it must advance while nobody is doing anything. Chess.Droid has a second
+constraint of the same shape: `Render()` only runs when `NeedsRedraw` is set, so a clock needs a
+condition added to `CheckNeedsRedraw` or it will simply not tick between moves.
+
+The original reasoning, still accurate: the clock must be a `TimeProvider`-driven model in `Chess.Lib.UI`
 that any driver polls, never logic embedded in `GameLoop`, or Droid and Web silently miss it. Two
 hosts already have the hook; **Web needs a new one** (a `PeriodicTimer` or JS interval). `GameLoop`
 already takes a `TimeProvider`, and `FakeTimeProvider` is already a test dependency, so the model is
@@ -214,10 +255,16 @@ specifically, and ideally a test of the same shape as
 
 1. **Optional chess clock** — the tick model's first consumer: a `TimeProvider`-driven clock model in
    `Chess.Lib.UI`, rendered via `StatusLine()`, polled from all three drivers, with flag-fall entering
-   `GameStatus`. Off by default. The engine half of this is **done** (see below); what remains is the
-   clock itself and the UI.
+   `GameStatus`. Off by default. The engine half is **done**, and there is now a single place to hang
+   it (`GameSession`). Two driver gaps it will expose, both noted above: Chess.Web has no timer at all,
+   and Chess.Droid's `Render()` only runs when `CheckNeedsRedraw` says so. A clock is the first thing
+   that must advance while nobody is doing anything, so it is what forces both.
+   For LAN, the time control rides the invite alongside the preferred colour, so the invitee agrees to
+   the clock when they accept — no separate handshake, and no clock sync (see the table above).
 2. **Committed sixel benchmark**, replacing the orphaned artifacts, measuring single-region encode
    *and* write time.
 3. **Sixel video mode** — inter-frame band diffing, gated on (2).
 4. **Tier-1 extraction** into `BoardGame.Lib`, chess as first consumer.
-5. **Memory**, in its own repo, copying tier 2.
+5. **Memory**, in its own repo, copying tier 2 — but the turn model is now worth *taking* rather than
+   copying. Its shape is proven across all three driver paradigms; what still ties it to chess is its
+   types (`Game`, `Side`, `GameUI`), not its structure. Generalising those is the tier-1 job.

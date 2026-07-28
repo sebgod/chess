@@ -98,7 +98,8 @@ public sealed class MainActivity : SdlVulkanActivity
     // The mode the current game was started in — persisted with the save so Continue can restore it.
     private GameMode _mode = GameMode.PlayerVsPlayer;
 
-    // LAN network play (Chess.Net). Android has no GameLoop, so the session is driven directly here:
+    // LAN network play (Chess.Net). Alone among this activity's modes, LAN is still driven directly
+    // rather than through the shared GameSession (see DrainNetworkMoves for what has to move first):
     // taps send our move, and DrainNetworkMoves applies the peer's on the SDL/render thread (GameUI is
     // single-threaded). The lobby/discovery run only while browsing; the multicast lock lets us receive
     // UDP broadcast at all. Lobby is built on the SDL thread via the _pendingLobby* flags so the name
