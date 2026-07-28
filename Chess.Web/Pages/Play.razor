@@ -173,6 +173,13 @@
 
     Side _humanSide = Side.White;
     Difficulty _difficulty = Difficulty.Normal;
+
+    // The shared turn model (Chess.Lib.UI.GameSession) — the same one the desktop's GameLoop drives
+    // and Chess.Droid ticks from SDL. Here it is ticked from browser events: pointer/key handlers
+    // queue input into _input and AdvanceAsync runs the session until it goes idle. Built for the
+    // Playing screen only; the Setup screen is a piece-placement editor with no turns to advance.
+    GameSession? _session;
+    readonly QueuedInputPlayer _input = new();
     bool _busy;
     bool _ready;
     string _status = "Loading…";
@@ -403,29 +410,30 @@
         if (MapGameKey(e.Key) is not { } gameKey) return;
         var modifiers = e.CtrlKey ? InputModifier.Ctrl : InputModifier.None;
 
-        var plyBefore = _game.PlyCount;
-        var (response, _) = Ui.HandleKeyDown(gameKey, modifiers);
-
-        // 's' ends setup inside GameUI — mirror the Start button's freeze-and-play handoff.
-        if (_screen == Screen.Setup && !Ui.IsSetupMode)
+        // Setup is its own screen with no session behind it — placement goes straight to GameUI, and
+        // 's' ends setup there, mirroring the Start button's freeze-and-play handoff.
+        if (_screen == Screen.Setup)
         {
-            await FinishSetupAsync();
+            var (setupResponse, _) = Ui.HandleKeyDown(gameKey, modifiers);
+
+            if (!Ui.IsSetupMode)
+            {
+                await FinishSetupAsync();
+                return;
+            }
+
+            if (setupResponse == UIResponse.None) return;
+
+            RefreshStatus();
+            await RenderBoardAsync();
+            StateHasChanged();
             return;
         }
 
-        if (response == UIResponse.None) return;
-
-        // IsUpdate also fires for playback navigation — only a ply-count increase means a move
-        // was actually committed (the signal the link handoff keys on).
-        if (_linkPlay && _game.PlyCount > plyBefore)
-            await PersistFragmentAsync();
-
-        RefreshStatus();
-        await RenderBoardAsync();
-        StateHasChanged();
-
-        if (_screen == Screen.Playing && response.HasFlag(UIResponse.IsUpdate))
-            await MaybeAiMoveAsync(); // a keyboard-entered move may hand the turn to the AI
+        // Playing: the session applies the key and anything it sets off — a keyboard-entered move may
+        // hand the turn to the AI.
+        _input.PressKey(gameKey, modifiers);
+        await AdvanceAsync();
     }
 
     // Maps browser KeyboardEvent.key values to the DIR.Lib keys GameUI binds (desktop keymap).
@@ -518,7 +526,7 @@
         await RenderBoardAsync();
         if (_linkPlay)
             await PersistFragmentAsync();
-        await MaybeAiMoveAsync(); // if the human chose Black, White (the AI) opens
+        await AdvanceAsync(); // if the human chose Black, White (the AI) opens
     }
 
     async Task BackToMenuAsync()
@@ -563,13 +571,13 @@
         if (_screen != Screen.Setup) return;
         var setupBoard = _game.Board;
         _game = new Game(setupBoard, _setupSideToMove, []);
-        _display.ResetGame(_game);
+        BeginSession(); // resets the display, so FlipBoard below must follow it
         Ui.FlipBoard = _humanSide == Side.Black; // custom game vs the AI as Black -> flip
         _screen = Screen.Playing;
         _busy = false;
         RefreshStatus();
         await RenderBoardAsync();
-        await MaybeAiMoveAsync();
+        await AdvanceAsync();
     }
 
     // ---- gameplay -------------------------------------------------------------------------------
@@ -577,9 +585,99 @@
     void StartNewGame()
     {
         _game = new Game();
-        _display.ResetGame(_game); // builds GameUI at the display's board area (total − chrome)
+        BeginSession();
         _busy = false;
         RefreshStatus();
+    }
+
+    // Wraps the current _game in a session for the Playing screen. GameSession.Create resets the
+    // display (building GameUI at the board area, total − chrome), so anything the caller sets on the
+    // UI — FlipBoard, MoveLockSide — belongs AFTER this call, not before.
+    void BeginSession()
+    {
+        var computerSide = _vsComputer ? (_humanSide == Side.White ? Side.Black : Side.White) : Side.None;
+
+        _session = GameSession.Create(
+            _display,
+            _vsComputer ? GameMode.PlayerVsComputer : GameMode.PlayerVsPlayer,
+            computerSide,
+            _game.CurrentSide,
+            () => _input,
+            _vsComputer ? (side, _) => new LocalEnginePlayer(side, _difficulty) : null,
+            resumeGame: _game,
+            beginInSetup: false);
+
+        _session.Start(TimeProvider.System);
+    }
+
+    // Runs the session until it has nothing left to do, painting between plies.
+    //
+    // The pre-paint is the whole reason Tick advances only one ply: the in-process search blocks the
+    // single WASM thread, so "thinking…" has to reach the screen BEFORE it starts. IsEngineTurn is
+    // what says a blocking call is next; once Tick has been entered it is far too late to repaint.
+    async Task AdvanceAsync()
+    {
+        if (_session is null) return;
+
+        var restart = false;
+
+        try
+        {
+            for (var guard = 0; guard < 64; guard++)
+            {
+                if (_session.IsEngineTurn)
+                {
+                    // _busy gates input, and it means exactly "a search is blocking the thread" — not
+                    // "a turn is being advanced". Setting it for every call would swallow keystrokes
+                    // in link play, where there is no engine and nothing ever blocks.
+                    _busy = true;
+                    _status = $"{_game.CurrentSide} (AI) thinking…";
+                    _display.StatusOverride = _status;
+                    StateHasChanged();
+                    await RenderBoardAsync();
+                    await Task.Delay(20); // let the frame actually reach the screen
+                }
+
+                var tick = _session.Tick();
+
+                if (tick.Outcome is SessionOutcome.Idle)
+                {
+                    break;
+                }
+
+                if (tick.Outcome is SessionOutcome.NeedsRestart)
+                {
+                    restart = true;
+                    break;
+                }
+
+                _display.StatusOverride = null;
+
+                // PlyCommitted, not IsUpdate: playback navigation reports an update too, and a link
+                // must not be rewritten because someone scrubbed back through the history.
+                if (tick.PlyCommitted && _linkPlay)
+                {
+                    await PersistFragmentAsync();
+                }
+
+                RefreshStatus();
+                await RenderBoardAsync();
+            }
+        }
+        finally
+        {
+            _busy = false;
+            _display.StatusOverride = null;
+        }
+
+        if (restart)
+        {
+            await BackToMenuAsync();
+            return;
+        }
+
+        RefreshStatus();
+        StateHasChanged();
     }
 
     async Task OnPointerDownAsync(CanvasPointerEventArgs e)
@@ -601,64 +699,10 @@
         }
 
         // No IsFinished gate: after mate the history panel stays clickable (playback review),
-        // exactly like the desktop; GameUI/Game reject board moves on a finished game.
-        var plyBefore = _game.PlyCount;
-        var (response, _) = Ui.HandleMouseDown(e.X, e.Y);
-
-        // IsUpdate also fires for playback navigation — only a ply-count increase means a move
-        // was actually committed (the signal the link handoff keys on).
-        if (_linkPlay && _game.PlyCount > plyBefore)
-        {
-            await PersistFragmentAsync();
-            RefreshStatus();
-            StateHasChanged(); // the share row just appeared
-        }
-
-        await RenderBoardAsync();
-
-        if (response.HasFlag(UIResponse.IsUpdate))
-        {
-            RefreshStatus();
-            await MaybeAiMoveAsync();
-        }
-    }
-
-    // Drives the AI while it is the computer's turn. No-op in Player-vs-Player. Single-threaded
-    // WASM means the search blocks the UI thread; the short Delay lets the "thinking" state paint first.
-    async Task MaybeAiMoveAsync()
-    {
-        if (!_vsComputer)
-        {
-            _busy = false;
-            RefreshStatus();
-            StateHasChanged();
-            return;
-        }
-
-        while (!_game.IsFinished && _game.CurrentSide != _humanSide)
-        {
-            _busy = true;
-            _status = $"{_game.CurrentSide} (AI) thinking…";
-            // The canvas status bar shows the transient state too — paint it before the search
-            // blocks the single WASM thread; the short Delay lets the frame reach the screen.
-            _display.StatusOverride = _status;
-            StateHasChanged();
-            await RenderBoardAsync();
-            await Task.Delay(20);
-
-            var ai = new AiEngine(_game.CurrentSide, maxDepth: _difficulty.ToSearchDepth());
-            var move = ai.PickMove(_game);
-            if (move is not { } mv) break;
-            _game.TryMove(mv);
-
-            _display.StatusOverride = null;
-            RefreshStatus();
-            await RenderBoardAsync();
-        }
-        _busy = false;
-        _display.StatusOverride = null;
-        RefreshStatus();
-        StateHasChanged();
+        // exactly like the desktop; GameUI/Game reject board moves on a finished game. The session
+        // applies the tap and everything that follows — the reply, the link handoff, the repaints.
+        _input.PressPointer(e.X, e.Y);
+        await AdvanceAsync();
     }
 
     // ---- rendering ------------------------------------------------------------------------------
@@ -770,8 +814,8 @@
         }
 
         _game = game!;
-        _display.ResetGame(_game);
         _vsComputer = false;
+        BeginSession(); // resets the display, so the UI settings below must follow it
         _linkPlay = true;
         _linkError = null;
         _linkShared = false;
