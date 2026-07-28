@@ -252,11 +252,15 @@ public sealed class MainActivity : SdlVulkanActivity
 
     private void ShowMenu()
     {
-        CleanupNetwork(); // tear down any lobby/session/lock before returning to the menu
-        // Fire-and-forget like the discovery stack above: no opponent this front-end builds owns
-        // anything that needs awaiting (the in-process engine holds nothing, and the LAN socket is
-        // still CleanupNetwork's to close).
+        // The session goes FIRST, and _netSession is released to it: for a LAN game the opponent is a
+        // NetworkPlayer, and closing the socket is its DisposeAsync's job. Letting CleanupNetwork
+        // dispose the same NetworkSession afterwards would be a double close. Fire-and-forget matches
+        // the discovery stack below, and is honest here — every opponent this front-end builds tears
+        // down synchronously (the in-process engine holds nothing at all).
         if (_session is not null) { _ = _session.DisposeAsync(); _session = null; }
+        _netSession = null;
+
+        CleanupNetwork(); // tear down any lobby/discovery/lock before returning to the menu
         _display = null;
         // The menu renders through the same projection — never let it inherit a turned frame.
         _renderer.DeviceTransform = DeviceTransform.Identity;
@@ -294,10 +298,7 @@ public sealed class MainActivity : SdlVulkanActivity
             }
         }
 
-        if (_netSession is not null)
-            DrainNetworkMoves();
-        else
-            AdvanceSession();
+        AdvanceSession();
 
         if (_display is not null)
             _display.Render();
@@ -362,24 +363,11 @@ public sealed class MainActivity : SdlVulkanActivity
 
         if (_display is null) return false;
 
-        // Network game: only our own turn is tappable; the peer's move arrives over the socket and is
-        // applied by DrainNetworkMoves. After a local move lands, relay it to the peer.
-        if (_netSession is not null)
-        {
-            if (_game is not null && !_game.IsFinished && _game.CurrentSide == _netLocalSide)
-            {
-                var before = _game.Plies.Count;
-                _display.UI.HandleMouseDown(x, y);
-                if (_game.Plies.Count == before + 1)
-                    _netSession.SendMove(UciMove.FormatPly(_game.Plies[^1]));
-            }
-            return true;
-        }
-
-        // In-game: hand the tap to the session's input player. Render applies it and everything that
-        // follows from it — the engine's reply, the save, the frame turn — on the frame this tap has
-        // already scheduled. (The engine declines to move during setup, so a half-built position is
-        // never played from.)
+        // In-game (including LAN): hand the tap to the session's input player. Render applies it and
+        // everything that follows from it — the engine's or peer's reply, the save, the relay, the
+        // frame turn — on the frame this tap has already scheduled. Tapping out of turn is a no-op
+        // (the rules reject it); the engine declines during setup, so a half-built position is never
+        // played from.
         _input.PressPointer(x, y);
         return true;
     }
@@ -535,6 +523,7 @@ public sealed class MainActivity : SdlVulkanActivity
                 case SessionOutcome.Moved:
                     if (tick.PlyCommitted)
                     {
+                        RelayIfOurs();
                         SaveGame();
                         // A committed move turns the frame to face the player now to move.
                         UpdateAcrossTheTableTransform();
@@ -685,43 +674,44 @@ public sealed class MainActivity : SdlVulkanActivity
 
         _game = new Game();
         _mode = GameMode.NetworkGame;
-        // LAN still drives itself through DrainNetworkMoves rather than the shared session — see the
-        // comment there for why.
-        _session = null;
         _vsComputer = false;
         _acrossTheTable = false; // a LAN game has a single local side — never turns the frame
         _display = new PixelGameDisplay<VulkanContext>(_renderer);
         UpdateAcrossTheTableTransform(); // identity here + insets/cutout
         _display.TopStripLabel = $"LAN ({_netLocalSide})";
         _display.KeyboardHints = false;
-        _display.ResetGame(_game);
+
+        // The peer is just another opponent in the shared session: NetworkPlayer drains its moves on
+        // its turn and reports a departure as NeedsRestart. Create resets the display, so the UI
+        // settings below must follow it.
+        _session = GameSession.Create(
+            _display,
+            GameMode.NetworkGame,
+            session.RemoteSide,
+            _game.CurrentSide,
+            () => _input,
+            (_, _) => new NetworkPlayer(session),
+            resumeGame: _game); // share the instance — SaveGame and the relay both read _game
+        _session.Start(TimeProvider.System);
+
+        // Deliberately NOT MoveLockSide, tempting as it looks now that HandleTap's own turn check is
+        // gone. That lock also gates TryPerformAction, which is how NetworkPlayer applies the PEER's
+        // move — setting it would reject every move the opponent sends. The desktop's LAN path leaves
+        // it unset for the same reason; the lock exists for Chess.Web's link play, where the remote's
+        // move arrives as a freshly decoded game rather than through the board. Moving out of turn is
+        // already impossible: the rules reject it, and a piece whose side isn't to move won't select.
         _display.UI.FlipBoard = _netLocalSide == Side.Black; // local player's pieces at the bottom
     }
 
-    // Applies moves the peer sent, on the SDL/render thread (GameUI is single-threaded). No
-    // MoveLockSide is set, so TryPerformAction isn't gated — the local-turn guard lives in HandleTap.
-    //
-    // NOT yet on the shared GameSession, unlike this activity's other modes. Chess.Net.NetworkPlayer
-    // is a drop-in for the opponent slot and would retire this method, but two things have to move
-    // with it: the local-turn gate would have to become GameUI.MoveLockSide (never set on this
-    // front-end), and ownership of the socket would shift from CleanupNetwork to the player's
-    // DisposeAsync. Both are behaviour changes that want a real device and a real peer to confirm,
-    // which is why they are not bundled with a refactor that can otherwise be checked by tests.
-    private void DrainNetworkMoves()
+    // Sends a just-committed ply to the peer, if it was ours to send. The session applies moves from
+    // both sides through the same path, so "ours" is decided after the fact: once our move lands it
+    // is the remote's turn. A move the peer sent us is already theirs and must not be echoed back.
+    private void RelayIfOurs()
     {
-        if (_netSession is null || _display is null || _game is null) return;
+        if (_netSession is null || _game is null || _game.Plies.Count == 0) return;
+        if (_game.CurrentSide != _netSession.RemoteSide) return;
 
-        if (_netSession.PeerLeft)
-        {
-            ShowMenu(); // opponent left / disconnected -> back to the menu
-            return;
-        }
-
-        while (!_game.IsFinished && _game.CurrentSide == _netSession.RemoteSide
-               && _netSession.TryDequeueMove(out var uci))
-        {
-            _display.UI.TryPerformAction(UciMove.Parse(uci));
-        }
+        _netSession.SendMove(UciMove.FormatPly(_game.Plies[^1]));
     }
 
     private void AcquireMulticastLock()
@@ -777,6 +767,11 @@ public sealed class MainActivity : SdlVulkanActivity
     private void SaveGame()
     {
         if (_game is null) return;
+        // A LAN game is never persisted — half of it lives on the peer, so "Continue" could only ever
+        // resume a game with nobody on the other end. This used to be implicit (the network tap path
+        // simply never called here); now that every mode advances through the same session, it has to
+        // be said. The desktop guards the same way, with currentGameIsNetwork.
+        if (_mode == GameMode.NetworkGame) return;
         var computerSide = _vsComputer ? (_humanSide == Side.White ? Side.Black : Side.White) : Side.None;
         // The mode goes in the save too: across-the-table and plain PvP are both engine-less, so
         // without it a resumed across-the-table game came back as hot-seat and stopped turning.

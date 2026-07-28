@@ -140,10 +140,21 @@ Two shared `IGamePlayer` implementations let the push drivers stop bypassing the
 `QueuedInputPlayer` (driver pushes an event, the next tick applies it) and `LocalEnginePlayer` (the
 in-process engine, searching on the calling thread).
 
-**Still driver-owned, deliberately:** Chess.Droid's LAN path (`DrainNetworkMoves`), because retiring it
-also means moving the local-turn gate to `GameUI.MoveLockSide` — never set on that front-end — and
-moving socket ownership into `NetworkPlayer.DisposeAsync`; and Chess.Web's Setup screen, which is a
-piece-placement editor with no turns to advance.
+**Nothing is left outside it.** Every mode of every front-end now advances through the session,
+including Chess.Droid's LAN games (the peer is just a `NetworkPlayer` in the opponent slot) and
+Chess.Web's custom-game setup.
+
+Two traps that migration turned up, both worth remembering:
+
+- **`GameUI.MoveLockSide` is not the LAN turn gate.** It looks like the natural home for "only your own
+  turn is tappable", but it also gates `TryPerformAction` — which is exactly how `NetworkPlayer`
+  applies the *peer's* move. Setting it rejects every incoming move. It exists for Chess.Web's link
+  play, where the opponent's move arrives as a freshly decoded game rather than through the board.
+  Out-of-turn taps need no gate: the rules already refuse them.
+- **Persistence has to be re-stated once everything shares a path.** Droid never saved LAN games, but
+  only implicitly — the network tap path just never called `SaveGame`. With every mode advancing
+  through the same session, that had to become an explicit guard or "Continue" would start offering
+  half a game with nobody on the other end.
 
 **A bug fixed rather than ported:** `GameLoop` only polled the player whose turn it was, so
 `NetworkPlayer` — the only thing that reports `PeerLeft` — went unasked while the local human was on
