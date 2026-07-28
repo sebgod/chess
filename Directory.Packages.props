@@ -6,9 +6,9 @@
     <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Console.Lib" Version="3.16.*" />
+    <PackageVersion Include="Console.Lib" Version="4.0.*" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
-    <PackageVersion Include="DIR.Lib" Version="6.22.*" />
+    <PackageVersion Include="DIR.Lib" Version="6.23.*" />
     <!-- LAN.Lib: the LAN peer discovery (UDP announce beacon + self-expiring peer table) that was
          extracted OUT of this repo's Chess.Net — chess is now a consumer, keeping only the
          chess-specific TCP session layer on top. Same pin as tianwen's. -->
