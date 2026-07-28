@@ -120,16 +120,20 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
     /// there and the board is left with nothing rather than the frame overflowing.</para>
     /// </summary>
     /// <remarks>
-    /// Every leaf states its height as well as its width. A <c>Fill</c> leaf has no intrinsic size and
-    /// <see cref="Layout.Node.Height"/> defaults to <c>Auto</c>, so a child that only says <c>.WStar()</c>
-    /// is arranged one cell wide and <b>zero rows tall</b> — the panels vanish rather than the frame
-    /// looking wrong, which is why the tests below assert on the arranged capacity.
+    /// <b>Every leaf states BOTH axes.</b> In an <c>HStack</c> the cross axis is the height, and a
+    /// <c>Fill</c> leaf has no intrinsic size, so a child that says only <c>.WFixed()</c> or
+    /// <c>.WStar()</c> keeps <see cref="Layout.Node.Height"/> at <c>Auto</c>, measures its
+    /// <c>MinHeight</c> — zero — and is arranged <b>zero rows tall</b>. The panel then vanishes rather
+    /// than the frame looking wrong, which is why the tests assert on arranged capacity.
+    /// <para><c>ColW</c>/<c>RowH</c>/<c>Stretch</c> exist to make that pairing unforgettable: each sets
+    /// both axes at once. Prefer them over spelling out <c>.WFixed().HStar()</c>, which reads as two
+    /// independent choices when it is really one decision.</para>
     /// </remarks>
     private Layout.Node BuildLayout(int columns, int rows) =>
         Layout.Builder.VStack(
             Layout.Builder.HStack(
                 Layout.Builder.Fill(key: BoardKey).Stretch(),
-                Layout.Builder.Fill(key: HistoryKey).WFixed(Math.Min(HistoryColumns, columns)).HStar())
+                Layout.Builder.Fill(key: HistoryKey).ColW(Math.Min(HistoryColumns, columns)))
                 .Stretch(),
             Layout.Builder.Fill(key: StatusKey).RowH(Math.Min(StatusBarRows, rows)));
 
