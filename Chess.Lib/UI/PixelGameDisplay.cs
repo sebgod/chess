@@ -56,16 +56,6 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
     private static readonly RGBAColor32 PlaybackHighlightBg = new(0x30, 0x50, 0x90, 0xff);
     private static readonly RGBAColor32 PlaybackHighlightText = new(0xff, 0xd7, 0x00, 0xff);
 
-    private const float HistoryPanelWidthFactor = 18f;
-    private const float MinSideGutterFactor = 11f;
-    private const float StatusBarHeightFactor = 2f;
-
-    // GameUI's natural aspect (height:width) WITH the captured strips — matches the web board canvas
-    // (760x840 == 9.5:10.5). Used only by the stacked layout, which is the one that keeps the strips;
-    // the flanked layout hands the piles to a gutter and is shorter (GameUI.CalculateSquareSize with
-    // CapturedPiecesLayout.External), so it must not be sized through this constant.
-    private const float BoardAspect = 10.5f / 9.5f;
-
     private readonly string _labelFont;
     private GameUI? _gameUI;
     private volatile bool _hasPendingUpdate;
@@ -219,7 +209,7 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
             resolveHistoryClick: ResolveHistoryClick,
             topOffset: (int)frame.Board.Y,
             leftOffset: (int)frame.Board.X,
-            capturedLayout: CapturedLayout);
+            capturedLayout: frame.CapturedPieces);
         _gameUI.HistoryViewportRows = ComputeHistoryVisibleRows(frame.History.Height);
         _hasPendingUpdate = true;
     }
@@ -230,7 +220,7 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
 
         var frame = ArrangeFrame();
         _gameUI = _gameUI.Resize((uint)frame.Board.Width, (uint)frame.Board.Height,
-            topOffset: (int)frame.Board.Y, leftOffset: (int)frame.Board.X, capturedLayout: CapturedLayout);
+            topOffset: (int)frame.Board.Y, leftOffset: (int)frame.Board.X, capturedLayout: frame.CapturedPieces);
         _gameUI.HistoryViewportRows = ComputeHistoryVisibleRows(frame.History.Height);
     }
 
@@ -250,7 +240,7 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         // tells GameUI to render the chrome around the board too.
         _gameUI.Render<TSurface, Renderer<TSurface>>(Renderer, content);
 
-        if (UseSideHistory)
+        if (frame.UseSideHistory)
         {
             RenderHistoryPanel(PinInGutter(frame.History, HistoryPanelWidth, toInnerEdge: false));
             _gameUI.RenderCapturedColumn<TSurface, Renderer<TSurface>>(Renderer,
@@ -270,153 +260,58 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
     public void Dispose() { }
 
     private float ChromeFontSize => MathF.Max(13f, (int)Renderer.Height / 40f);
-    private float HistoryPanelWidth => ChromeFontSize * HistoryPanelWidthFactor;
-    private float MinSideGutter => ChromeFontSize * MinSideGutterFactor;
-    private float StatusBarHeight => ChromeFontSize * StatusBarHeightFactor;
-
-    /// <summary>
-    /// True when the chrome flanks the board in side gutters (history in one, captured pieces in the
-    /// other), false when the history stacks BELOW the board instead. Decided by the SHAPE of the
-    /// surface, never by device kind: both candidates are costed in board squares — gutters cost
-    /// width (two of them, since a centred board is the only one the across-the-table 180° flip
-    /// can't move), stacking costs height — and the one that leaves the bigger board wins. Tall
-    /// narrow surfaces can't fit two gutters at all, so phones in portrait always stack; wide ones
-    /// (tablets, desktop, phone landscape) always flank.
-    /// </summary>
-    private bool UseSideHistory
-    {
-        get
-        {
-            var (l, t, r, b) = _safeAreaInsets;
-            var totalW = (int)Renderer.Width - l - r;
-            var totalH = (int)Renderer.Height - t - b;
-
-            // Flanked: the minimum gutter each side, and a status-bar-height band top AND bottom (the
-            // bottom one is the status bar, the top one its mirror — see ArrangeFrame). The piles
-            // move out to a gutter, which is worth ~1.2 squares of board height.
-            var flanked = GameUI.CalculateSquareSize(
-                (uint)Math.Max(0, totalW - 2 * (int)MinSideGutter),
-                (uint)Math.Max(0, totalH - 2 * (int)StatusBarHeight),
-                CapturedPiecesLayout.External);
-
-            // Stacked: full width, one status bar, and enough left over for a usable history strip
-            // (a stacked layout that squeezes the history out isn't a fair win).
-            var stacked = GameUI.CalculateSquareSize(
-                (uint)totalW,
-                (uint)Math.Max(0, totalH - (int)StatusBarHeight - (int)MinPortraitHistoryHeight));
-
-            return flanked > stacked;
-        }
-    }
-
-    /// <summary>The piles live in a side gutter exactly when there is one to live in.</summary>
-    private CapturedPiecesLayout CapturedLayout =>
-        UseSideHistory ? CapturedPiecesLayout.External : CapturedPiecesLayout.Strips;
+    private GameFrameMetrics ChromeMetrics => GameFrameMetrics.FromChromeFontSize(ChromeFontSize);
+    private float HistoryPanelWidth => ChromeMetrics.HistoryPanelWidth;
 
     /// <summary>Header + two rows — anything shallower isn't a useful history and stays background.</summary>
-    private float MinPortraitHistoryHeight => ChromeFontSize * 5f;
+    private float MinPortraitHistoryHeight => ChromeMetrics.MinStackedHistoryHeight;
 
-    // Slot keys for the declarative frame: every Fill leaf routes its arranged rect to one painter, so
-    // no chrome rect is ever computed by hand (Layout.Content.Fill.Key).
-    private const string SlotBoard = "board";
-    private const string SlotHistory = "history";
-    private const string SlotCaptured = "captured";
-    private const string SlotStatus = "status";
-
-    /// <summary>The arranged frame: every rect this display paints into.</summary>
-    private readonly record struct Frame(RectF32 Board, RectF32 History, RectF32 Captured, RectF32 Status);
+    /// <summary>The arranged frame: the shape that was chosen, and every rect this display paints into.</summary>
+    private readonly record struct Frame(
+        GameFrameShape Shape,
+        CapturedPiecesLayout CapturedPieces,
+        RectF32 Board,
+        RectF32 History,
+        RectF32 Captured,
+        RectF32 Status)
+    {
+        /// <summary>True when the chrome flanks the board rather than stacking below it.</summary>
+        public bool UseSideHistory => Shape != GameFrameShape.Stacked;
+    }
 
     /// <summary>
-    /// Arranges the entire display as ONE declarative <see cref="Layout"/> tree and returns its slots.
-    /// The status bar and its mirror band, the two gutters that centre the board between them, the
-    /// stacked history strip — all of it is expressed as Fixed/Star sizing and resolved by DIR.Lib's
-    /// engine, so there is no hand-rolled width/height/offset arithmetic left to drift. Star's MIN
-    /// clamp is load-bearing here: it is what stops a fixed-width panel from starving the board to a
-    /// negative width on a narrow surface (the bug that once left phones with no board at all).
+    /// Arranges the entire display from the shared <see cref="GameFrameLayout"/> — which picks the shape
+    /// (flanked vs stacked, costed in board squares) and hands back the one declarative
+    /// <see cref="Layout"/> tree that expresses it — and returns its slots in pixels.
     ///
-    /// <para>It runs in the two passes the board's aspect forces — no layout engine can resolve
-    /// <c>min(w / 9.5, h / 9.2)</c> for us. With <paramref name="boardContentWidth"/> 0 (the sizing
-    /// pass, on reset/resize) the board slot is the Star that takes everything the minimum gutters
-    /// leave: that is the area GameUI sizes and centres itself into. With the width GameUI actually
-    /// drew (the paint pass, per frame) the board slot becomes Fixed and the two EQUAL-weight gutter
-    /// Stars split the real leftover — equal shares being exactly what keeps the board centred, and so
-    /// invariant under the across-the-table 180° flip.</para>
+    /// <para><paramref name="boardContentWidth"/> selects the sizing pass (0) or the paint pass (the width
+    /// GameUI actually drew); see <see cref="GameFrameLayout.Build"/> for why the board's aspect forces
+    /// two. <see cref="GameFrameLayout.AllowOffCentreBoard"/> is false here because any of these hosts
+    /// can turn its frame for across-the-table play, and only a centred board survives that.</para>
     /// </summary>
     private Frame ArrangeFrame(float boardContentWidth = 0f)
     {
-        // The frame lays out inside the safe area; the unsafe strips stay chrome-free (the top inset
-        // hosts the stats strip, drawn separately). Insets are zero on desktop.
-        var (l, t, r, b) = _safeAreaInsets;
-        var safeArea = new RectF32(l, t, Renderer.Width - l - r, Renderer.Height - t - b);
+        var frame = new GameFrameLayout(
+            Renderer.Width, Renderer.Height, ChromeMetrics,
+            _safeAreaInsets, _mirrorChrome, allowOffCentreBoard: false);
 
         var arranged = ArrangeLayout(
-            UseSideHistory ? FlankedFrame(boardContentWidth) : StackedFrame(),
-            safeArea,
+            frame.Build(boardContentWidth),
+            frame.SafeArea,
             // Chess sizes its chrome from the surface height already (see ChromeFontSize), so the
             // tree's design units ARE device pixels — same as the history rows' RenderLayout call.
             dpiScale: 1f);
 
-        return new Frame(
-            Slot(arranged, SlotBoard), Slot(arranged, SlotHistory),
-            Slot(arranged, SlotCaptured), Slot(arranged, SlotStatus));
-    }
-
-    /// <summary>Board centred between two gutters, banded above and below by the status bar's height.</summary>
-    private Layout.Node FlankedFrame(float boardContentWidth)
-    {
-        // Width known == the paint pass; see ArrangeFrame for why there are two.
-        var paintPass = boardContentWidth > 0f;
-
-        var board = paintPass
-            ? Layout.Builder.Fill(key: SlotBoard).WFixed(boardContentWidth).HStar()
-            : Layout.Builder.Fill(key: SlotBoard).WStar().HStar();
-
-        Layout.Node Gutter(string key) => paintPass
-            ? Layout.Builder.Fill(key: key).WStar(min: MinSideGutter).HStar()
-            : Layout.Builder.Fill(key: key).WFixed(MinSideGutter).HStar();
-
-        // History to the right of the board, captured piles to the left — swapped together by
-        // MirrorChrome, so once the frame turns each is back on the physical side it started on.
-        var (left, right) = _mirrorChrome ? (SlotHistory, SlotCaptured) : (SlotCaptured, SlotHistory);
-
-        return Layout.Builder.VStack(
-            // The status bar's empty mirror: reserving it top AND bottom is what centres the board
-            // vertically on the safe area.
-            Layout.Builder.Spacer().RowH(StatusBarHeight),
-            Layout.Builder.HStack(Gutter(left), board, Gutter(right)).Stretch(),
-            Layout.Builder.Fill(key: SlotStatus).RowH(StatusBarHeight));
-    }
-
-    /// <summary>Full-width board with the history stacked in the strip left over above the status bar.</summary>
-    private Layout.Node StackedFrame()
-    {
-        // The one number the engine can't resolve: the board's own aspect. Clamped so it never eats
-        // the space below it, and the history Star then takes whatever remains.
-        var (l, t, r, b) = _safeAreaInsets;
-        var availH = Renderer.Height - t - b - StatusBarHeight;
-        var boardH = MathF.Min(availH, (Renderer.Width - l - r) * BoardAspect);
-
-        var board = Layout.Builder.Fill(key: SlotBoard).RowH(boardH);
-        var history = Layout.Builder.Fill(key: SlotHistory).Stretch();
-        var status = Layout.Builder.Fill(key: SlotStatus).RowH(StatusBarHeight);
-
-        // Mirrored: the history moves ABOVE the board, so the flip leaves both physically put.
-        return _mirrorChrome
-            ? Layout.Builder.VStack(history, board, status)
-            : Layout.Builder.VStack(board, history, status);
-    }
-
-    /// <summary>The arranged rect of the <see cref="Layout.Content.Fill"/> leaf carrying
-    /// <paramref name="key"/>; empty when this layout has no such slot (no captured gutter when
-    /// stacked).</summary>
-    private static RectF32 Slot(ImmutableArray<Layout.ArrangedNode<float>> arranged, string key)
-    {
-        foreach (var (node, rect) in arranged)
+        static RectF32 Slot(ImmutableArray<Layout.ArrangedNode<float>> arranged, string key)
         {
-            if (node is Layout.Node.Leaf { Content: Layout.Content.Fill fill } && fill.Key == key)
-                return new RectF32(rect.X, rect.Y, rect.Width, rect.Height);
+            var r = GameFrameLayout.Slot(arranged, key);
+            return new RectF32(r.X, r.Y, r.Width, r.Height);
         }
-        return default;
+
+        return new Frame(
+            frame.Shape, frame.CapturedLayout,
+            Slot(arranged, GameFrameLayout.SlotBoard), Slot(arranged, GameFrameLayout.SlotHistory),
+            Slot(arranged, GameFrameLayout.SlotCaptured), Slot(arranged, GameFrameLayout.SlotStatus));
     }
 
     /// <summary>
