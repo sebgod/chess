@@ -144,6 +144,11 @@ in-process engine, searching on the calling thread).
 including Chess.Droid's LAN games (the peer is just a `NetworkPlayer` in the opponent slot) and
 Chess.Web's custom-game setup.
 
+> **Caveat, 2026-07-28: Chess.Droid's LAN path has never been run.** It compiles, and it was reviewed
+> hard enough to catch three would-have-broken-it mistakes before shipping, but LAN needs two devices
+> and a real peer and CI touches none of it. The claim above is asserted on unrun code for that one
+> path; if it misbehaves on hardware this is the sentence to walk back. Tracked as chess#15.
+
 Two traps that migration turned up, both worth remembering:
 
 - **`GameUI.MoveLockSide` is not the LAN turn gate.** It looks like the natural home for "only your own
