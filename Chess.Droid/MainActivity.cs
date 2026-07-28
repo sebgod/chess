@@ -37,10 +37,16 @@ namespace Chess.Droid;
 /// <see cref="PixelMenuWidget{TSurface}"/>) and then the game display
 /// (<see cref="PixelGameDisplay{TSurface}"/>), routing touches into whichever is active.
 ///
-/// Player-vs-Computer runs the engine IN-PROCESS (<see cref="AiEngine"/>, on a background thread) —
-/// there is no engine child process on Android, exactly like Chess.Web. Custom games open in setup
-/// mode (tap a square, pick a piece from the popup) and start on the display's "▶ Start" chip,
-/// the touch stand-in for the desktop's s key.
+/// Player-vs-Computer runs the engine IN-PROCESS (<see cref="LocalEnginePlayer"/> over
+/// <see cref="AiEngine"/>) — there is no engine child process on Android, exactly like Chess.Web. It
+/// searches synchronously on the SDL thread, which is why <see cref="Difficulty"/> stops at a depth
+/// that stays answerable here. Custom games open in setup mode (tap a square, pick a piece from the
+/// popup) and start on the display's "▶ Start" chip, the touch stand-in for the desktop's s key.
+///
+/// Turn handling is the shared <see cref="GameSession"/>, ticked from <see cref="Render"/> rather than
+/// from a loop of its own: taps go to a <see cref="QueuedInputPlayer"/> and the session applies them.
+/// This is the same model Chess.Console and Chess.GUI drive through <see cref="GameLoop"/>; only the
+/// thing doing the driving differs.
 /// </summary>
 [Activity(
     Label = "Chess",
@@ -70,6 +76,12 @@ public sealed class MainActivity : SdlVulkanActivity
     private PixelMenuWidget<VulkanContext>? _menu;
     private PixelGameDisplay<VulkanContext>? _display;
     private Game? _game;
+
+    // The shared turn model, ticked from Render (see AdvanceSession). Taps are handed to _input rather
+    // than applied to GameUI directly, which is what lets this front-end use the same session the
+    // desktop's GameLoop drives. Null while a menu or the lobby is up.
+    private GameSession? _session;
+    private readonly QueuedInputPlayer _input = new();
 
     // Player-vs-Computer state. The engine runs in-process and SYNCHRONOUSLY right after the human's
     // move: across the offered difficulty levels the search is tens of milliseconds to a few hundred,
@@ -209,7 +221,10 @@ public sealed class MainActivity : SdlVulkanActivity
             TakeMenuRedraw()
             || (_display?.HasPendingUpdate ?? false)
             || _pendingLobbyStart || _pendingShowMenu || _netLobby is not null
-            || (_netSession is { } s && (s.HasIncomingMove || s.PeerLeft));
+            || (_netSession is { } s && (s.HasIncomingMove || s.PeerLeft))
+            // A tap queued for the session needs a frame to be applied in. Taps already force one, so
+            // this is belt-and-braces for input that arrives by any other route.
+            || _input.HasPendingInput;
         // Android's back button/gesture: SDL traps it before the activity's onBackPressed and
         // delivers it as a key (AC_BACK -> InputKey.Escape), already on the SDL thread. Desktop Esc
         // semantics, staged: playback -> live game -> menu (state is saved move-by-move) -> launcher.
@@ -237,6 +252,10 @@ public sealed class MainActivity : SdlVulkanActivity
     private void ShowMenu()
     {
         CleanupNetwork(); // tear down any lobby/session/lock before returning to the menu
+        // Fire-and-forget like the discovery stack above: no opponent this front-end builds owns
+        // anything that needs awaiting (the in-process engine holds nothing, and the LAN socket is
+        // still CleanupNetwork's to close).
+        if (_session is not null) { _ = _session.DisposeAsync(); _session = null; }
         _display = null;
         // The menu renders through the same projection — never let it inherit a turned frame.
         _renderer.DeviceTransform = DeviceTransform.Identity;
@@ -276,6 +295,8 @@ public sealed class MainActivity : SdlVulkanActivity
 
         if (_netSession is not null)
             DrainNetworkMoves();
+        else
+            AdvanceSession();
 
         if (_display is not null)
             _display.Render();
@@ -354,13 +375,11 @@ public sealed class MainActivity : SdlVulkanActivity
             return true;
         }
 
-        // In-game: apply the human's tap, then let the engine reply (synchronously) if it's PvC.
-        // Not while setting up a custom game — the position is still being built, and one AI move
-        // there would both jump the gun and lock the board (SetPiece throws once a ply exists).
-        _display.UI.HandleMouseDown(x, y);
-        SaveGame();
-        if (!_display.UI.IsSetupMode) PlayAiReply();
-        UpdateAcrossTheTableTransform(); // a committed PvP move turns the frame to face the player now to move
+        // In-game: hand the tap to the session's input player. Render applies it and everything that
+        // follows from it — the engine's reply, the save, the frame turn — on the frame this tap has
+        // already scheduled. (The engine declines to move during setup, so a half-built position is
+        // never played from.)
+        _input.PressPointer(x, y);
         return true;
     }
 
@@ -430,43 +449,101 @@ public sealed class MainActivity : SdlVulkanActivity
         _display.SetupStartRequested = FinishSetup;
         // Touch-only: no keyboard hints in the status bar; playback exits via the history chip.
         _display.KeyboardHints = false;
-        _display.ResetGame(_game);
-        if (setUp) _display.UI.IsSetupMode = true;
+
+        // The shared turn model (Chess.Lib.UI.GameSession) — the same one the desktop's GameLoop
+        // drives, ticked here from Render instead of from a loop of its own. It calls ResetGame, so
+        // this replaces the explicit call that used to sit here. beginInSetup is passed rather than
+        // derived: a RESUMED custom game is still GameMode.Custom* but is long past placing pieces.
+        _session = GameSession.Create(
+            _display,
+            mode,
+            computerSide,
+            game.CurrentSide,
+            () => _input,
+            _vsComputer ? (side, _) => new LocalEnginePlayer(side, _difficulty) : null,
+            resumeGame: game,
+            beginInSetup: setUp);
+
         // Orient the board to the local player (their pieces at the bottom) vs the AI; PvP stays
         // White-at-bottom (_humanSide is White there). Across the table, FlipBoard tracks the frame
         // turn (see UpdateAcrossTheTableTransform — it can't reach the UI before ResetGame, so the
         // resume-consistent value is set here).
         _display.UI.FlipBoard = IsAcrossTheTable ? _game is { CurrentSide: Side.Black } : _humanSide == Side.Black;
 
+        // A game that isn't being set up can start playing at once; a custom one starts after its
+        // "▶ Start" chip, when Tick reports SetupFinished (see AdvanceSession).
+        if (!setUp)
+        {
+            StartSession();
+        }
+
         SaveGame();
-        if (!setUp) PlayAiReply(); // if the human chose Black, White (the AI) opens
+    }
+
+    // Brings the session up and restores the orientation, since StartAsync sets FlipBoard for the
+    // desktop's single-local-side convention and Android's across-the-table rule differs.
+    private void StartSession()
+    {
+        _session!.Start(TimeProvider.System);
+        _display!.UI.FlipBoard = IsAcrossTheTable ? _game is { CurrentSide: Side.Black } : _humanSide == Side.Black;
     }
 
     // Leaves custom-game setup and starts play: the pieces on the board become the starting position
-    // (Game.SetPiece keeps it as ply -1, so the save replays from it), and the engine opens if the
-    // side to move is its own. Reached from the display's "▶ Start" chip.
+    // (Game.SetPiece keeps it as ply -1, so the save replays from it). Reached from the display's
+    // "▶ Start" chip, which fires re-entrantly from inside GameUI's tap handling — so this only flips
+    // the flag, and the session notices on its next tick. That indirection is also what stopped the
+    // old code advancing the engine twice for this one tap.
     private void FinishSetup()
     {
         if (_display is null || !_display.HasGameUI || !_display.UI.IsSetupMode) return;
         _display.UI.CancelPlacement(); // a picker left open would keep its scrim over the live board
         _display.UI.IsSetupMode = false;
-        SaveGame();
-        PlayAiReply();
     }
 
-    // Plays the engine's reply in-process while it's the computer's turn. Synchronous: at the offered
-    // depths the search is brief, and it's not the human's turn, so blocking the loop for it is
-    // acceptable and far simpler than a background thread + cross-thread struct handoff. (Loop handles
-    // a chain in case a future mode has the AI move more than once.)
-    private void PlayAiReply()
+    // Advances the shared session as far as it will go this frame, and applies the effects that are
+    // this front-end's own: persistence, and turning the frame to face whoever is now to move.
+    //
+    // Looping to Idle rather than ticking once reproduces what PlayAiReply used to do — Droid's engine
+    // is in-process and synchronous, so the human's move and the reply land in the same frame. Every
+    // player here is self-limiting (the queued input is one event deep; the engine declines once it
+    // isn't its turn), so this terminates on its own; the bound is belt-and-braces.
+    private void AdvanceSession()
     {
-        if (!_vsComputer || _game is null) return;
-        while (!_game.IsFinished && _game.CurrentSide != _humanSide)
+        if (_session is null || _display is null) return;
+
+        for (var guard = 0; guard < 64; guard++)
         {
-            var move = new AiEngine(_game.CurrentSide, maxDepth: _difficulty.ToSearchDepth()).PickMove(_game);
-            if (move is not { } mv) break;
-            _game.TryMove(mv);
-            SaveGame();
+            var tick = _session.Tick();
+
+            switch (tick.Outcome)
+            {
+                case SessionOutcome.Idle:
+                    return;
+
+                case SessionOutcome.SetupFinished:
+                    // The session rebuilt the game from the placed board — pick up the new instance.
+                    _game = _session.Game;
+                    StartSession();
+                    SaveGame();
+                    break;
+
+                case SessionOutcome.NeedsRestart:
+                    ShowMenu();
+                    return;
+
+                case SessionOutcome.Moved:
+                    if (tick.PlyCommitted)
+                    {
+                        SaveGame();
+                        // A committed move turns the frame to face the player now to move.
+                        UpdateAcrossTheTableTransform();
+                    }
+                    break;
+
+                case SessionOutcome.NeedsReset:
+                    // Touch offers no reset affordance; nothing can raise this today.
+                    return;
+            }
         }
     }
 
@@ -607,6 +684,9 @@ public sealed class MainActivity : SdlVulkanActivity
 
         _game = new Game();
         _mode = GameMode.NetworkGame;
+        // LAN still drives itself through DrainNetworkMoves rather than the shared session — see the
+        // comment there for why.
+        _session = null;
         _vsComputer = false;
         _acrossTheTable = false; // a LAN game has a single local side — never turns the frame
         _display = new PixelGameDisplay<VulkanContext>(_renderer);
@@ -619,6 +699,13 @@ public sealed class MainActivity : SdlVulkanActivity
 
     // Applies moves the peer sent, on the SDL/render thread (GameUI is single-threaded). No
     // MoveLockSide is set, so TryPerformAction isn't gated — the local-turn guard lives in HandleTap.
+    //
+    // NOT yet on the shared GameSession, unlike this activity's other modes. Chess.Net.NetworkPlayer
+    // is a drop-in for the opponent slot and would retire this method, but two things have to move
+    // with it: the local-turn gate would have to become GameUI.MoveLockSide (never set on this
+    // front-end), and ownership of the socket would shift from CleanupNetwork to the player's
+    // DisposeAsync. Both are behaviour changes that want a real device and a real peer to confirm,
+    // which is why they are not bundled with a refactor that can otherwise be checked by tests.
     private void DrainNetworkMoves()
     {
         if (_netSession is null || _display is null || _game is null) return;

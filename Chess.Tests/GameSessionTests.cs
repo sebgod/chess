@@ -260,6 +260,48 @@ public sealed class GameSessionTests
     }
 
     [Fact]
+    public void Create_ResumedCustomGame_CanSkipSetup()
+    {
+        // A custom game stays GameMode.Custom* for the rest of its life, so deriving "open in setup"
+        // from the mode alone would drop a resumed one back into piece placement. Chess.Droid resumes
+        // from a save and passes the answer explicitly.
+        var display = new FakeDisplay();
+        var resumed = new Game();
+        resumed.TryMove(Position.E2, Position.E4);
+
+        var session = GameSession.Create(
+            display,
+            GameMode.CustomGameStandardBoard,
+            Side.None,
+            Side.White,
+            () => new ScriptedPlayer(),
+            resumeGame: resumed,
+            beginInSetup: false);
+
+        session.IsSetupMode.ShouldBeFalse();
+        display.UI.IsSetupMode.ShouldBeFalse();
+        session.Game.PlyCount.ShouldBe(1); // the resumed history survived
+    }
+
+    [Fact]
+    public void Start_SynchronousOpponent_DoesNotNeedTheAsyncPath()
+    {
+        // Chess.Droid starts games from an SDL callback it must not leave.
+        var display = new FakeDisplay();
+        var session = GameSession.Create(
+            display,
+            GameMode.PlayerVsComputer,
+            Side.Black,
+            Side.White,
+            () => new ScriptedPlayer(),
+            (side, _) => new LocalEnginePlayer(side, Difficulty.Easy));
+
+        Should.NotThrow(() => session.Start(TimeProvider.System));
+
+        session.Tick().Outcome.ShouldBe(SessionOutcome.Idle); // White (human) to move, nothing queued
+    }
+
+    [Fact]
     public async Task StartAsync_BeforeSetupEnds_Throws()
     {
         var session = GameSession.Create(
