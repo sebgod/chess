@@ -410,28 +410,9 @@
         if (MapGameKey(e.Key) is not { } gameKey) return;
         var modifiers = e.CtrlKey ? InputModifier.Ctrl : InputModifier.None;
 
-        // Setup is its own screen with no session behind it — placement goes straight to GameUI, and
-        // 's' ends setup there, mirroring the Start button's freeze-and-play handoff.
-        if (_screen == Screen.Setup)
-        {
-            var (setupResponse, _) = Ui.HandleKeyDown(gameKey, modifiers);
-
-            if (!Ui.IsSetupMode)
-            {
-                await FinishSetupAsync();
-                return;
-            }
-
-            if (setupResponse == UIResponse.None) return;
-
-            RefreshStatus();
-            await RenderBoardAsync();
-            StateHasChanged();
-            return;
-        }
-
-        // Playing: the session applies the key and anything it sets off — a keyboard-entered move may
-        // hand the turn to the AI.
+        // Setup and play both go through the session now: it applies the key and anything that follows
+        // from it — 's' lowering GameUI's setup flag and the transition into a real game, or a
+        // keyboard-entered move handing the turn to the AI.
         _input.PressKey(gameKey, modifiers);
         await AdvanceAsync();
     }
@@ -557,26 +538,20 @@
     {
         _screen = Screen.Setup;
         _game = emptyBoard ? new Game(new Board(), _setupSideToMove, []) : new Game();
-        _display.ResetGame(_game);
-        Ui.IsSetupMode = true;
+        BeginSession(inSetup: true); // resets the display and opens GameUI's setup mode
         _busy = false;
         _status = "Set up the board: click a square, then pick a piece. The swatch toggles colour; Start begins the game.";
         await RenderBoardAsync();
     }
 
-    // Leaves setup: freeze the arranged board into a fresh game with the chosen side to move, then
-    // play it (the engine opens if it holds the side to move).
+    // The "▶ Start game" button. Only lowers GameUI's setup flag — freezing the arranged board into a
+    // real game is the session's setup transition, which AdvanceAsync picks up as SetupFinished. The
+    // 's' key reaches the same place by going through GameUI itself.
     async Task FinishSetupAsync()
     {
         if (_screen != Screen.Setup) return;
-        var setupBoard = _game.Board;
-        _game = new Game(setupBoard, _setupSideToMove, []);
-        BeginSession(); // resets the display, so FlipBoard below must follow it
-        Ui.FlipBoard = _humanSide == Side.Black; // custom game vs the AI as Black -> flip
-        _screen = Screen.Playing;
-        _busy = false;
-        RefreshStatus();
-        await RenderBoardAsync();
+        Ui.CancelPlacement(); // a picker left open would keep its scrim over the live board
+        Ui.IsSetupMode = false;
         await AdvanceAsync();
     }
 
@@ -593,21 +568,31 @@
     // Wraps the current _game in a session for the Playing screen. GameSession.Create resets the
     // display (building GameUI at the board area, total − chrome), so anything the caller sets on the
     // UI — FlipBoard, MoveLockSide — belongs AFTER this call, not before.
-    void BeginSession()
+    /// <param name="inSetup">Open in the session's setup phase. The side to move then comes from the
+    /// wizard rather than the half-built board, because the session uses it to freeze the arranged
+    /// position into a real game when setup ends.</param>
+    void BeginSession(bool inSetup = false)
     {
         var computerSide = _vsComputer ? (_humanSide == Side.White ? Side.Black : Side.White) : Side.None;
 
         _session = GameSession.Create(
             _display,
-            _vsComputer ? GameMode.PlayerVsComputer : GameMode.PlayerVsPlayer,
+            inSetup
+                ? GameMode.CustomGameStandardBoard
+                : _vsComputer ? GameMode.PlayerVsComputer : GameMode.PlayerVsPlayer,
             computerSide,
-            _game.CurrentSide,
+            inSetup ? _setupSideToMove : _game.CurrentSide,
             () => _input,
             _vsComputer ? (side, _) => new LocalEnginePlayer(side, _difficulty) : null,
             resumeGame: _game,
-            beginInSetup: false);
+            beginInSetup: inSetup);
 
-        _session.Start(TimeProvider.System);
+        // A session still placing pieces has no opponent to bring up yet — the engine's opening
+        // position is the board being built. AdvanceAsync starts it when Tick reports SetupFinished.
+        if (!inSetup)
+        {
+            _session.Start(TimeProvider.System);
+        }
     }
 
     // Runs the session until it has nothing left to do, painting between plies.
@@ -651,6 +636,21 @@
                     break;
                 }
 
+                if (tick.Outcome is SessionOutcome.SetupFinished)
+                {
+                    // The session froze the arranged board into a real game — pick up the new
+                    // instance, bring the opponent up against it, and switch screens.
+                    _game = _session.Game;
+                    _session.Start(TimeProvider.System);
+                    Ui.FlipBoard = _humanSide == Side.Black; // custom game vs the AI as Black -> flip
+                    _screen = Screen.Playing;
+                    _status = string.Empty;
+                    RefreshStatus();
+                    await RenderBoardAsync();
+                    StateHasChanged();
+                    continue;
+                }
+
                 _display.StatusOverride = null;
 
                 // PlyCommitted, not IsUpdate: playback navigation reports an update too, and a link
@@ -660,7 +660,13 @@
                     await PersistFragmentAsync();
                 }
 
-                RefreshStatus();
+                // While placing pieces the status line is the setup instructions, not the side to
+                // move — refreshing it there would replace the only hint telling you what to do.
+                if (!_session.IsSetupMode)
+                {
+                    RefreshStatus();
+                }
+
                 await RenderBoardAsync();
             }
         }
@@ -676,7 +682,11 @@
             return;
         }
 
-        RefreshStatus();
+        if (!_session.IsSetupMode)
+        {
+            RefreshStatus();
+        }
+
         StateHasChanged();
     }
 
@@ -692,9 +702,10 @@
 
         if (_screen == Screen.Setup)
         {
-            // Placement/selection/colour-toggle — GameUI handles it; setup never auto-finishes.
-            Ui.HandleMouseDown(e.X, e.Y);
-            await RenderBoardAsync();
+            // Placement/selection/colour-toggle goes through the session's setup phase, same as every
+            // other front-end. Setup never auto-finishes; only the Start button or 's' ends it.
+            _input.PressPointer(e.X, e.Y);
+            await AdvanceAsync();
             return;
         }
 
