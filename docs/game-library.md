@@ -16,7 +16,7 @@ evidence about where the real seam sits:
 
 | Already a sibling | What it carries |
 |---|---|
-| DIR.Lib | primitives, `Layout`, `PixelMenuWidget`, fonts, `DeviceTransform` |
+| DIR.Lib | primitives, `Layout`, `PixelMenuWidget`, fonts, `ContentTransform` |
 | SdlVulkan.Renderer | `SdlVulkanActivity`, window/swapchain, surface-loss + resume, safe area |
 | Console.Lib | terminal, `Canvas`, `SixelEncoder`, `RgbaImageRenderer` |
 | WebGl.Renderer | WebGL2 backend, MSDF text |

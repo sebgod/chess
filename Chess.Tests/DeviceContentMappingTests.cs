@@ -16,7 +16,7 @@ public sealed class DeviceContentMappingTests
     [Fact]
     public void Identity_leaves_insets_untouched()
     {
-        DeviceContentMapping.ToContentInsets((10, 20, 30, 40), DeviceTransform.Identity)
+        DeviceContentMapping.ToContentInsets((10, 20, 30, 40), ContentTransform.Identity)
             .ShouldBe((10, 20, 30, 40));
     }
 
@@ -29,14 +29,14 @@ public sealed class DeviceContentMappingTests
         Rotation90 rotation, int left, int top, int right, int bottom)
     {
         // Distinct depths so a wrong edge assignment cannot pass by symmetry.
-        DeviceContentMapping.ToContentInsets((10, 20, 30, 40), new DeviceTransform(rotation, 1f, 0f, 0f))
+        DeviceContentMapping.ToContentInsets((10, 20, 30, 40), new ContentTransform(rotation, 1f, 0f, 0f))
             .ShouldBe((left, top, right, bottom));
     }
 
     [Fact]
     public void Identity_leaves_rect_untouched()
     {
-        DeviceContentMapping.ToContentRect((4, 6, 20, 14), DeviceTransform.Identity)
+        DeviceContentMapping.ToContentRect((4, 6, 20, 14), ContentTransform.Identity)
             .ShouldBe((4, 6, 20, 14));
     }
 
@@ -44,7 +44,7 @@ public sealed class DeviceContentMappingTests
     public void Half_mirrors_rect_about_the_surface_centre()
     {
         // 64x32 surface flipped 180°: device (4,6)-(20,14) -> content (64-20, 32-14)-(64-4, 32-6).
-        var half = DeviceTransform.CenteredRotation(Rotation90.Half, 64, 32);
+        var half = ContentTransform.CenteredRotation(Rotation90.Half, 64, 32);
         DeviceContentMapping.ToContentRect((4, 6, 20, 14), half)
             .ShouldBe((44, 18, 60, 26));
     }
@@ -54,7 +54,7 @@ public sealed class DeviceContentMappingTests
     {
         // The whole-device rect inverted through the centred flip is the whole content rect — the
         // mapping covers the surface exactly (no drift), which is what keeps draw and hit-test aligned.
-        var half = DeviceTransform.CenteredRotation(Rotation90.Half, 64, 32);
+        var half = ContentTransform.CenteredRotation(Rotation90.Half, 64, 32);
         DeviceContentMapping.ToContentRect((0, 0, 64, 32), half)
             .ShouldBe((0, 0, 64, 32));
     }

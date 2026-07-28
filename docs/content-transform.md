@@ -37,16 +37,16 @@ Represent it as a constrained struct, **not** a raw 2×3 matrix, so the invarian
 construction (shear/anisotropy are unrepresentable):
 
 ```csharp
-public readonly record struct DeviceTransform(Rotation90 Rotation, float Scale, float Tx, float Ty)
+public readonly record struct ContentTransform(Rotation90 Rotation, float Scale, float Tx, float Ty)
 {
-    public static readonly DeviceTransform Identity = new(Rotation90.None, 1f, 0f, 0f);
+    public static readonly ContentTransform Identity = new(Rotation90.None, 1f, 0f, 0f);
     public bool IsIdentity { get; }
     public Matrix3x2 ToMatrix3x2();          // canonical matrix form — a 2D affine, NOT 4×4
     public Vector2 Apply(Vector2 content);   // content → device (Vector2.Transform via ToMatrix3x2)
     public Vector2 Invert(Vector2 device);   // device → content (trivial: Rᵀ · (p−t) / scale)
-    public DeviceTransform Compose(DeviceTransform inner);
+    public ContentTransform Compose(ContentTransform inner);
     // rotation about a surface centre — how a consumer builds the across-the-table 180°:
-    public static DeviceTransform CenteredRotation(Rotation90 rotation, float w, float h, float scale = 1f);
+    public static ContentTransform CenteredRotation(Rotation90 rotation, float w, float h, float scale = 1f);
 }
 
 // backed int = clockwise quarter-turns (screen space, Y-down), so composition is a mod-4 add
@@ -82,7 +82,7 @@ They are not convenience simplifications — each one keeps a large existing sys
 ```mermaid
 flowchart LR
     C[content-space<br/>Layout / GameUI] -->|unchanged| P[primitive calls<br/>FillRect / DrawText / DrawImage]
-    P --> M{{DeviceTransform M}}
+    P --> M{{ContentTransform M}}
     M -->|GPU: fold into ortho projection| G[Vulkan / WebGL<br/>text rotates for free]
     M -->|CPU: remap pixel writes| R[RgbaImageRenderer]
 ```
@@ -116,7 +116,7 @@ result on `PixelGameDisplay.SafeAreaInsets`. Under 180° that swaps top↔bottom
    screen rotation stays the compositor's job exactly as today; `M` carries DPI-scale × app-rotation
    (the 180° across-the-table flip). Making `M` *replace* `preTransform` would mean rendering pre-rotated on every
    device turn and owning orientation correctness — more invasive, rejected.
-2. **Unify DPI incrementally.** Introduce `DeviceTransform` **alongside** the existing `dpiScale`
+2. **Unify DPI incrementally.** Introduce `ContentTransform` **alongside** the existing `dpiScale`
    (`DpiScale => transform.Scale`) first; retire the scalar second (it touches every consumer —
    `VkFontAtlas`, `ListScrollController.SetExtent`, `PixelWidgetBase.DpiScale`, …).
 
@@ -124,7 +124,7 @@ result on `PixelGameDisplay.SafeAreaInsets`. Under 180° that swaps top↔bottom
 
 | Phase | Scope | Where | Status |
 |---|---|---|---|
-| 1a | `DeviceTransform` type (+ `Matrix3x2`/`Vector2` algebra, unit tests) + Vulkan projection compose; all four 90° rotations work on the GPU | DIR.Lib + SdlVulkan.Renderer | **Done** — 180° flip verified via offscreen render + readback |
+| 1a | `ContentTransform` type (+ `Matrix3x2`/`Vector2` algebra, unit tests) + Vulkan projection compose; all four 90° rotations work on the GPU | DIR.Lib + SdlVulkan.Renderer | **Done** — 180° flip verified via offscreen render + readback |
 | 1b | WebGL projection compose (the `uProj` `mat4` is built JS-side, so this composes there or pushes the full matrix from .NET) | WebGl.Renderer | Pending |
 | 2 | Host input inverse-mapping (`M.Invert`) + safe-area inset transform; wire the across-the-table 180° in Chess.Droid | chess (consumer) | **Done** — `DeviceContentMapping` (Chess.Lib.UI) maps insets/cutout; taps inverted at both SDL hosts; the explicit `GameMode.AcrossTheTable` flips the frame to face the side to move (board counter-rotates via `FlipBoard`, chrome mirror-swaps via `MirrorChrome`) |
 | 3 | CPU backend `RgbaImageRenderer` remap (180° then 90°/270°); retire the scalar `dpiScale`; consider subsuming `FlipBoard` | DIR.Lib + backends | Pending |
@@ -137,13 +137,13 @@ verified* end-to-end (the across-the-table flip), not a GPU-side limitation. The
 ## How chess consumes it (phases 1a + 2, landed)
 
 - Chess.Droid's **"across the table"** mode (`GameMode.AcrossTheTable`, a startup-menu choice right
-  after "Player vs Player") sets `renderer.DeviceTransform = DeviceTransform.CenteredRotation(Rotation90.Half, w, h)`
+  after "Player vs Player") sets `renderer.ContentTransform = ContentTransform.CenteredRotation(Rotation90.Half, w, h)`
   whenever Black is to move (identity on White's turn; recomputed on resize), so the whole frame —
   board, history, status, text — faces the player to move. It's an explicit mode, not a guess: plain
   same-seat *Player vs Player* never turns, and vs-AI and LAN (a single local side) keep the identity
   transform. `MainActivity.UpdateAcrossTheTableTransform` drives three things off one flag
   (`flip = Black to move`):
-  - **`renderer.DeviceTransform`** — the frame rotation; text turns with it via the GPU projection.
+  - **`renderer.ContentTransform`** — the frame rotation; text turns with it via the GPU projection.
   - **`GameUI.FlipBoard` tracks the frame flip** — the two 180° rotations cancel for the board, so the
     armies keep their physical sides (like a real board on the table) and only the chrome turns.
   - **`PixelGameDisplay.MirrorChrome`** mirror-swaps the chrome in content space (history panel to the

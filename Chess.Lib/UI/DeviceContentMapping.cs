@@ -5,9 +5,9 @@ namespace Chess.Lib.UI;
 
 /// <summary>
 /// Maps host-reported DEVICE-space values (safe-area insets, the display-cutout rect) into content
-/// space for a renderer <see cref="DeviceTransform"/> — the layout-side mirror of the renderer folding
+/// space for a renderer <see cref="ContentTransform"/> — the layout-side mirror of the renderer folding
 /// the same transform into its projection and of pointer input coming back through
-/// <see cref="DeviceTransform.Invert"/> at the host boundary. Under a 180° across-the-table flip the camera
+/// <see cref="ContentTransform.Invert"/> at the host boundary. Under a 180° across-the-table flip the camera
 /// notch sits on the content's BOTTOM edge, so the insets swap top↔bottom and left↔right; the
 /// <see cref="PixelGameDisplay{TSurface}"/> layout just consumes the mapped values and never learns why.
 /// </summary>
@@ -17,11 +17,11 @@ public static class DeviceContentMapping
     /// Permutes device safe-area insets onto the content edges they actually obscure. Inset DEPTHS pass
     /// through unchanged (the transform is a 90°-multiple rotation + translation); only which edge each
     /// depth belongs to moves. Assumes the transform maps the content box onto the surface box (as
-    /// <see cref="DeviceTransform.CenteredRotation"/> does) — a letterboxed 90°/270° fit would leave
+    /// <see cref="ContentTransform.CenteredRotation"/> does) — a letterboxed 90°/270° fit would leave
     /// device edges with no content counterpart, and the edge permutation no longer applies there.
     /// </summary>
     public static (int Left, int Top, int Right, int Bottom) ToContentInsets(
-        (int Left, int Top, int Right, int Bottom) deviceInsets, DeviceTransform transform)
+        (int Left, int Top, int Right, int Bottom) deviceInsets, ContentTransform transform)
         => transform.Rotation switch
         {
             // Cw90: the content's left edge lands on the device top (photo rotated 90° clockwise).
@@ -38,7 +38,7 @@ public static class DeviceContentMapping
     /// corners and re-normalizing — exact for 90°-multiple rotations, where rects stay axis-aligned.
     /// </summary>
     public static (int Left, int Top, int Right, int Bottom) ToContentRect(
-        (int Left, int Top, int Right, int Bottom) deviceRect, DeviceTransform transform)
+        (int Left, int Top, int Right, int Bottom) deviceRect, ContentTransform transform)
     {
         if (transform.IsIdentity) return deviceRect;
         var a = transform.Invert(new Vector2(deviceRect.Left, deviceRect.Top));

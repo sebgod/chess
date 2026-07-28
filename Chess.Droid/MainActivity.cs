@@ -190,7 +190,7 @@ public sealed class MainActivity : SdlVulkanActivity
         loop.OnMouseDown = (button, x, y, _, _) =>
         {
             if (button != 1) return false;
-            var p = _renderer.DeviceTransform.Invert(new Vector2(x, y));
+            var p = _renderer.ContentTransform.Invert(new Vector2(x, y));
             _pointerDown = p;
             _pointerLast = p;
             if (IsMenuUp) return true; // deferred to OnMouseUp
@@ -198,7 +198,7 @@ public sealed class MainActivity : SdlVulkanActivity
         };
         loop.OnMouseMove = (x, y) =>
         {
-            _pointerLast = _renderer.DeviceTransform.Invert(new Vector2(x, y));
+            _pointerLast = _renderer.ContentTransform.Invert(new Vector2(x, y));
             return false; // nothing hovers; this only tracks the finger for the tap-vs-drag test
         };
         loop.OnMouseUp = _ =>
@@ -263,7 +263,7 @@ public sealed class MainActivity : SdlVulkanActivity
         CleanupNetwork(); // tear down any lobby/discovery/lock before returning to the menu
         _display = null;
         // The menu renders through the same projection — never let it inherit a turned frame.
-        _renderer.DeviceTransform = DeviceTransform.Identity;
+        _renderer.ContentTransform = ContentTransform.Identity;
         // No Play-by-Link on Android (no link driver), but Network game is on — Android can open
         // sockets. "Continue game" appears whenever an unfinished save exists (back button mid-game,
         // or a cold launch with one on disk) — returning to the menu must never cost the game; only
@@ -383,7 +383,7 @@ public sealed class MainActivity : SdlVulkanActivity
     // Sets the renderer's whole-frame content transform for the current state and reapplies the safe
     // area through it. While Black is to move the frame turns 180° (identity on White's turn) so the
     // player opposite always reads history, status and text upright. Three things track the same
-    // flag: the DeviceTransform (turns the frame), FlipBoard (counter-turns the BOARD so the armies
+    // flag: the ContentTransform (turns the frame), FlipBoard (counter-turns the BOARD so the armies
     // keep their physical sides — a real board never swaps them), and MirrorChrome (swaps the chrome
     // layout's side in content space so the board and panel keep their physical POSITIONS on screen
     // under the turn — only the text orientation changes, nothing visibly jumps). Driven by the
@@ -391,9 +391,9 @@ public sealed class MainActivity : SdlVulkanActivity
     private void UpdateAcrossTheTableTransform()
     {
         var flip = IsAcrossTheTable && _game is { CurrentSide: Side.Black };
-        _renderer.DeviceTransform = flip
-            ? DeviceTransform.CenteredRotation(Rotation90.Half, _renderer.Width, _renderer.Height)
-            : DeviceTransform.Identity;
+        _renderer.ContentTransform = flip
+            ? ContentTransform.CenteredRotation(Rotation90.Half, _renderer.Width, _renderer.Height)
+            : ContentTransform.Identity;
         // StartGame calls this BEFORE ResetGame so the first layout already honors the transform;
         // FlipBoard tracking has to wait for the UI to exist (the post-ResetGame line covers it).
         if (IsAcrossTheTable && _display!.HasGameUI) _display.UI.FlipBoard = flip;
@@ -408,7 +408,7 @@ public sealed class MainActivity : SdlVulkanActivity
     private void ApplyDeviceInsets()
     {
         if (_display is null) return;
-        var m = _renderer.DeviceTransform;
+        var m = _renderer.ContentTransform;
         _display.SafeAreaInsets = DeviceContentMapping.ToContentInsets(SdlWindow.GetSafeAreaInsets(), m);
         _display.TopCutout = QueryTopCutout() is { } cutout
             ? DeviceContentMapping.ToContentRect(cutout, m)

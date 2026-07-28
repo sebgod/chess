@@ -30,11 +30,11 @@ player's point of view).
 ## Mechanism — three things track one flag
 
 The 180° turn is one instance of the constrained **content→device transform** — see
-[`docs/device-transform.md`](../../docs/device-transform.md). Per committed move,
+[`docs/content-transform.md`](../../docs/content-transform.md). Per committed move,
 `MainActivity.UpdateAcrossTheTableTransform` computes one flag (`flip = Black to move`) and drives
 three things off it:
 
-1. **`renderer.DeviceTransform = CenteredRotation(Half)` / Identity** — turns the whole frame
+1. **`renderer.ContentTransform = CenteredRotation(Half)` / Identity** — turns the whole frame
    (text included) via the GPU projection. Input comes back through `M.Invert` at the tap boundary.
 2. **`GameUI.FlipBoard = flip`** — counter-turns the *board* so the two 180°s cancel for it: the
    armies stay on their physical sides, exactly like a real board on the table (White always
@@ -68,8 +68,8 @@ Safe-area insets and the camera cutout are mapped device→content by `DeviceCon
 
 ## Where it lives
 
-- Mechanism: `DeviceTransform` on the abstract renderer + backend support — a sibling-repo change (see
-  [`docs/device-transform.md`](../../docs/device-transform.md), phases 1 & 3).
+- Mechanism: `ContentTransform` on the abstract renderer + backend support — a sibling-repo change (see
+  [`docs/content-transform.md`](../../docs/content-transform.md), phases 1 & 3).
 - Chess wiring: `MainActivity` sets the transform/FlipBoard/MirrorChrome triple per committed move
   and maps tap coordinates through the inverse (phase 2). The mode itself is a shared-enum value
   (`GameMode.AcrossTheTable`); other heads don't offer it (a desktop monitor isn't flat between two
