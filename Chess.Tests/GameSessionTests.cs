@@ -63,7 +63,7 @@ public sealed class GameSessionTests
     }
 
     /// <summary>Stands in for a LAN peer: reports NeedsRestart on "left", otherwise idle off-turn.</summary>
-    private sealed class FakePeer(Side remoteSide) : IGamePlayer
+    private sealed class FakePeer : IGamePlayer
     {
         public bool Left { get; set; }
         public int PollCount { get; private set; }
@@ -187,7 +187,7 @@ public sealed class GameSessionTests
         // NetworkPlayer — the only thing that reports PeerLeft — went unasked while the local human
         // was on move: a peer resigning went unnoticed until you played something.
         var display = new FakeDisplay();
-        var peer = new FakePeer(Side.Black);
+        var peer = new FakePeer();
         var session = await PlayingAsync(display, new ScriptedPlayer(), peer, Side.Black);
 
         session.Game.CurrentSide.ShouldBe(Side.White); // our turn, not the peer's
@@ -203,7 +203,7 @@ public sealed class GameSessionTests
         // playback it really can be the remote's turn, and applying its move would yank the board out
         // from under someone reading history.
         var display = new FakeDisplay();
-        var peer = new FakePeer(Side.Black);
+        var peer = new FakePeer();
         var session = await PlayingAsync(display, new ScriptedPlayer(DoMove(E2, E4)), peer, Side.Black);
         session.Tick();
 
@@ -257,7 +257,7 @@ public sealed class GameSessionTests
         (await PlayingAsync(display, new ScriptedPlayer())).Difficulty.ShouldBeNull();
 
         // ...and a LAN peer is an opponent with no strength to set.
-        var lan = await PlayingAsync(display, new ScriptedPlayer(), new FakePeer(Side.Black), Side.Black);
+        var lan = await PlayingAsync(display, new ScriptedPlayer(), new FakePeer(), Side.Black);
         lan.Difficulty.ShouldBeNull();
     }
 

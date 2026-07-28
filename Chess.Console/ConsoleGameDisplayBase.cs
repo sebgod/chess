@@ -9,6 +9,9 @@ using System.Diagnostics;
 #endif
 
 using File = Chess.Lib.File;
+// DIR.Lib.Layout is a NAMESPACE, so the tree types need it aliased to read as Layout.Node /
+// Layout.Builder -- the same alias PixelGameDisplay uses for the same tree.
+using Layout = DIR.Lib.Layout;
 
 namespace Chess.Console;
 
@@ -16,6 +19,21 @@ namespace Chess.Console;
 /// Base class for graphical game displays that render via a <see cref="Renderer{TSurface}"/>
 /// and output Sixel to the terminal.
 /// Handles layout, chrome (status bar + move history), GameUI management, and resize logic.
+///
+/// <para>The frame is declared as a <see cref="Layout.Node"/> tree and arranged in cells by
+/// <see cref="Layout.Engine"/> — the same surface-agnostic tree <c>PixelGameDisplay</c> arranges for the
+/// GUI and the browser, so the console is no longer the one front-end describing its chrome a different
+/// way. Each widget is registered against a key, appears in the tree as a <c>Fill</c> leaf, and has its
+/// viewport re-pointed at that leaf's arranged rect. The tree owns placement; the widgets own behaviour —
+/// a <see cref="ScrollableList{T}"/> has scroll state and a thumb, a <see cref="Canvas"/> has Sixel dirty
+/// regions, and neither is something a layout node can model.</para>
+///
+/// <para><b>Arranged on resize, not per frame</b>, which is where this deliberately parts company with
+/// TianWen's TUI tabs. Every leaf here is a hosted widget — there is no node-painted chrome, no
+/// background or label for <see cref="CellLayout.Paint"/> to draw — and the shape depends only on the
+/// terminal size, never on game state. Re-arranging per frame would therefore paint nothing new while
+/// repainting all three widgets, which is exactly what the clip-rect partial Sixel updates in
+/// <see cref="RenderFrame"/> exist to avoid.</para>
 /// </summary>
 internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 {
@@ -27,7 +45,16 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
     private const int HistoryColumns = 24;
     private const int StatusBarRows = 1;
 
-    private readonly Panel _panel;
+    // Fill-leaf keys. The tree names these; each one's arranged rect becomes a widget's viewport.
+    private const string BoardKey = "board";
+    private const string HistoryKey = "history";
+    private const string StatusKey = "status";
+
+    /// <summary>Stateless — text width is the character count — so one instance serves every arrange.</summary>
+    private static readonly CellMeasureContext MeasureContext = new();
+
+    private readonly IVirtualTerminal _terminal;
+    private readonly Dictionary<string, HostedRegion> _hosts = [];
     private readonly Canvas _boardCanvas;
     private readonly Renderer<TSurface> _renderer;
     private readonly TextBar _statusBar;
@@ -46,19 +73,21 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
     protected ConsoleGameDisplayBase(IVirtualTerminal terminal)
     {
-        _panel = new Panel(terminal);
+        _terminal = terminal;
 
-        _statusBar = new TextBar(_panel.Dock(DockStyle.Bottom, StatusBarRows));
-        _historyList = new ScrollableList<HistoryMoveRow>(_panel.Dock(DockStyle.Right, HistoryColumns))
+        _statusBar = new TextBar(Host(StatusKey));
+        _historyList = new ScrollableList<HistoryMoveRow>(Host(HistoryKey))
             .Header(" Move History");
+        ITerminalViewport boardViewport = Host(BoardKey);
 
-        var boardViewport = _panel.Fill();
+        // A hosted viewport's geometry is meaningless until the tree places it, and the renderer needs a
+        // pixel size, so the first arrange has to happen before the board can be built.
+        ArrangeFrame();
+
         var (width, height) = boardViewport.PixelSize;
         var (renderer, encoder) = CreateRenderer(width, height);
         _renderer = renderer;
         _boardCanvas = new Canvas(boardViewport, encoder);
-
-        _panel.Add(_statusBar).Add(_historyList).Add(_boardCanvas);
     }
 
     protected abstract (Renderer<TSurface> Renderer, ISixelEncoder Encoder) CreateRenderer(uint width, uint height);
@@ -70,28 +99,83 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         null;
 #endif
 
+    /// <summary>
+    /// Creates the viewport for the widget hosted at <paramref name="key"/>. Its geometry stays empty
+    /// until <see cref="ArrangeFrame"/> places it.
+    /// </summary>
+    private TerminalViewport Host(string key)
+    {
+        var viewport = new TerminalViewport(_terminal, 0, 0, 0, 0);
+        _hosts[key] = new HostedRegion(viewport);
+        return viewport;
+    }
+
+    /// <summary>
+    /// The frame: the board with the history panel beside it, and a status bar spanning the full width
+    /// below both.
+    ///
+    /// <para>The tree is rebuilt per arrange, so the clamps are plain C# rather than layout features. They
+    /// preserve what the docked <c>Panel</c> did before, where <c>TerminalLayout</c> clamped each strip to
+    /// the cells still remaining: in a terminal too narrow for the history panel, the panel takes what is
+    /// there and the board is left with nothing rather than the frame overflowing.</para>
+    /// </summary>
+    /// <remarks>
+    /// Every leaf states its height as well as its width. A <c>Fill</c> leaf has no intrinsic size and
+    /// <see cref="Layout.Node.Height"/> defaults to <c>Auto</c>, so a child that only says <c>.WStar()</c>
+    /// is arranged one cell wide and <b>zero rows tall</b> — the panels vanish rather than the frame
+    /// looking wrong, which is why the tests below assert on the arranged capacity.
+    /// </remarks>
+    private Layout.Node BuildLayout(int columns, int rows) =>
+        Layout.Builder.VStack(
+            Layout.Builder.HStack(
+                Layout.Builder.Fill(key: BoardKey).Stretch(),
+                Layout.Builder.Fill(key: HistoryKey).WFixed(Math.Min(HistoryColumns, columns)).HStar())
+                .Stretch(),
+            Layout.Builder.Fill(key: StatusKey).RowH(Math.Min(StatusBarRows, rows)));
+
+    /// <summary>
+    /// Re-arranges the frame and re-points every hosted viewport at its new rect. Returns whether any of
+    /// them actually moved — the replacement for <c>Panel.Recompute()</c>'s "did the terminal change"
+    /// guard, which is what keeps a per-pump <see cref="HandleResize"/> from repainting continuously.
+    /// </summary>
+    private bool ArrangeFrame()
+    {
+        var (columns, rows) = _terminal.Size;
+        var arranged = Layout.Engine.Arrange(
+            BuildLayout(columns, rows), new Rect<int>(0, 0, columns, rows), MeasureContext);
+
+        var moved = false;
+        foreach (var (node, rect) in arranged)
+        {
+            if (node is Layout.Node.Leaf { Content: Layout.Content.Fill { Key: { } key } }
+                && _hosts.TryGetValue(key, out var host))
+            {
+                moved |= host.Place(rect);
+            }
+        }
+
+        return moved;
+    }
+
     private int? ResolveHistoryClick(int px, int py)
     {
-        if (_historyList.HitTest(px, py) is not (var cellCol, var cellRow))
-            return null;
-
-        // Row 0 is the header
-        if (cellRow < 1)
+        // Asked of the list, not reconstructed here: it owns the scroll state, so it is the only thing
+        // that knows the header displaces row 0, that visible row N is item ScrollOffset + N, and that
+        // the scrollbar owns the last column. Splitting the row by the full viewport width instead —
+        // which is what this did before — turned a click on the scrollbar into a jump to Black's ply.
+        if (_historyList.HitTestRow(px, py) is not (var moveIdx, _, var column, var columns))
             return null;
 
         var plyCount = UI.Game.PlyCount;
-        var (_, _, startMove) = UI.HistoryWindow(_historyList.VisibleRows);
-        var moveIdx = startMove + cellRow - 1;
         var whitePlyIdx = moveIdx * 2;
 
         if (whitePlyIdx >= plyCount)
             return null;
 
-        var midCol = _historyList.Viewport.Size.Width / 2;
-        if (cellCol >= midCol && whitePlyIdx + 1 < plyCount)
-            return whitePlyIdx + 1;
-
-        return whitePlyIdx;
+        // A row reads "<n>. <white> <black>", so the right half of the CONTENT picks Black's ply.
+        return column >= columns / 2 && whitePlyIdx + 1 < plyCount
+            ? whitePlyIdx + 1
+            : whitePlyIdx;
     }
 
     public void RenderInitial(Game game)
@@ -152,10 +236,17 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
     public void HandleResize(Game game)
     {
-        if (!_panel.Recompute())
+        if (!ArrangeFrame())
             return;
 
         var (width, height) = _boardCanvas.PixelSize;
+
+        // A terminal too small to leave the board any cells has nothing to render into, and resizing a
+        // renderer to an empty surface is not a thing to ask for. The next arrange that gives it room
+        // reports moved again, so this recovers on its own.
+        if (width == 0 || height == 0)
+            return;
+
         _renderer.Resize(width, height);
         _gameUI = UI.Resize(width, height);
 
@@ -174,6 +265,12 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
             backgroundColor: GameUI.PlainBackgroundColor,
             alignment: (cell.Width, cell.Height),
             resolveHistoryClick: ResolveHistoryClick);
+
+        // HandleResize is the other writer, but it only runs its body when the arrangement CHANGED, so a
+        // game that is never resized would leave this at 0 -- and every scroll path divides the history
+        // by it (ScrollHistory, PageUp/PageDown, EnsurePlyVisible). PixelGameDisplay sets it from its own
+        // arrange for the same reason.
+        _gameUI.HistoryViewportRows = _historyList.VisibleRows;
     }
 
     private void RenderFrame(GameUI ui, ImmutableArray<RectInt> clipRects)
@@ -217,5 +314,27 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
     public void Dispose()
     {
         _renderer.Dispose();
+    }
+
+    /// <summary>
+    /// One hosted widget's viewport, plus the rect it was last placed at, so a re-arrange can report
+    /// whether anything really moved instead of the caller repainting on every pump.
+    /// </summary>
+    private sealed class HostedRegion(TerminalViewport viewport)
+    {
+        private Rect<int>? _last;
+
+        /// <summary>Moves the viewport to <paramref name="rect"/>; true when that is somewhere new.</summary>
+        public bool Place(Rect<int> rect)
+        {
+            viewport.UpdateGeometry(rect.X, rect.Y, rect.Width, rect.Height);
+
+            var moved = _last is not { } last
+                || last.X != rect.X || last.Y != rect.Y
+                || last.Width != rect.Width || last.Height != rect.Height;
+
+            _last = rect;
+            return moved;
+        }
     }
 }
