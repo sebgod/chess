@@ -143,7 +143,7 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
     /// <summary>
     /// Mirrors the chrome layout in content space: the history panel docks to the LEFT of the board
     /// (landscape) or ABOVE it (portrait), and the board origin shifts to match. Composed with a
-    /// 180° renderer <c>DeviceTransform</c> this keeps the board and panel at the SAME physical
+    /// 180° renderer <c>ContentTransform</c> this keeps the board and panel at the SAME physical
     /// screen positions while the frame's text turns to face the far player (across-the-table PvP,
     /// where the renderer flips each turn): only the text orientation changes — nothing visibly
     /// jumps sides. Relayouts a live game.

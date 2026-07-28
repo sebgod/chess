@@ -57,13 +57,13 @@ void SaveCurrentGame()
 VkStartupMenu? menu = new(CanContinue());
 
 // Map a pointer event's pixel coordinates from device space into content space through the renderer's
-// DeviceTransform — the inverse of what the projection applies, so draw and hit-test can never drift
+// ContentTransform — the inverse of what the projection applies, so draw and hit-test can never drift
 // (the whole-frame analogue of GameUI's DisplayCell/LogicalCell). Identity — all the desktop sets
 // today — returns the event untouched; this exists so any front-end that wires a whole-frame rotation
 // (the Android across-the-table flip) stays correct by construction.
 InputEvent MapPointerToContent(InputEvent evt)
 {
-    var m = renderer.DeviceTransform;
+    var m = renderer.ContentTransform;
     if (m.IsIdentity) return evt;
     switch (evt)
     {
