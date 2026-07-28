@@ -79,6 +79,7 @@ public sealed class GameSession
     private IGamePlayer? _whitePlayer;
     private IGamePlayer? _blackPlayer;
     private IGamePlayer? _opponent;
+    private Difficulty? _difficulty;
 
     // Baseline for NeedsReset, captured once the real game exists.
     private Board _initialBoard;
@@ -114,6 +115,32 @@ public sealed class GameSession
 
     /// <summary>True while a custom game is still having its pieces placed.</summary>
     public bool IsSetupMode => _phase == Phase.Setup;
+
+    /// <summary>
+    /// How hard the opponent plays, changeable while the game runs. <c>null</c> when there is nobody to
+    /// ask — player-vs-player — or when the opponent is a person rather than an engine, since a remote
+    /// peer has no strength to set.
+    ///
+    /// <para>The session owns this because the session owns the opponent. A front-end that instead kept
+    /// its own reference to whatever the factory returned would be writing game logic — knowing which
+    /// concrete player it built and reaching into it — and that reference goes stale the moment a new
+    /// session is created, so the write lands on a dead opponent in silence. Setting it here cannot:
+    /// applied to the live opponent if there is one, remembered for <see cref="StartAsync"/> if the
+    /// game has not begun yet.</para>
+    /// </summary>
+    public Difficulty? Difficulty
+    {
+        get => (_opponent as IAdjustableDifficulty)?.Difficulty ?? _difficulty;
+        set
+        {
+            _difficulty = value;
+
+            if (value is { } level && _opponent is IAdjustableDifficulty adjustable)
+            {
+                adjustable.Difficulty = level;
+            }
+        }
+    }
 
     /// <summary>
     /// True when the next <see cref="Tick"/> will ask the opponent — an engine or a remote peer — to
@@ -206,6 +233,12 @@ public sealed class GameSession
                 or GameMode.CustomGameStandardBoard or GameMode.NetworkGame)
         {
             _opponent = _opponentFactory(_computerSide, timeProvider);
+
+            // A difficulty chosen before the opponent existed still applies to it.
+            if (_difficulty is { } level && _opponent is IAdjustableDifficulty adjustable)
+            {
+                adjustable.Difficulty = level;
+            }
 
             if (_opponent is IEngineBasedPlayer engineBased)
             {

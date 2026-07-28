@@ -14,8 +14,11 @@ public sealed class UciPlayer(
     string enginePath,
     Side side,
     TimeProvider timeProvider,
-    Difficulty difficulty = Difficulty.Normal) : IEngineBasedPlayer
+    Difficulty difficulty = Difficulty.Normal) : IEngineBasedPlayer, IAdjustableDifficulty
 {
+    /// <summary>Strength to ask the engine for. Read per <c>go</c>, so a change applies immediately.</summary>
+    public Difficulty Difficulty { get; set; } = difficulty;
+
     /// <summary>
     /// The bundled chess-engine executable next to the host binary — the path every desktop
     /// front-end launches by default (was duplicated verbatim in the GUI and Console hosts).
@@ -61,7 +64,7 @@ public sealed class UciPlayer(
             // the engine ignored outright — now that it honours the clock, asking for time would mean
             // waiting a second for every move of a casual game.) A real time control belongs here as
             // wtime/btime once there is a clock to read it from.
-            var go = new UciCommand.Go(Depth: difficulty.ToSearchDepth());
+            var go = new UciCommand.Go(Depth: Difficulty.ToSearchDepth());
             _pendingMove = _client.GoAsync(position, go);
         }
 

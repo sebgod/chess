@@ -86,6 +86,91 @@ public sealed class PlayVsComputerTests(ChessWebFixture fixture)
     }
 
     [Fact]
+    public async Task ChangingDifficultyMidGame_ReachesTheEngineAlreadyPlaying()
+    {
+        // The regression this exists for: the dropdown used to update only the field the NEXT game
+        // reads, so it moved, the label changed, and the engine carried on at the old depth. Nothing
+        // in the DOM says which move the engine picked — the board and move list are both painted into
+        // the canvas — so the only externally visible consequence of search depth is how long the
+        // search takes. Hence timing; but a RATIO between two measurements on this same page, never an
+        // absolute threshold, so the test does not encode how fast the machine running it happens to be.
+        // Two games rather than two moves of one game, so that the position being searched is held
+        // constant and the dropdown is the only difference. Timing consecutive moves of a single game
+        // instead would fold in how expensive each position happens to be, which is worth a factor of
+        // ~3 by itself here — the same order as the effect being measured.
+        var unchanged = await SecondReplyTimeAsync(raiseTo: null);
+        var raised = await SecondReplyTimeAsync(raiseTo: "Normal");
+
+        Assert.True(raised > unchanged * 3,
+            $"Raising the level mid-game should make the very next search markedly longer, but it took " +
+            $"{raised:F0} ms against {unchanged:F0} ms for the identical position left on Easy — the " +
+            "change did not reach the engine that was already playing.");
+    }
+
+    // Plays 1.e4 (answered on Easy in both runs, so both games stand in the same position), optionally
+    // changes the level, then plays 2.d4 and reports how long that reply took.
+    //
+    // Normal rather than Hard on purpose: one extra ply of depth is already a ~14x difference, which is
+    // all the signal this needs, while depth 4 against a locally served — interpreted, non-AOT — build
+    // measured 77 SECONDS for the single reply.
+    private async Task<double> SecondReplyTimeAsync(string? raiseTo)
+    {
+        var page = await StartGameVsComputerAsync();
+        await InstallStatusRecorderAsync(page);
+
+        await MeasureThinkAsync(page, "e2e4");
+
+        if (raiseTo is not null)
+        {
+            await page.Locator("select").SelectOptionAsync(raiseTo);
+        }
+
+        return await MeasureThinkAsync(page, "d2d4");
+    }
+
+    // Records every status change with a timestamp. A MutationObserver rather than polling from the
+    // test, because the search blocks the single WASM thread: Playwright cannot read the DOM while
+    // that runs, so an intermediate "thinking…" would be missed. The observer's callback is queued
+    // before the block starts and the log is read back afterwards, which cannot miss it.
+    private static async Task InstallStatusRecorderAsync(IPage page) => await page.EvaluateAsync("""
+        () => {
+            const el = document.querySelector('p.status');
+            window.__chessStatus = [];
+            new MutationObserver(() => window.__chessStatus.push(
+                { t: performance.now(), s: el.textContent.trim() }))
+                .observe(el, { childList: true, characterData: true, subtree: true });
+        }
+        """);
+
+    // Plays a move and returns how long the engine's reply took, measured inside the page as the gap
+    // between "thinking…" appearing and the status that replaces it once the search returns.
+    private static async Task<double> MeasureThinkAsync(IPage page, string uci)
+    {
+        const string CompletedThink = """
+            () => {
+                const log = window.__chessStatus ?? [];
+                const i = log.findLastIndex(e => e.s.includes('thinking'));
+                return i >= 0 && i + 1 < log.length;
+            }
+            """;
+
+        await page.EvaluateAsync("() => { window.__chessStatus = []; }");
+        await PlayMoveAsync(page, uci);
+
+        // Waiting on the recorder rather than on the status text: "White to move." is already showing
+        // when the move is played, so waiting for it could pass before the engine has even started.
+        await page.WaitForFunctionAsync(CompletedThink, null, new() { Timeout = 120_000 });
+
+        return await page.EvaluateAsync<double>("""
+            () => {
+                const log = window.__chessStatus;
+                const i = log.findLastIndex(e => e.s.includes('thinking'));
+                return log[i + 1].t - log[i].t;
+            }
+            """);
+    }
+
+    [Fact]
     public async Task TheBoardStaysInteractive_AfterTheEngineHasMoved()
     {
         // The engine's search sets the busy gate that disables input. If it were ever left set, the

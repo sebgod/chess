@@ -757,9 +757,15 @@
         }
     }
 
+    // The field is what the NEXT game starts at; the session is the game already in progress. Setting
+    // only the field is a silent no-op mid-game — the dropdown moves and the engine carries on at the
+    // old depth — because the session builds its opponent once, from whatever the field held then.
     void OnDifficultyChanged(ChangeEventArgs e)
     {
-        if (Enum.TryParse<Difficulty>((string?)e.Value, out var level)) _difficulty = level;
+        if (!Enum.TryParse<Difficulty>((string?)e.Value, out var level)) return;
+
+        _difficulty = level;
+        if (_session is not null) _session.Difficulty = level;
     }
 
     // ---- status ---------------------------------------------------------------------------------

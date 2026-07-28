@@ -232,6 +232,58 @@ public sealed class GameSessionTests
     }
 
     [Fact]
+    public async Task Difficulty_ChangedMidGame_ReachesTheOpponentAlreadyPlaying()
+    {
+        var display = new FakeDisplay();
+        var engine = new LocalEnginePlayer(Side.Black, Difficulty.Easy);
+        var session = await PlayingAsync(display, new ScriptedPlayer(), engine, Side.Black);
+
+        session.Difficulty.ShouldBe(Difficulty.Easy);
+
+        session.Difficulty = Difficulty.Hard;
+
+        // Through the session, not by the driver holding its own reference to what it built: that copy
+        // outlives the session it belongs to, so the next write lands on a dead opponent in silence.
+        engine.Difficulty.ShouldBe(Difficulty.Hard);
+        session.Difficulty.ShouldBe(Difficulty.Hard);
+    }
+
+    [Fact]
+    public async Task Difficulty_WithNobodyToAdjust_IsNull()
+    {
+        var display = new FakeDisplay();
+
+        // Hot-seat has no engine at all...
+        (await PlayingAsync(display, new ScriptedPlayer())).Difficulty.ShouldBeNull();
+
+        // ...and a LAN peer is an opponent with no strength to set.
+        var lan = await PlayingAsync(display, new ScriptedPlayer(), new FakePeer(Side.Black), Side.Black);
+        lan.Difficulty.ShouldBeNull();
+    }
+
+    [Fact]
+    public void Difficulty_SetBeforeTheGameStarts_IsAppliedWhenTheOpponentAppears()
+    {
+        // The opponent does not exist until Start, so a driver that states the level up front rather
+        // than baking it into its factory must not have it silently dropped.
+        var display = new FakeDisplay();
+        LocalEnginePlayer? created = null;
+
+        var session = GameSession.Create(
+            display,
+            GameMode.PlayerVsComputer,
+            Side.Black,
+            Side.White,
+            () => new ScriptedPlayer(),
+            (side, _) => created = new LocalEnginePlayer(side, Difficulty.Easy));
+
+        session.Difficulty = Difficulty.Hard;
+        session.Start(TimeProvider.System);
+
+        created.ShouldNotBeNull().Difficulty.ShouldBe(Difficulty.Hard);
+    }
+
+    [Fact]
     public async Task Create_CustomGame_OpensInSetupAndTransitionsOnce()
     {
         var display = new FakeDisplay();

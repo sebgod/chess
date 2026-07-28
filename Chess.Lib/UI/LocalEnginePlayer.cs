@@ -17,12 +17,13 @@ namespace Chess.Lib.UI;
 /// <see cref="GameSession.IsEngineTurn"/> and paint first; once the call has started it is too
 /// late.</para>
 /// </summary>
-public sealed class LocalEnginePlayer(Side side, Difficulty difficulty = Difficulty.Normal) : IGamePlayer
+public sealed class LocalEnginePlayer(Side side, Difficulty difficulty = Difficulty.Normal)
+    : IGamePlayer, IAdjustableDifficulty
 {
     /// <summary>The side this engine plays.</summary>
     public Side Side { get; } = side;
 
-    /// <summary>How deep it searches. Settable so a front-end can offer a mid-game change.</summary>
+    /// <summary>How deep it searches. Read per move, so a change applies to the very next one.</summary>
     public Difficulty Difficulty { get; set; } = difficulty;
 
     public PlayerMoveResult? TryMakeMove(GameUI ui)

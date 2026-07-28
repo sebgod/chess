@@ -133,12 +133,36 @@ public sealed class SharedPlayerTests
     }
 
     [Fact]
-    public void LocalEngine_DifficultyIsSettable_ForAMidGameChange()
+    public void LocalEngine_DifficultyChangedMidGame_TakesEffectOnTheNextMove()
     {
-        // Chess.Web offers this live; the others set it once from the wizard.
-        var player = new LocalEnginePlayer(Side.White, Difficulty.Easy) { Difficulty = Difficulty.Hard };
+        // Asserting the property round-trips proves nothing: the player could still be capturing a
+        // depth at construction, which is exactly the shape of bug this guards. So play a move and
+        // look at the board instead.
+        var easy = ReplyToE4(Difficulty.Easy);
+        var hard = ReplyToE4(Difficulty.Hard);
 
-        player.Difficulty.ShouldBe(Difficulty.Hard);
+        // The two levels must really disagree here, or the assertion below passes vacuously. Which
+        // moves they pick is the evaluation function's business, so this asserts only that they differ.
+        easy.ShouldNotBe(hard, "1.e4 must separate the levels for the rest of this test to mean anything");
+
+        // Changing a player that already exists has to be indistinguishable from having built it that
+        // way — that equivalence is what lets a front-end offer the change mid-game at all.
+        ReplyToE4(Difficulty.Easy, changeTo: Difficulty.Hard).ShouldBe(hard);
+    }
+
+    /// <summary>Plays Black's answer to 1.e4 and reports the move it chose.</summary>
+    private static (Position From, Position To) ReplyToE4(Difficulty start, Difficulty? changeTo = null)
+    {
+        var game = new Game();
+        game.TryMove(Position.E2, Position.E4);
+
+        var player = new LocalEnginePlayer(Side.Black, start);
+        if (changeTo is { } level) player.Difficulty = level;
+
+        player.TryMakeMove(NewUi(game)).ShouldNotBeNull();
+
+        var reply = game.Plies[^1];
+        return (reply.From, reply.To);
     }
 
     private static (int X, int Y) CentreOf(GameUI ui, Position position)
