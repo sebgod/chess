@@ -260,6 +260,34 @@ public class GameUITests
     }
 
     [Fact]
+    public void EnPassant_CapturedPawn_ReachesTheCapturedTally()
+    {
+        // The e.p. victim is the one capture whose piece is not on the destination square. The tray
+        // tally used to pattern-match Capture/CaptureAndPromotion and skipped EnPassant entirely, so
+        // the pawn vanished from the game without ever appearing in a pile (found live: 7. b5a6 e.p.
+        // left White's pile empty while Black's own captures all showed).
+        var board = Board.StandardBoard + DoMove(E2, E5) + DoMove(D7, D5);
+        var plies = ImmutableList.Create(
+            new RecordedPly(E2, E5, ActionResult.Move, PieceType.Pawn),
+            new RecordedPly(D7, D5, ActionResult.Move, PieceType.Pawn)
+        );
+        var game = new Game(board, Side.White, plies);
+        var ui = CreateUI(game);
+
+        ui.TryPerformAction(E5);
+        ui.TryPerformAction(D6); // exd6 e.p.
+
+        Span<byte> counts = stackalloc byte[2 * 7]; // 2 sides × GameUI.PieceTypeStride
+        ui.CountCaptured(counts);
+
+        // White moved on the even ply, so its pile is the first block; the victim is a pawn.
+        counts[(int)PieceType.Pawn].ShouldBe((byte)1, "the e.p. victim belongs in White's pile");
+        var total = 0;
+        foreach (var count in counts) total += count;
+        total.ShouldBe(1, "the e.p. pawn is the game's only capture");
+    }
+
+    [Fact]
     public void Castling_Kingside_ClipRectsIncludeKingDestination()
     {
         var board = new Board

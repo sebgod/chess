@@ -577,7 +577,7 @@ public class GameUI
     /// the ply on display — during playback that's the scrubbed position's piles, not the game's
     /// final ones.
     /// </summary>
-    private void CountCaptured(Span<byte> capturedPieceCounts)
+    internal void CountCaptured(Span<byte> capturedPieceCounts)
     {
         var plies = Game.Plies;
         var plyCount = Mode == GameUIMode.Playback ? PlaybackPlyIndex + 1 : plies.Count;
@@ -586,7 +586,12 @@ public class GameUI
         {
             var (_, ply) = plies.GetRecordAndPGNIdx(plyIdx);
 
-            if (ply is { Result: ActionResult.Capture or ActionResult.CaptureAndPromotion } and not { Captured: PieceType.None })
+            // The canonical predicate, not a hand-rolled Result pattern: the original spelled out
+            // Capture and CaptureAndPromotion and thereby MISSED EnPassant — the one capture whose
+            // taken pawn is not on the destination square, and whose victim silently never reached
+            // the tray. Board records the e.p. victim correctly (it reads the pre-move square), so
+            // the tally is the only place that dropped it.
+            if (ply.Result.IsCapture() && ply.Captured is not PieceType.None)
             {
                 var idx = plyIdx % 2 * PieceTypeStride + (int)ply.Captured;
                 capturedPieceCounts[idx]++;
