@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -53,5 +53,19 @@
     </ItemGroup>
     <Copy SourceFiles="@(EnginePublishFiles)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
   </Target>
+
+
+  <!--
+    The debug inspector lives in Console.Lib / DIR.Lib behind #if DEBUG, so it exists only in a DEBUG build
+    of those libraries. A PUBLISHED package is built in Release, which means its inspector is compiled out
+    and this project cannot reference it at all. So the wiring is gated on having the siblings as PROJECT
+    references in a Debug build, which is the same rule Chess.GUI's SDL inspector lives by.
+
+    Locally that is the default (UseLocalSiblings auto-detects the sibling checkouts). CI restores packages,
+    so CONSOLE_INSPECTOR is undefined there and the inspector code simply is not compiled.
+  -->
+  <PropertyGroup Condition="'$(UseLocalSiblings)' == 'true' AND '$(Configuration)' == 'Debug'">
+    <DefineConstants>$(DefineConstants);CONSOLE_INSPECTOR</DefineConstants>
+  </PropertyGroup>
 
 </Project>
