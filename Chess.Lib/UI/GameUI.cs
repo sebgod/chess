@@ -67,6 +67,37 @@ public class GameUI
     /// <inheritdoc cref="PlainFontColor"/>
     public static readonly RGBAColor32 PlainBackgroundColor = new(0x00, 0x00, 0x00, 0xff);
 
+    /// <summary>
+    /// The colours whose MEANING must survive palette quantization, for hosts whose encoder has a
+    /// colour budget (Sixel's 255 slots). A chess frame paints ~2000 unique colours — three flats
+    /// cover ~95% of the area and the rest is glyph anti-aliasing — so a frequency-ranked palette is
+    /// always oversubscribed, and an accent that loses the cut snaps to the nearest survivor: board
+    /// tan or cream. It does not degrade, it disappears. Console.Lib 4.2 grew reserved palette slots
+    /// for exactly this; this list is what chess asks it to hold. (Declared after every colour it
+    /// names: static fields initialize in declaration order, and a forward reference would silently
+    /// read as transparent black.)
+    ///
+    /// <para>Only OPAQUE accents belong here. The translucent ones (arrows, legal-move dots, the
+    /// promotion overlay) composite into per-background blends before the encoder ever sees them, so
+    /// reserving their constants would hold slots for colours no pixel carries. And greys may snap to
+    /// neighbouring greys harmlessly — the list is accents whose loss changes meaning, plus the four
+    /// flats as insurance (they win on frequency anyway; reserving them costs one declaration each).</para>
+    /// </summary>
+    public static readonly RGBAColor32[] ReservedPaletteColors =
+    [
+        SelectedSquareFill,   // == SelectionRingColor; the "picked up" tint
+        CheckSquareFill,
+        CheckRingColor,
+        LastMoveBorderColor,
+        CaptureBorderColor,   // the violet marker — the accent that prompted the 4.2 measurement
+        RedCrossFill,
+        PlainBackgroundColor, // == FontColorBlack
+        PlainFontColor,
+        FontColorWhite,
+        WhiteSquareFill,
+        BlackSquareFill,
+    ];
+
     private readonly int _margin;
     private readonly int _squareSize;
     private readonly int _topMargin;

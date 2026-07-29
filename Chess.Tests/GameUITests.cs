@@ -1080,4 +1080,24 @@ public class GameUITests
 
         resized.MoveLockSide.ShouldBe(Side.Black);
     }
+
+    // ── Reserved palette colours ───────────────────────────────────
+
+    [Fact]
+    public void ReservedPaletteColors_AreOpaqueUniqueAndIncludeTheCaptureViolet()
+    {
+        var colors = GameUI.ReservedPaletteColors;
+
+        // A translucent constant never reaches the encoder — it composites into per-background
+        // blends first — so reserving one would hold a palette slot for a colour no pixel carries.
+        colors.ShouldAllBe(c => c.Alpha == 0xff, "reserved colours must be opaque");
+
+        // A duplicate quietly burns one of Sixel's 255 slots. A forward static-field reference would
+        // show up here too: it reads as transparent black, colliding with the real background entry.
+        colors.Distinct().Count().ShouldBe(colors.Length, "reserved colours must be unique");
+
+        // The accent that prompted the reservation feature (Console.Lib 4.2): the violet capture
+        // marker, which used to snap to board colours when it lost the frequency cut.
+        colors.ShouldContain(new RGBAColor32(0x8A, 0x4F, 0xD0, 0xff));
+    }
 }
