@@ -56,8 +56,9 @@ public class GameUITests
 
         response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
         ui.Selected.ShouldBe(E2);
-        // Empty clips = full board redraw (legal-move dots span multiple squares)
-        clips.ShouldBeEmpty();
+        // The dots are deterministic — the selected square plus every legal destination — so the
+        // clips name them instead of asking for the whole board. e2's pawn can go to e3 and e4.
+        clips.ShouldBe([ui.SquareRect(E2), ui.SquareRect(E3), ui.SquareRect(E4)], ignoreOrder: true);
     }
 
     [Fact]
@@ -105,8 +106,58 @@ public class GameUITests
 
         response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
         ui.Selected.ShouldBeNull();
-        // Empty clips = full board redraw (erase legal-move dots from all target squares)
-        clips.ShouldBeEmpty();
+        // The erase set equals the draw set: the game hasn't changed, so the dots to remove are
+        // recomputed from the selection being cleared.
+        clips.ShouldBe([ui.SquareRect(E2), ui.SquareRect(E3), ui.SquareRect(E4)], ignoreOrder: true);
+    }
+
+    [Fact]
+    public void Reselect_ClipRects_CoverBothTheOldAndTheNewDots()
+    {
+        // Public flows can't reselect (a click on another own piece attempts a move), but TrySelect
+        // is public, so a direct reselection must erase the old dot set as well as draw the new one.
+        var ui = CreateStandardUI();
+        ui.TrySelect(E2);
+
+        var (response, clips) = ui.TrySelect(D2);
+
+        response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
+        ui.Selected.ShouldBe(D2);
+        clips.ShouldBe(
+            [
+                ui.SquareRect(E2), ui.SquareRect(E3), ui.SquareRect(E4),
+                ui.SquareRect(D2), ui.SquareRect(D3), ui.SquareRect(D4),
+            ],
+            ignoreOrder: true);
+    }
+
+    [Fact]
+    public void Move_ClipRects_IncludeTheDotsTheMoveErases()
+    {
+        // g1's knight shows dots on f3 AND h3; moving g1-f3 must invalidate h3 too, or its dot
+        // lingers wherever the move renders partially (the stacked layout — the flanked one happens
+        // to repaint fully because the captured tray goes stale on every ply). h3 is the
+        // discriminating square: nothing else about this move touches the h-file.
+        var ui = CreateStandardUI();
+        ui.TryPerformAction(G1);
+
+        var (response, clips) = ui.TryPerformAction(F3);
+
+        response.HasFlag(UIResponse.IsUpdate).ShouldBeTrue();
+        clips.ShouldContain(ui.SquareRect(H3));
+    }
+
+    [Fact]
+    public void Move_WithoutSelection_HasNoDotsToErase()
+    {
+        // An engine move arrives as a bare Action with nothing selected — no dots were painted, so
+        // none are invalidated. The knight's OTHER destination is the discriminator: g1-f3's own
+        // rects (from, to, their span) never reach the h-file.
+        var ui = CreateStandardUI();
+
+        var (_, clips) = ui.TryPerformAction(DoMove(G1, F3));
+
+        clips.ShouldNotContain(ui.SquareRect(H3), "no selection ever painted a dot on h3");
     }
 
     [Fact]

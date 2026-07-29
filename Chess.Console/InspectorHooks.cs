@@ -58,6 +58,16 @@ internal static class InspectorHooks
         // serialization is disabled and the generic overload throws at runtime. DebugInspectorCore.Quote
         // exists for exactly this.
         string Q(string? v) => DebugInspectorCore.Quote(v);
+
+        // The render timing split rides along so a measurement is scriptable instead of parsed out of
+        // the status bar's text. Invariant culture: a comma decimal separator would break the JSON.
+        var renderStats = "";
+        if (display.Stats is { } s)
+        {
+            renderStats = FormattableString.Invariant(
+                $",\"paintMs\":{s.PaintMs:F1},\"sixelMs\":{s.SixelMs:F1},\"flushMs\":{s.FlushMs:F1},\"fullRenders\":{s.FullRenders},\"partialRenders\":{s.PartialRenders}");
+        }
+
         return "{" +
             $"\"selected\":{Q(ui.Selected?.ToString())}," +
             $"\"pendingFile\":{Q(ui.PendingFile?.ToString())}," +
@@ -68,6 +78,7 @@ internal static class InspectorHooks
             $"\"flipBoard\":{(ui.FlipBoard ? "true" : "false")}," +
             $"\"squareSize\":{ui.SquareSize}," +
             $"\"playbackPly\":{(ui.Mode == GameUIMode.Playback ? ui.PlaybackPlyIndex : -1)}" +
+            renderStats +
             "}";
     }
 }
