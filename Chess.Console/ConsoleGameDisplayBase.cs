@@ -107,6 +107,10 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         var (renderer, encoder) = CreateRenderer(width, height);
         _renderer = renderer;
         _boardCanvas = new Canvas(_canvasHost.Viewport, encoder);
+
+#if CONSOLE_INSPECTOR
+        InspectorHooks.Display = this;
+#endif
     }
 
     protected abstract (Renderer<TSurface> Renderer, ISixelEncoder Encoder) CreateRenderer(uint width, uint height);
@@ -244,6 +248,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         RenderFrame(UI, []);
         UpdateStatusBar(game);
         UpdateHistory(game);
+        Present();
     }
 
     public void RenderMove(Game game, UIResponse response, ImmutableArray<RectInt> clipRects)
@@ -257,7 +262,15 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
             UpdateStatusBar(game);
             UpdateHistory(game);
         }
+        Present();
     }
+
+    /// <summary>
+    /// Ends the frame. On a buffered terminal the widgets' writes sit in the back buffer until something
+    /// flushes, and the only implicit flush is the next cursor move — so the last widget of a frame would
+    /// otherwise appear one frame late. Immediate-mode terminals flush per write and this is free.
+    /// </summary>
+    private void Present() => _terminal.Flush();
 
     private int? HighlightPlyIndex => UI.Mode == GameUIMode.Playback ? UI.PlaybackPlyIndex : null;
 
@@ -297,6 +310,13 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
     public void HandleResize(Game game)
     {
+#if CONSOLE_INSPECTOR
+        // GameLoop calls HandleResize every pump, which makes it the one per-iteration hook the loop hands a
+        // display -- and it runs on the loop thread, the same one that mutates GameUI. That is exactly what
+        // the inspector's commands need, so they run here rather than on the socket thread.
+        InspectorHooks.Pump();
+#endif
+
         if (!ArrangeFrame())
             return;
 
@@ -331,6 +351,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         RenderFrame(UI, []);
         UpdateStatusBar(game);
         UpdateHistory(game);
+        Present();
     }
 
     public void ResetGame(Game game)

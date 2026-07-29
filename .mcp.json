@@ -4,6 +4,11 @@
       "type": "stdio",
       "command": "dotnet",
       "args": ["run", "--project", "Chess.MCP", "-c", "Release"]
+    },
+    "tui-inspector": {
+      "type": "stdio",
+      "command": "dnx",
+      "args": ["Console.Lib.Inspector", "--yes"]
     }
   }
 }

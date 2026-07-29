@@ -127,6 +127,22 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
         terminal.EnterAlternateScreen();
     }
 
+#if CONSOLE_INSPECTOR
+    // The debug inspector: a loopback command server that can read this terminal's screen as TEXT and inject
+    // keys and clicks, so the TUI can be driven and asserted without a person at the keyboard. DEBUG-only and
+    // opt-in, at tianwen/Chess.GUI parity — set CHESS_INSPECTOR=1 and grep the port out of stderr.
+    //
+    // Enabling the cell buffer is what gives it a screen to report: buffered writes go through the diff, so
+    // the FRONT buffer is the record of what was actually emitted.
+    ConsoleDebugInspector? inspector = null;
+    if (Environment.GetEnvironmentVariable("CHESS_INSPECTOR") is { Length: > 0 })
+    {
+        terminal.EnableCellBuffer();
+        inspector = ConsoleDebugInspector.Attach("Chess.Console", terminal, InspectorHooks.AppState);
+        InspectorHooks.Instance = inspector;
+    }
+#endif
+
     var restart = true;
     while (restart && !cancellationToken.IsCancellationRequested)
     {
