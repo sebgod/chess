@@ -90,6 +90,10 @@ the move reaches both `app_state` and the history panel.
 - `screen` shows **cells only**. The board is Sixel, so its region reads as blank text and
   `cell` reports `kind: "Image"` there — correct, not a fault. Assert the board through
   `app_state`; assert chrome through `screen`.
+- **To `click` a board square, use the `tui-click-square` skill** — it computes the cell for a
+  square name and can verify the hit. Nothing on screen reveals where a square is (the board is
+  one Sixel blit), so blind-clicking to find it does not work. `key` sends **no modifiers**, so
+  Ctrl+F and other chords are not injectable.
 - `CHESS_INSPECTOR=1` also enables the cell buffer, which is what gives `screen` content.
 - `input_log` is the fastest route to any input bug: it shows the raw event and what state
   it changed. That is how the mouse-motion-as-click bug was found.
