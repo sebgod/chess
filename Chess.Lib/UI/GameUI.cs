@@ -1,4 +1,4 @@
-﻿using System.Collections.Immutable;
+using System.Collections.Immutable;
 using DIR.Lib;
 
 namespace Chess.Lib.UI;
@@ -17,6 +17,30 @@ public class GameUI
     private static readonly RGBAColor32 SelectedSquareFill  = new RGBAColor32(0xCD, 0x5C, 0x5C, 0xff);
     private static readonly RGBAColor32 CheckSquareFill     = new RGBAColor32(0xE9, 0xD5, 0x02, 0xff);
     private static readonly RGBAColor32 LastMoveBorderColor = new RGBAColor32(0x48, 0xA0, 0x48, 0xff);
+
+    /// <summary>
+    /// The last move was a CAPTURE — a border on its destination square, and the arrow that points at it.
+    /// <para>
+    /// Violet specifically, and not another red. This used to borrow <see cref="SelectedSquareFill"/>, which
+    /// made a captured-on square look like a square you had picked up: the only thing distinguishing them was
+    /// border-versus-fill, which is not a distinction anyone should have to make at a glance. It cost a real
+    /// debugging session, where a capture highlight was read as a stuck selection.
+    /// </para>
+    /// <para>
+    /// The warm half of the wheel was the obvious place to go and the wrong one: selection red, both check
+    /// colours, the illegal-move red and a sequence orange all live there, and the BOARD itself is tan and
+    /// cream, so a warm accent has the least contrast available. Green is what a capture marker has to differ
+    /// from, and blue reads as playback chrome in the console (PixelGameDisplay's PlaybackHighlightBg). Violet
+    /// is the free slot and it is cool against a warm board. Its only near neighbour is the magenta in
+    /// <see cref="SequenceArrowColors"/>, and those two can never appear together — <see cref="LastMoveFull"/>
+    /// returns early when <see cref="ExplicitArrows"/> is non-empty.
+    /// </para>
+    /// </summary>
+    private static readonly RGBAColor32 CaptureBorderColor = new RGBAColor32(0x8A, 0x4F, 0xD0, 0xff);
+
+    /// <summary><see cref="CaptureBorderColor"/> at the arrows' alpha, matching
+    /// <see cref="LastMoveArrowColor"/>'s relationship to <see cref="LastMoveBorderColor"/>.</summary>
+    private static readonly RGBAColor32 CaptureArrowColor = new RGBAColor32(0x8A, 0x4F, 0xD0, 0xCC);
     private static readonly RGBAColor32 RedCrossFill        = new RGBAColor32(0xDD, 0x00, 0x00, 0xFF);
 
     // Drawing primitive overlay colors
@@ -732,13 +756,13 @@ public class GameUI
             for (var i = 0; i < ExplicitArrows.Count; i++)
             {
                 var (from, to, isCapture) = ExplicitArrows[i];
-                var color = isCapture ? SelectedSquareFill : SequenceArrowColors[i % SequenceArrowColors.Length];
+                var color = isCapture ? CaptureArrowColor : SequenceArrowColors[i % SequenceArrowColors.Length];
                 DrawLastMoveArrow<TRenderer, TSurface>(renderer, from, to, color);
             }
         }
         else if (LastMoveFull is (var arrowFrom, var arrowTo, var arrowIsCapture))
         {
-            var arrowColor = arrowIsCapture ? SelectedSquareFill : LastMoveArrowColor;
+            var arrowColor = arrowIsCapture ? CaptureArrowColor : LastMoveArrowColor;
             DrawLastMoveArrow<TRenderer, TSurface>(renderer, arrowFrom, arrowTo, arrowColor);
         }
 
@@ -758,7 +782,7 @@ public class GameUI
         // Last-move highlight border on the destination square
         if (LastMove is (var lastMoveTo, var lastMoveIsCapture))
         {
-            var borderColor = lastMoveIsCapture ? SelectedSquareFill : LastMoveBorderColor;
+            var borderColor = lastMoveIsCapture ? CaptureBorderColor : LastMoveBorderColor;
             DrawLastMoveBorder<TRenderer, TSurface>(renderer, lastMoveTo, borderColor);
         }
 
