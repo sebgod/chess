@@ -54,9 +54,16 @@ namespace Chess.Console;
 internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 {
     /// <summary>
-    /// Snapshot of rendering performance counters.
+    /// Snapshot of rendering performance counters, split by pipeline stage so "is sixel the cost?"
+    /// is answerable from the status bar: <paramref name="PaintMs"/> is the GameUI raster into the
+    /// surface (plus the gutter tray), <paramref name="SixelMs"/> is <see cref="Canvas.Render()"/> —
+    /// sixel encoding plus the buffered terminal write — and <paramref name="FlushMs"/> is shipping
+    /// the bytes at <see cref="Present"/>. Flush lags one frame: the status bar is composed before
+    /// its own frame ships, so the value shown is the PREVIOUS flush (which may also have been a
+    /// text-only frame — widget updates flush too).
     /// </summary>
-    private readonly record struct RenderStats(double LastFrameMs, long FullRenders, long PartialRenders);
+    internal readonly record struct RenderStats(
+        double PaintMs, double SixelMs, double FlushMs, long FullRenders, long PartialRenders);
 
     private const int HistoryColumns = 24;
 
@@ -79,7 +86,9 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
 #if DEBUG
     private readonly Stopwatch _stopwatch = new();
-    private double _lastFrameMs;
+    private double _lastPaintMs;
+    private double _lastSixelMs;
+    private double _lastFlushMs;
     private long _fullRenders;
     private long _partialRenders;
 #endif
@@ -115,9 +124,9 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
     protected abstract (Renderer<TSurface> Renderer, ISixelEncoder Encoder) CreateRenderer(uint width, uint height);
 
-    private RenderStats? Stats =>
+    internal RenderStats? Stats =>
 #if DEBUG
-        new(_lastFrameMs, _fullRenders, _partialRenders);
+        new(_lastPaintMs, _lastSixelMs, _lastFlushMs, _fullRenders, _partialRenders);
 #else
         null;
 #endif
@@ -270,7 +279,17 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
     /// flushes, and the only implicit flush is the next cursor move — so the last widget of a frame would
     /// otherwise appear one frame late. Immediate-mode terminals flush per write and this is free.
     /// </summary>
-    private void Present() => _terminal.Flush();
+    private void Present()
+    {
+#if DEBUG
+        _stopwatch.Restart();
+        _terminal.Flush();
+        _stopwatch.Stop();
+        _lastFlushMs = _stopwatch.Elapsed.TotalMilliseconds;
+#else
+        _terminal.Flush();
+#endif
+    }
 
     private int? HighlightPlyIndex => UI.Mode == GameUIMode.Playback ? UI.PlaybackPlyIndex : null;
 
@@ -285,7 +304,9 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
             var total = s.FullRenders + s.PartialRenders;
             if (total > 0)
             {
-                debugInfo = $"{s.LastFrameMs,6:F1}ms  F:{s.FullRenders} P:{s.PartialRenders} ({100.0 * s.PartialRenders / total:F0}% partial) ";
+                // Stage split, not one aggregate: paint (GameUI raster) / sixel (encode + buffered
+                // write) / flush (shipping the bytes; lags one frame — see RenderStats).
+                debugInfo = $"paint {s.PaintMs,5:F1} sixel {s.SixelMs,5:F1} flush {s.FlushMs,5:F1}ms  F:{s.FullRenders} P:{s.PartialRenders} ({100.0 * s.PartialRenders / total:F0}% partial) ";
             }
         }
 
@@ -401,10 +422,6 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
     private void RenderFrame(GameUI ui, ImmutableArray<RectInt> clipRects)
     {
-#if DEBUG
-        _stopwatch.Restart();
-#endif
-
         var renderer = _renderer;
         var trayIsStale = TrayIsStale(ui);
 
@@ -425,12 +442,22 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
             clip = new RectInt((renderer.Width, renderer.Height), PointInt.Origin);
         }
 
+#if DEBUG
+        _stopwatch.Restart();
+#endif
+
         ui.Render<TSurface, Renderer<TSurface>>(renderer, clip);
 
         if (_placement.HasCapturedGutter)
         {
             RenderCapturedTray(ui);
         }
+
+#if DEBUG
+        _stopwatch.Stop();
+        _lastPaintMs = _stopwatch.Elapsed.TotalMilliseconds;
+        _stopwatch.Restart();
+#endif
 
         if (isPartial)
             _boardCanvas.Render(clip);
@@ -439,7 +466,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
 #if DEBUG
         _stopwatch.Stop();
-        _lastFrameMs = _stopwatch.Elapsed.TotalMilliseconds;
+        _lastSixelMs = _stopwatch.Elapsed.TotalMilliseconds;
         if (isPartial) _partialRenders++; else _fullRenders++;
 #endif
     }

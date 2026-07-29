@@ -1181,6 +1181,16 @@ public class GameUI
         else if (action is { IsMove: true })
         {
             var prevStatus = Game.GameStatus;
+
+            // The dots this move erases: collected BEFORE TryMove, because they were painted for the
+            // CURRENT position's legal moves and the board is about to change under them. An engine
+            // move arrives with nothing selected and painted no dots, so there is nothing to erase.
+            var erasedDots = ImmutableArray.CreateBuilder<RectInt>();
+            if (Selected is { } dotOrigin)
+            {
+                AddSelectionRects(erasedDots, dotOrigin);
+            }
+
             var result = Game.TryMove(action);
             if (result.IsMoveOrCapture())
             {
@@ -1193,6 +1203,7 @@ public class GameUI
                 }
 
                 var clipRects = ImmutableArray.CreateBuilder<RectInt>(8);
+                clipRects.AddRange(erasedDots);
                 clipRects.Add(SquareRect(action.From));
                 clipRects.Add(SquareRect(action.To));
 
@@ -1251,13 +1262,31 @@ public class GameUI
         return (UIResponse.None, []);
     }
 
+    /// <summary>
+    /// Every rect a selection paints: the ring on the selected square, plus a dot or capture ring on
+    /// each legal destination — <see cref="DrawLegalMoveDots{TRenderer, TSurface}"/> keeps both inside
+    /// the destination's own square. The dots are deterministic (this is the same ValidMoves call that
+    /// paints them), so selecting, deselecting and the erase on a committed move can all repaint
+    /// clipped instead of asking for the whole board.
+    /// </summary>
+    private void AddSelectionRects(ImmutableArray<RectInt>.Builder clipRects, Position selected)
+    {
+        clipRects.Add(SquareRect(selected));
+        foreach (var action in DisplayBoard.ValidMoves(Game.Plies, selected, Game.CurrentSide))
+        {
+            clipRects.Add(SquareRect(action.To));
+        }
+    }
+
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) ClearSelection()
     {
         if (Selected is { } prev)
         {
             Selected = default;
-            // Full redraw to erase legal-move dots from all target squares
-            return (UIResponse.NeedsRefresh, []);
+            // The game state is unchanged, so the dots being erased are recomputable from prev.
+            var clipRects = ImmutableArray.CreateBuilder<RectInt>();
+            AddSelectionRects(clipRects, prev);
+            return (UIResponse.NeedsRefresh, clipRects.DrainToImmutable());
         }
         return (UIResponse.None, []);
     }
@@ -1266,9 +1295,17 @@ public class GameUI
     {
         if (!Game.IsFinished && Game.HasValidMoves(position))
         {
+            var clipRects = ImmutableArray.CreateBuilder<RectInt>();
+            // A reselection erases one dot set and draws another; both are known squares. Public
+            // flows can't reach here with a DIFFERENT selection (a click on another own piece is an
+            // attempted move), but TrySelect is public, so the erase is handled rather than assumed.
+            if (Selected is { } prev && prev != position)
+            {
+                AddSelectionRects(clipRects, prev);
+            }
             Selected = position;
-            // Full redraw so legal-move dots appear on all target squares
-            return (UIResponse.NeedsRefresh, []);
+            AddSelectionRects(clipRects, position);
+            return (UIResponse.NeedsRefresh, clipRects.DrainToImmutable());
         }
 
         return (UIResponse.None, []);
