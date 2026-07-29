@@ -92,8 +92,10 @@ the move reaches both `app_state` and the history panel.
   `app_state`; assert chrome through `screen`.
 - **To `click` a board square, use the `tui-click-square` skill** — it computes the cell for a
   square name and can verify the hit. Nothing on screen reveals where a square is (the board is
-  one Sixel blit), so blind-clicking to find it does not work. `key` sends **no modifiers**, so
-  Ctrl+F and other chords are not injectable.
+  one Sixel blit), so blind-clicking to find it does not work.
+- `key` takes an optional `mods` (`"Ctrl"`, `"Ctrl+Shift"`), so chords like Ctrl+F (flip board) are
+  drivable. Unrecognised modifier text is **refused** rather than sent as a bare key — bare `f` is
+  the file-f selector, so a silently-dropped Ctrl would do something else entirely.
 - `CHESS_INSPECTOR=1` also enables the cell buffer, which is what gives `screen` content.
 - `input_log` is the fastest route to any input bug: it shows the raw event and what state
   it changed. That is how the mouse-motion-as-click bug was found.

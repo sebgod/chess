@@ -57,13 +57,22 @@ y 140-1100. Divide by the cell size for the cell. `DisplayCell` is `flip ? (7-fi
 Verified live: e2 -> (106,46), e4 -> (106,34), e1 -> (106,52); clicking (106,46) then (106,34) played
 `e2e4` and the history panel read `1. e2e4`.
 
-## Limits
+## Chords, and the flipped board
 
-- **`key` cannot send modifiers.** `ConsoleDebugInspector` maps a key name or bare character only, so
-  **Ctrl+F (flip board) is not injectable** — nor is any other chorded binding. Bare `f` is the file-f
-  selector, not the flip.
-- The flip branch of the mapper is therefore **proven for `flipBoard: false` only**. It is the exact
-  inverse of `DisplayCell` and reads `flipBoard` from `app_state`, so it should hold; to prove it,
-  launch with `--side black`, which auto-orients, and run `--verify` on a black pawn.
+`key` carries modifiers (Console.Lib **4.7**): `mods` is substring-matched and case-insensitive, so
+`"Ctrl"`, `"ctrl+shift"` and `"CtrlShift"` all work — the same spelling the SDL inspector takes. The
+reply echoes what was resolved (`"mods":"Control"`), so assert on that rather than inferring.
+
+**Unrecognised modifier text is refused, not downgraded.** That matters here more than it looks: a
+dropped Ctrl turns Ctrl+F into bare `f`, and bare `f` is chess's **file-f selector** — a different
+valid action, not a no-op. Verified live: bare `f` sets `pendingFile=F` while the board stays put.
+
+This is what makes the flipped board reachable, so `--verify` covers both orientations. Ctrl+F
+toggles `app_state.flipBoard`, and the mapper reads it: unflipped `d2` is cell `(106,46)`, flipped it
+is `(106,16)`, and the app confirms `selected: "d2"` either way.
+
+An injected chord is what the real parser produces — a terminal sends Ctrl+letter as one control byte
+that `VirtualTerminal` decodes to `(ConsoleKey.A + n, Control)` — so this drives the app's genuine
+binding, not an inspector-only path.
 
 See `run-tui` for launching the app and the full verb table. **Launch ONE instance.**
