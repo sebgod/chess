@@ -58,6 +58,17 @@ grep -oE "command server on 127\.0\.0\.1:([0-9]+)" inspector.log
 instance makes the next `dotnet build` fail with MSB3021 file-in-use. `taskkill //F //IM
 Chess.Console.exe` before rebuilding.
 
+**Say so when you kill it.** `cmd //k` keeps the window open, so a killed app leaves a bare
+command prompt on screen — indistinguishable from a crash to whoever is looking at that
+window. Tell the user you killed it, in the same message. Told after the fact, they will
+reasonably attribute the prompt to whatever they last did (this happened: a `taskkill` was
+read as "resizing crashes the app"). To tell the two apart: `taskkill` leaves **no** stack
+trace in `inspector.log`, a real crash does; and a live app answers `ping`.
+
+Check for the process with the filtered form, `tasklist //FI "IMAGENAME eq Chess.Console.exe"`.
+`tasklist | grep -i chess | head` is a trap — dozens of `dotnet.exe` rows sort first and the
+`head` cuts off before any `Chess.*` line, so a running app reads as absent.
+
 Protocol: newline-delimited JSON over TCP, `{"id":1,"method":"m","params":{}}` →
 `{"id":1,"result":...}` or `{"id":1,"error":"..."}`.
 
@@ -79,6 +90,23 @@ them without a line of terminal code. A failing step is recorded in place (`"err
 batch still completes, so a long script reports *which* step broke.
 
 - **A move is four keys**: file letter then rank digit, twice. e2e4 = `e`,`2`,`e`,`4`.
+
+### Resizing it (the inspector has no verb for this)
+
+A resize is a property of the **window**, not of the app, so it is driven from outside:
+`resize_window.ps1` in this skill directory moves the window and reports whether the app
+survived. The resize path rebuilds the renderer surface and re-arranges the frame — including a
+shape change (flanked ⇄ stacked) when the aspect crosses over — so it is worth exercising after
+any layout or Console.Lib change.
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File .claude/skills/run-tui/resize_window.ps1 -Width 1000 -Height 760
+```
+
+**The window belongs to `WindowsTerminal.exe`** — not to `Chess.Console.exe`, whose
+`MainWindowHandle` is `IntPtr.Zero`, and not to its `cmd.exe` parent either. Find it by the
+window title `start "Chess TUI"` set, whoever owns it. Then confirm through the inspector that
+`size` reports new `columns`/`rows` and that `screen` still has its chrome.
 
 ### Two ways to drive it
 
@@ -103,6 +131,16 @@ the move reaches both `app_state` and the history panel.
   drivable. Unrecognised modifier text is **refused** rather than sent as a bare key — bare `f` is
   the file-f selector, so a silently-dropped Ctrl would do something else entirely.
 - `CHESS_INSPECTOR=1` also enables the cell buffer, which is what gives `screen` content.
+- **`P:0 (0% partial)` is expected in a wide terminal, and it is not the cell-buffer diff.** In a
+  layout with an external captured gutter (`Placement.HasCapturedGutter`, i.e. the flanked frame a
+  wide terminal picks) the partial path is unreachable, because the two sets are disjoint: a
+  **selection** deliberately returns *empty* clip rects (`GameUI.TrySelect` — legal-move dots land on
+  arbitrary squares, so it asks for a full redraw), while a **move** returns rich clip rects but also
+  makes the tray stale (`ConsoleGameDisplayBase.TrayIsStale` is true on every ply), which forces a
+  full blit. So nothing can be partial. Narrow/stacked frames use in-board strips instead, no gutter,
+  and there moves *do* render partially — that is where to look if you are testing the clip logic.
+  Separately, a bare file key (`e`) repaints only the status bar, so the frame counter correctly does
+  not move at all — don't read that as a dropped frame.
 - `input_log` is the fastest route to any input bug: it shows the raw event and what state
   it changed. That is how the mouse-motion-as-click bug was found.
 
