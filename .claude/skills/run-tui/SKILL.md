@@ -69,8 +69,14 @@ Protocol: newline-delimited JSON over TCP, `{"id":1,"method":"m","params":{}}` �
 | `row` `{row}` / `cell` `{column,row}` | one row; one cell's glyph, kind and pen |
 | `appState` | `selected`, `pendingFile`, `sideToMove`, `plies`, `mode`, `status`, `squareSize` |
 | `inputLog` | last 64 events **with the state each changed** |
-| `key` `{key}` | a keystroke — `"Escape"`, `"F1"`, or a bare char |
+| `key` `{key}` `{mods}` | a keystroke; `mods` for a chord (`"Ctrl"`, `"Ctrl+Shift"`) |
 | `click` `{column,row}` | press+release at that cell's centre |
+| `batch` `{steps}` | run `[{method,params}, …]` one per pump, results as an array |
+| `wait` `{frames}` | idle N frames — only meaningful as a batch step |
+
+`batch` and `wait` come from the shared core (DIR.Lib 7.3), not from Console.Lib, so the TUI gained
+them without a line of terminal code. A failing step is recorded in place (`"error: …"`) and the
+batch still completes, so a long script reports *which* step broke.
 
 - **A move is four keys**: file letter then rank digit, twice. e2e4 = `e`,`2`,`e`,`4`.
 
