@@ -58,6 +58,20 @@ grep -oE "command server on 127\.0\.0\.1:([0-9]+)" inspector.log
 instance makes the next `dotnet build` fail with MSB3021 file-in-use. `taskkill //F //IM
 Chess.Console.exe` before rebuilding.
 
+**Pick the mode and flags BEFORE launching — a relaunch to change `--mode` is the most common
+way a second window appears.** The startup flags are not adjustable afterwards, so decide from
+what you need to drive:
+- **`--mode pvp`** when you want to script a known move sequence: you control BOTH sides, so a
+  12-move line plays out deterministically (that is what fills the history panel, reaches a
+  two-digit move number, and exercises both ply columns).
+- **`--mode pvc --side white`** only when you actually need engine replies. You cannot script
+  more than a move or two blind — the engine's reply decides what is legal next, so a
+  pre-planned white line desynchronises immediately.
+
+Getting this wrong and relaunching leaves a dead window on the user's screen (see below) and
+reads to them as "the agent keeps starting instances", which is what they see: the windows, not
+the reasoning.
+
 **Say so when you kill it.** `cmd //k` keeps the window open, so a killed app leaves a bare
 command prompt on screen — indistinguishable from a crash to whoever is looking at that
 window. Tell the user you killed it, in the same message. Told after the fact, they will
