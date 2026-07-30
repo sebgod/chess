@@ -407,27 +407,14 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         // ply columns per row. RenderLayout draws each cell AND auto-binds its click region from the
         // same arranged rect, so the history hit-targets cannot drift from what's drawn. Rows lay out
         // in the controller's ContentArea, which reserves the scrollbar column when the list overflows.
-        var idxColW = fontSize * 3.5f;
+        // The row itself is HistoryRowLayout's, shared with the terminal's list rows — only the palette
+        // and the row height are ours (the row states no sizing, see BuildRow).
         var rows = new Layout.Node[count];
         for (var i = 0; i < count; i++)
         {
-            var moveIdx = first + i;
-            var whitePlyIdx = moveIdx * 2;
-            var (idxStr, whitePly) = plies.GetRecordAndPGNIdx(whitePlyIdx);
-            var hasBlack = whitePlyIdx + 1 < plyCount;
-
-            var idxCell = Layout.Builder
-                .Text(idxStr.Trim(), fontSize, HistoryIndexColor, TextAlign.Far, TextAlign.Center)
-                .WFixed(idxColW).HStar();
-
-            var whiteCell = HistoryPlyCell(whitePly.ToString(), whitePlyIdx, highlightPly == whitePlyIdx);
-
-            var blackCell = hasBlack
-                ? HistoryPlyCell(plies.GetRecordAndPGNIdx(whitePlyIdx + 1).Ply.ToString(),
-                    whitePlyIdx + 1, highlightPly == whitePlyIdx + 1)
-                : Layout.Builder.Spacer().Stretch();
-
-            rows[i] = Layout.Builder.HStack(idxCell, whiteCell, blackCell).RowH(rowH);
+            rows[i] = HistoryRowLayout
+                .BuildRow(plies, first + i, highlightPly, fontSize, HistoryPalette)
+                .RowH(rowH);
         }
 
         RenderLayout(Layout.Builder.VStack(rows), _historyScroll.ContentArea, _labelFont, dpiScale: 1f);
@@ -436,15 +423,13 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         _historyScroll.DrawScrollBar(FillRect, track: HistorySepColor, thumb: HistoryIndexColor);
     }
 
-    /// <summary>Builds one clickable ply cell for the history tree, highlighting it during playback.</summary>
-    private Layout.Node HistoryPlyCell(string ply, int plyIndex, bool highlight)
-    {
-        var cell = Layout.Builder
-            .Text(ply, ChromeFontSize, highlight ? PlaybackHighlightText : FontColor, TextAlign.Near, TextAlign.Center)
-            .Stretch()
-            .Clickable(new HitResult.ListItemHit(GameUI.HistoryListId, plyIndex));
-        return highlight ? cell.Bg(PlaybackHighlightBg) : cell;
-    }
+    /// <summary>This display's colours for a shared <see cref="HistoryRowLayout"/> row. No row background:
+    /// <see cref="RenderHistoryPanel"/> has already filled the panel behind the rows.</summary>
+    private static HistoryRowPalette HistoryPalette => new(
+        Index: HistoryIndexColor,
+        Ply: FontColor,
+        Highlight: PlaybackHighlightText,
+        HighlightBackground: PlaybackHighlightBg);
 
     /// <summary>
     /// Keeps the scroll offset in step with GameUI's playback state (read-only here — the sync runs
