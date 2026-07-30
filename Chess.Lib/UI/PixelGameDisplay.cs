@@ -368,7 +368,7 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
             GameUIMode.Playback => Layout.Builder
                 .Text("▶ Latest", fontSize, PlaybackHighlightText, TextAlign.Far, TextAlign.Center)
                 .Stretch()
-                .Clickable(new HitResult.ListItemHit("History", _game.Plies.Count)),
+                .Clickable(new HitResult.ListItemHit(GameUI.HistoryListId, _game.Plies.Count)),
             GameUIMode.Setup => Layout.Builder
                 .Text("▶ Start", fontSize, PlaybackHighlightText, TextAlign.Far, TextAlign.Center)
                 .Stretch()
@@ -442,7 +442,7 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         var cell = Layout.Builder
             .Text(ply, ChromeFontSize, highlight ? PlaybackHighlightText : FontColor, TextAlign.Near, TextAlign.Center)
             .Stretch()
-            .Clickable(new HitResult.ListItemHit("History", plyIndex));
+            .Clickable(new HitResult.ListItemHit(GameUI.HistoryListId, plyIndex));
         return highlight ? cell.Bg(PlaybackHighlightBg) : cell;
     }
 
@@ -607,7 +607,7 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
     {
         // Use the hit-test system from PixelWidgetBase
         var hit = HitTest(px, py);
-        if (hit is HitResult.ListItemHit { ListId: "History" } historyHit)
+        if (hit is HitResult.ListItemHit { ListId: GameUI.HistoryListId } historyHit)
             return historyHit.Index;
 
         // The setup chip rides the same tap path (the host routes every tap through GameUI, which

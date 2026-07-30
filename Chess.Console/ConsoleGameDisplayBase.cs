@@ -231,26 +231,16 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
             Math.Max(a.Y + a.Height, b.Y + b.Height) - y);
     }
 
-    private int? ResolveHistoryClick(int px, int py)
-    {
-        // Asked of the list, not reconstructed here: it owns the scroll state, so it is the only thing
-        // that knows the header displaces row 0, that visible row N is item ScrollOffset + N, and that
-        // the scrollbar owns the last column. Splitting the row by the full viewport width instead —
-        // which is what this did before — turned a click on the scrollbar into a jump to Black's ply.
-        if (_historyList.HitTestRow(px, py) is not (var moveIdx, _, var column, var columns))
-            return null;
-
-        var plyCount = UI.Game.PlyCount;
-        var whitePlyIdx = moveIdx * 2;
-
-        if (whitePlyIdx >= plyCount)
-            return null;
-
-        // A row reads "<n>. <white> <black>", so the right half of the CONTENT picks Black's ply.
-        return column >= columns / 2 && whitePlyIdx + 1 < plyCount
-            ? whitePlyIdx + 1
-            : whitePlyIdx;
-    }
+    private int? ResolveHistoryClick(int px, int py) =>
+        // Resolved against the rows AS ARRANGED, so the ply a click lands on is the ply that was painted
+        // there. Every previous shape of this method re-derived the geometry and drifted from it: splitting
+        // by the full viewport width made a click on the scrollbar jump to Black, and splitting the content
+        // in half put the boundary four columns inside White's cell (see HistoryMoveRow). DispatchRowHit
+        // also owns the three things the caller kept getting wrong for free — the header displacing row 0,
+        // visible row N being item ScrollOffset + N, and the scrollbar column being inert.
+        _historyList.DispatchRowHit(px, py) is HitResult.ListItemHit { ListId: GameUI.HistoryListId } hit
+            ? hit.Index
+            : null;
 
     public void RenderInitial(Game game)
     {

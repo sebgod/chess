@@ -151,16 +151,26 @@ public class ConsoleGameDisplayLayoutTests
         display.UI.Mode.ShouldNotBe(GameUIMode.Playback);
     }
 
-    [Fact]
-    public void HistoryClick_RightHalfOfARow_PicksBlacksPly()
+    /// <summary>
+    /// The boundary between the two plies is where the row PAINTS it, not half the row. A move row lays out
+    /// as a 7-column index cell, White's 8 and Black's 9, so on a 23-column content area (column 59 is the
+    /// scrollbar) White ends at column 50 and Black starts at 51. Splitting the content in half put the
+    /// boundary at 47 — four columns inside White's cell — so clicking the tail of a long white move
+    /// ("Qxd5+" reaches column 47) jumped to Black's ply. These two cases straddle the painted edge.
+    /// </summary>
+    [Theory]
+    [InlineData(40, 0, "the move number labels the move, so it picks White's ply")]
+    [InlineData(50, 0, "White's ply is painted through column 50")]
+    [InlineData(51, 1, "Black's ply starts at column 51")]
+    [InlineData(58, 1, "the last content column is still Black's ply")]
+    public void HistoryClick_PicksThePlyPaintedUnderIt(int column, int expectedParity, string because)
     {
         var (display, _, _) = Setup();
 
-        // Content spans columns 36..58 (59 is the scrollbar), so its right half starts at column 47.
-        display.UI.HandleMouseDown(ColumnToPixel(50), RowToPixel(1));
+        display.UI.HandleMouseDown(ColumnToPixel(column), RowToPixel(1));
 
-        display.UI.Mode.ShouldBe(GameUIMode.Playback);
-        (display.UI.PlaybackPlyIndex % 2).ShouldBe(1, "the right half of a row is Black's ply");
+        display.UI.Mode.ShouldBe(GameUIMode.Playback, because);
+        (display.UI.PlaybackPlyIndex % 2).ShouldBe(expectedParity, because);
     }
 
     [Fact]

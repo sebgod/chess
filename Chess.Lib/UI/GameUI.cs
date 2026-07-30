@@ -303,6 +303,14 @@ public class GameUI
     public Func<int, int, int?>? ResolveHistoryClick { get; }
 
     /// <summary>
+    /// The list id a history ply cell claims its click under. Shared because both display families now
+    /// author that cell as a <c>Layout.Node</c> and resolve the hit off the arranged tree — the pixel one
+    /// through <c>PixelWidgetBase.HitTest</c>, the terminal one through <c>ScrollableList.DispatchRowHit</c>
+    /// — so the id is part of one contract rather than a literal repeated per front-end.
+    /// </summary>
+    public const string HistoryListId = "History";
+
+    /// <summary>
     /// Returns the board to display: historical board during playback, current board otherwise.
     /// </summary>
     public Board DisplayBoard => Mode == GameUIMode.Playback
