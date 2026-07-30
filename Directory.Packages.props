@@ -6,7 +6,7 @@
     <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Console.Lib" Version="4.8.*" />
+    <PackageVersion Include="Console.Lib" Version="4.10.*" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="DIR.Lib" Version="7.3.*" />
     <!-- LAN.Lib: the LAN peer discovery (UDP announce beacon + self-expiring peer table) that was
