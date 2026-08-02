@@ -740,9 +740,11 @@ public class GameUI
     private void RenderBoard<TRenderer, TSurface>(TRenderer renderer, in RectInt clip)
         where TRenderer : Renderer<TSurface>
     {
-        // Collect squares to draw and pieces to render
+        // Collect squares to draw and pieces to render. Both buffers are sized by the BOARD, not by a
+        // legal army: setup mode lets a piece be placed on any empty square, so a standard board (already
+        // at 32) plus one placement overflowed a 32-entry piece buffer and took the whole app down.
         Span<(RectInt Rect, RGBAColor32 Color)> squaresToDraw = stackalloc (RectInt, RGBAColor32)[64];
-        Span<(Position Position, Piece Piece, RectInt Rect)> piecesToDraw = stackalloc (Position, Piece, RectInt)[32];
+        Span<(Position Position, Piece Piece, RectInt Rect)> piecesToDraw = stackalloc (Position, Piece, RectInt)[64];
         var squareCount = 0;
         var pieceCount = 0;
 

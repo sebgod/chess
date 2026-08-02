@@ -655,6 +655,44 @@ public class GameUITests
         ui.PlacementSide.ShouldBe(Side.White);
     }
 
+    /// <summary>
+    /// Setup mode is the one place the board can hold more pieces than a legal army, and RenderBoard's
+    /// piece buffer was sized 32 — so a custom game started from the STANDARD board (already 32 pieces)
+    /// died on the first placement onto an empty square. Reported against Chess.GUI: replacing the b2
+    /// pawn with a bishop was fine (no net change), adding a pawn on b3 overflowed and closed the window.
+    /// Rendering is the only way to catch it — every piece of state was correct.
+    /// </summary>
+    [Fact]
+    public void Render_SetupModeAddingPieceBeyondAFullArmy_DoesNotOverflow()
+    {
+        var game = new Game();
+        game.SetPiece(B2, new Piece(PieceType.Bishop, Side.White)); // replace: still 32
+        game.SetPiece(B3, new Piece(PieceType.Pawn, Side.White));   // add: 33 — the crash
+
+        Should.NotThrow(() => RenderToImage(game));
+    }
+
+    /// <summary>The buffer's real bound: every square occupied, which setup mode permits.</summary>
+    [Fact]
+    public void Render_SetupModeWithEverySquareOccupied_DoesNotOverflow()
+    {
+        var game = new Game();
+        foreach (var position in AllPositions())
+            game.SetPiece(position, new Piece(PieceType.Queen, Side.White));
+
+        Should.NotThrow(() => RenderToImage(game));
+    }
+
+    private static void RenderToImage(Game game)
+    {
+        const int size = 800;
+        var renderer = new RgbaImageRenderer(size, size);
+        var ui = CreateUI(game);
+        ui.IsSetupMode = true;
+        ui.Render<RgbaImage, Renderer<RgbaImage>>(renderer,
+            new RectInt(new PointInt(size, size), PointInt.Origin));
+    }
+
     // ── Keymap toggle ──────────────────────────────────────────────
 
     [Fact]
