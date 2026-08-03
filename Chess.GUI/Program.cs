@@ -7,7 +7,12 @@ using DIR.Lib;
 using SdlVulkan.Renderer;
 using System.Numerics;
 
-using var sdlWindow = SdlVulkanWindow.Create("Chess", 1050, 830);
+// 1280x800 (1.6:1), not the near-square 1050x830 this opened at, for the same reason the web canvas
+// asks for that aspect: GameFrameLayout costs its shapes off the proportions it is handed, and the
+// flanked/stacked crossover sits at ~1.32:1. A 1.265:1 window lands just inside stacked, where the
+// board is height-bound — so it left half its width as empty margin and had a full-width strip for
+// its history instead of a gutter. Resizing still re-chooses; this is only where it starts.
+using var sdlWindow = SdlVulkanWindow.Create("Chess", 1280, 800);
 sdlWindow.GetSizeInPixels(out var w, out var h);
 
 var ctx = VulkanContext.Create(sdlWindow.Instance, sdlWindow.Surface, (uint)w, (uint)h);
