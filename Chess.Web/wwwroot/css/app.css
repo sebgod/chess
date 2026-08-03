@@ -1,3 +1,14 @@
+/* Chrome styled after the desktop GUI, and laid out like it: a fixed full-viewport flex column —
+   titlebar, toolbar, then the board taking everything left over. No page scroll, no overscroll
+   bounce, no text selection dragging the document around while playing.
+
+   The board fills the viewport rather than sitting in a fixed-aspect box in the middle of a
+   scrolling page, which is not just cosmetic: PixelGameDisplay's GameFrameLayout costs its shapes
+   off the proportions it is handed, so the canvas's aspect IS the layout decision. Handing it the
+   viewport gets the right answer for free — a landscape window flanks the board with a move-history
+   gutter and a captured-pieces gutter, a phone in portrait stacks the history underneath — where
+   the old locked 1050/830 box asked for a near-square surface on every device and landed just
+   inside stacked territory, spending half its width on empty margin. */
 :root {
     color-scheme: dark;
     --bg: #16191d;
@@ -13,63 +24,69 @@
 html, body {
     margin: 0;
     padding: 0;
+    height: 100%;
+    overflow: hidden;            /* the app IS the window — never scroll the document */
+    overscroll-behavior: none;   /* no rubber-band bounce when a drag hits the edge */
     background: var(--bg);
     color: var(--fg);
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     -webkit-font-smoothing: antialiased;
-    /* Kill rubber-band/back-forward swipe gestures at the page edge. NOT overflow:hidden — the
-       page still scrolls (controls sit below the board on short viewports); gestures ON the
-       canvas are already fully suppressed by WebGlCanvas's inline touch-action:none. */
-    overscroll-behavior: none;
 }
+
+#app { height: 100%; }
 
 .app {
-    /* Wide enough for the canvas at its full 1050px design width (+ padding). */
-    max-width: 1100px;
-    margin: 0 auto;
-    padding: 1.5rem 1rem 3rem;
+    /* dvh, not vh: a mobile browser's collapsing address bar changes the viewport, and vh would
+       leave the toolbar clipped below the fold for the rest of the session. */
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
-header h1 {
-    margin: 0 0 .25rem;
-    font-size: 1.8rem;
-    font-weight: 650;
-}
-
-header h1 .tag {
-    font-size: .7em;
-    color: var(--bg);
-    background: var(--accent);
-    border-radius: 6px;
-    padding: .1em .45em;
-    vertical-align: middle;
-}
-
-.blurb {
-    margin: 0 0 1rem;
-    color: var(--muted);
-    line-height: 1.45;
-    max-width: 62ch;
-}
-
-.blurb code {
-    color: var(--fg);
+/* --- titlebar: identity, load status, and the two help panels --- */
+.titlebar {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    flex: none;
     background: var(--panel);
-    border-radius: 4px;
-    padding: .05em .35em;
-    font-size: .9em;
+    border-bottom: 1px solid var(--border);
+    padding: .5rem .9rem;
 }
 
-.status {
-    margin: 0 0 .75rem;
+.titlebar .title {
+    font-size: 1.15rem;
+    font-weight: 650;
+    letter-spacing: .01em;
+}
+
+.titlebar .tagline {
+    color: var(--muted);
+    font-size: .85rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.titlebar .spacer { flex: 1; }
+
+.titlebar .status {
+    color: var(--muted);
+    font-size: .85rem;
     font-variant-numeric: tabular-nums;
-    font-weight: 600;
-    min-height: 1.4em;
+    white-space: nowrap;
 }
 
-/* Post-load the status renders inside the canvas (PixelGameDisplay's status bar); the paragraph
+/* Below this the titlebar is title + chips only — the pitch is in the help panel anyway, and a
+   phone needs those rows of height for the board far more than it needs a subtitle. */
+@media (max-width: 720px) {
+    .titlebar .tagline { display: none; }
+}
+
+/* Post-load the status renders inside the canvas (PixelGameDisplay's status bar); the element
    stays in the DOM for aria-live announcements only. Visually removed WITHOUT display:none so
-   screen readers keep reading it — and without occupying layout, so the board never shifts. */
+   screen readers keep reading it — and without occupying layout, so no chrome shifts. */
 .status.sr-only {
     position: absolute;
     width: 1px;
@@ -81,101 +98,183 @@ header h1 .tag {
     white-space: nowrap;
 }
 
-canvas#board {
-    /* Display size only — the backing buffer is this laid-out box × devicePixelRatio, managed by
-       WebGl.Renderer's WebGlCanvas component (which also maps clicks back into backing space).
-       1050/830 == the desktop GUI window: the canvas hosts the same PixelGameDisplay chrome
-       (board + move-history panel + status bar), which splits whatever size it gets. Aspect is
-       locked so uniform scaling on narrow screens distorts nothing. touch-action/user-select
-       come inline from the component. */
-    width: 1050px;
-    max-width: 100%;
-    aspect-ratio: 1050 / 830;
-    height: auto;
-    display: block;
-    background: var(--panel);
+/* --- chips: the help buttons, and the panel's close button --- */
+.chip {
+    background: transparent;
+    color: var(--muted);
     border: 1px solid var(--border);
     border-radius: 10px;
+    padding: .2rem .6rem;
+    font: inherit;
+    font-size: .85rem;
+    cursor: pointer;
+    white-space: nowrap;
 }
 
-/* The canvas is focusable (tabindex) so the startup menu can take keyboard input; the menu draws
-   its own selection highlight, so a browser focus ring on the board would just be noise. */
-canvas#board:focus { outline: none; }
+.chip:hover, .chip.active { border-color: var(--accent); color: var(--accent); }
 
-.controls {
+/* --- toolbar: New game / difficulty / the Play-by-Link share row --- */
+.toolbar {
     display: flex;
     flex-wrap: wrap;
-    gap: .75rem 1.25rem;
+    gap: .5rem .9rem;
     align-items: center;
-    margin-top: 1rem;
+    flex: none;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: .5rem .9rem;
 }
 
-.controls button, .controls select {
-    background: var(--panel);
+.toolbar button, .toolbar select {
+    background: var(--bg);
     color: var(--fg);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: .5rem .8rem;
+    padding: .4rem .7rem;
     font: inherit;
     cursor: pointer;
 }
 
-.controls button.new { font-weight: 600; }
+.toolbar button.new { font-weight: 600; }
 
 /* The share row's Email entry is an <a href="mailto:..."> — style it like its sibling buttons
    (the button/select rule above doesn't reach anchors). */
-.controls a.share {
-    background: var(--panel);
+.toolbar a.share {
+    background: var(--bg);
     color: var(--fg);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: .5rem .8rem;
+    padding: .4rem .7rem;
     font: inherit;
     text-decoration: none;
     display: inline-flex;
     align-items: center;
 }
 
-.controls a.share:hover { border-color: var(--accent); }
-.controls button.share.copied { border-color: #6fdc8c; }
+.toolbar button:hover:not(:disabled), .toolbar a.share:hover { border-color: var(--accent); }
+.toolbar button.share.copied { border-color: #6fdc8c; }
+.toolbar button:disabled, .toolbar select:disabled { opacity: .5; cursor: default; }
+.toolbar label { color: var(--muted); display: inline-flex; gap: .4rem; align-items: center; }
+.toolbar select { padding: .3rem .45rem; }
 
-/* --- "How Play by Link works" explainer --- */
-.help {
-    margin-top: 1.25rem;
+/* --- the board: everything the chrome leaves --- */
+/* min-height:0 is load-bearing: without it a flex item refuses to shrink below its content and
+   the canvas pushes the toolbar off-screen instead of taking the remainder. position:relative
+   anchors the help panel over the board. */
+.canvas-host {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+}
+
+canvas#board {
+    /* Display size only — the backing buffer is this laid-out box × devicePixelRatio, managed by
+       WebGl.Renderer's WebGlCanvas component (whose ResizeObserver picks up this flex reflow like
+       any window resize, and which maps clicks back into backing space). The canvas hosts the same
+       PixelGameDisplay chrome as the desktop GUI — board + move-history panel + captured tray +
+       status bar — which splits whatever size it is given. touch-action/user-select come inline
+       from the component. */
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: var(--panel);
+    outline: none; /* the board is the whole workspace; the menu draws its own selection highlight */
+}
+
+/* --- help panels, over the board (there is no page left to scroll them into) --- */
+.panel-scrim {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, .55);
+}
+
+.panel {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(64ch, calc(100% - 2rem));
+    max-height: calc(100% - 2rem);
+    display: flex;
+    flex-direction: column;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, .5);
+    outline: none;
+}
+
+.panel-head {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .7rem .9rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.panel-head strong { flex: 1; font-size: 1rem; }
+
+.panel-body {
+    padding: .25rem .9rem 1rem;
+    overflow-y: auto;
     color: var(--muted);
-    max-width: 62ch;
     line-height: 1.5;
 }
 
-.help summary {
-    cursor: pointer;
-    font-weight: 600;
+.panel-body p { margin: .75rem 0; }
+.panel-body ol { margin: .75rem 0; padding-left: 1.4rem; }
+.panel-body li { margin: .35rem 0; }
+.panel-body strong, .panel-body em { color: var(--fg); }
+.panel-body a { color: var(--accent); }
+
+.panel-body code {
     color: var(--fg);
+    background: var(--bg);
+    border-radius: 4px;
+    padding: .05em .35em;
+    font-size: .9em;
 }
 
-.help summary:hover { color: var(--accent); }
+/* --- no WebGL2: the board's place, taken by an explanation --- */
+.fatal {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: .5rem;
+    padding: 2rem;
+    overflow-y: auto;
+    background: var(--bg);
+    color: var(--muted);
+    line-height: 1.5;
+}
 
-.help .help-body {
+.fatal h2 {
+    margin: 0;
+    color: var(--fg);
+    font-size: 1.3rem;
+}
+
+.fatal p { margin: 0; max-width: 62ch; }
+.fatal strong { color: var(--fg); }
+
+/* The underlying exception text — present for a bug report, quiet enough to ignore. */
+.fatal .detail {
     margin-top: .5rem;
-    border-left: 2px solid var(--border);
-    padding-left: 1rem;
+    font-size: .8rem;
+    color: var(--border);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
-
-.help p { margin: .5rem 0; }
-.help ol { margin: .5rem 0; padding-left: 1.4rem; }
-.help li { margin: .25rem 0; }
-.help strong, .help em { color: var(--fg); }
-.controls button:disabled, .controls select:disabled { opacity: .5; cursor: default; }
-.controls label { color: var(--muted); display: inline-flex; gap: .4rem; align-items: center; }
-.controls select { padding: .35rem .5rem; }
 
 /* --- boot + Blazor error UI --- */
 .boot {
     display: flex;
     flex-direction: column;
     align-items: center;
+    justify-content: center;
+    height: 100dvh;
     gap: 1rem;
-    padding-top: 20vh;
     color: var(--muted);
 }
 

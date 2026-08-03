@@ -22,7 +22,7 @@ public sealed class CustomGameSetupTests(ChessWebFixture fixture)
     // WASM cold-boot (download runtime, load fonts, first frame) dwarfs any DOM settle time.
     private const float BootTimeout = 60_000;
 
-    private static ILocator Status(IPage page) => page.Locator("p.status");
+    private static ILocator Status(IPage page) => page.Locator(".status");
     private static ILocator StartButton(IPage page) => page.Locator("button.new", new() { HasTextString = "Start game" });
 
     private static async Task PressAsync(IPage page, string key)
