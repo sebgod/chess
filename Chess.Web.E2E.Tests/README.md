@@ -7,9 +7,9 @@ The whole UI (startup wizard and board) is drawn into a `<canvas>`, so the tests
 only on the observable DOM surface that the unit tests can't reach:
 
 - the **address-bar fragment** (`history.replaceState` — the game *is* the URL),
-- the aria-live **status paragraph** (`p.status`),
+- the aria-live **status element** (`.status`),
 - the real DOM **share-row buttons** (Copy / Email / Share / Undo),
-- the help **`<details>`** explainer,
+- the titlebar **help chips** and the `.panel` they open,
 - and the **clipboard** (Copy link).
 
 Moves are entered through the desktop square-entry keymap — `"e2e4"` is just the keys `e,2,e,4` sent

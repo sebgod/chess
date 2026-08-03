@@ -22,7 +22,7 @@ public sealed class PlayVsComputerTests(ChessWebFixture fixture)
     // WASM cold-boot (download runtime, load fonts, first frame) dwarfs any DOM settle time.
     private const float BootTimeout = 60_000;
 
-    private static ILocator Status(IPage page) => page.Locator("p.status");
+    private static ILocator Status(IPage page) => page.Locator(".status");
 
     // Walks the startup wizard to a Player-vs-Computer game as White against the weakest engine.
     // Digits select-and-confirm in the menu, so each press is one whole step.
@@ -134,7 +134,7 @@ public sealed class PlayVsComputerTests(ChessWebFixture fixture)
     // before the block starts and the log is read back afterwards, which cannot miss it.
     private static async Task InstallStatusRecorderAsync(IPage page) => await page.EvaluateAsync("""
         () => {
-            const el = document.querySelector('p.status');
+            const el = document.querySelector('.status');
             window.__chessStatus = [];
             new MutationObserver(() => window.__chessStatus.push(
                 { t: performance.now(), s: el.textContent.trim() }))

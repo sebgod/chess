@@ -29,9 +29,9 @@ A chess game with browser (WebGL), terminal (Sixel), and Vulkan GUI rendering ba
 
 ### Play online
 
-The browser version is live at **[sebgod.github.io/chess](https://sebgod.github.io/chess/)** — it runs entirely in your browser as WebAssembly, so there is nothing to install. Append `?renderer=cpu` to force the software renderer on devices without WebGL2.
+The browser version is live at **[sebgod.github.io/chess](https://sebgod.github.io/chess/)** — it runs entirely in your browser as WebAssembly, so there is nothing to install. It draws through WebGL2, which every browser has shipped since 2017; anything older (iOS 14 or earlier, Internet Explorer) gets an explanation instead of a board.
 
-It includes **Play by Link**: choose *Play by Link* from the menu and pick your colour, make your move, then copy, email, or share the link with your opponent. The link *is* the game — opening one means it's your turn. The in-page "How Play by Link works" section explains the full flow.
+It includes **Play by Link**: choose *Play by Link* from the menu and pick your colour, make your move, then copy, email, or share the link with your opponent. The link *is* the game — opening one means it's your turn. The titlebar's "Play by link" panel explains the full flow.
 
 ### Download a release
 

@@ -8,7 +8,7 @@ namespace Chess.Web.E2E.Tests;
 /// Browser E2E for the Play-by-Link correspondence feature. The whole UI (wizard + board) is drawn
 /// into a &lt;canvas&gt;, so these tests never read pixels — they assert on the observable surface
 /// that unit tests can't reach: the address-bar fragment (written via history.replaceState), the
-/// aria-live status paragraph, the real DOM share-row buttons, the help &lt;details&gt;, and the
+/// aria-live status element, the real DOM share-row buttons, the titlebar help panels, and the
 /// clipboard. Moves are made through the desktop square-entry keymap ("e2e4" == keys e,2,e,4),
 /// which needs no pixel math.
 /// </summary>
@@ -18,7 +18,7 @@ public sealed class PlayByLinkTests(ChessWebFixture fixture)
     // WASM cold-boot (download runtime, load fonts, first frame) dwarfs any DOM settle time.
     private const float BootTimeout = 60_000;
 
-    private ILocator Status(IPage page) => page.Locator("p.status");
+    private ILocator Status(IPage page) => page.Locator(".status");
 
     private async Task<IPage> OpenAsync(string fragment)
     {
@@ -58,8 +58,11 @@ public sealed class PlayByLinkTests(ChessWebFixture fixture)
         // The board canvas is always present; the share row belongs to a live link game only.
         await Expect(page.Locator("#board")).ToBeVisibleAsync();
         await Expect(page.Locator("button.share.copy")).ToHaveCountAsync(0);
-        // The explainer is discoverable but collapsed off the menu (it springs open in a game).
-        await Expect(page.Locator("details.help")).Not.ToHaveAttributeAsync("open", "");
+        // The explainer is discoverable from the titlebar, but never in the way: the board fills the
+        // viewport now, so an auto-opened panel would cover the thing the visitor came for.
+        await Expect(page.Locator("button.chip", new() { HasTextString = "Play by link" }))
+            .ToBeVisibleAsync();
+        await Expect(page.Locator(".panel")).ToHaveCountAsync(0);
     }
 
     [Fact]
@@ -70,8 +73,44 @@ public sealed class PlayByLinkTests(ChessWebFixture fixture)
 
         await Expect(Status(page)).ToContainTextAsync("Your move (White)",
             new() { Timeout = BootTimeout });
-        // A link game opens the explainer automatically, right where the sender first needs it.
-        await Expect(page.Locator("details.help")).ToHaveAttributeAsync("open", "");
+        // The board arrives unobstructed; the explainer is one deliberate click away.
+        await Expect(page.Locator(".panel")).ToHaveCountAsync(0);
+    }
+
+    /// <summary>
+    /// The explainer used to spring open by itself on a link game. It no longer does — over a
+    /// full-viewport board that reads as a wall of text between the player and their move — so the
+    /// chip has to actually work, and close again, or the content is unreachable.
+    /// </summary>
+    [Fact]
+    public async Task HelpChip_OpensAndClosesTheExplainer()
+    {
+        var page = await OpenAsync("#g=");
+        await Expect(Status(page)).ToContainTextAsync("Your move (White)",
+            new() { Timeout = BootTimeout });
+
+        var chip = page.Locator("button.chip", new() { HasTextString = "Play by link" });
+        await chip.ClickAsync();
+        await Expect(page.Locator(".panel")).ToContainTextAsync("no accounts and no server");
+
+        // Escape, not just the ✕: the panel takes focus when it opens precisely so this works.
+        await page.Keyboard.PressAsync("Escape");
+        await Expect(page.Locator(".panel")).ToHaveCountAsync(0);
+    }
+
+    /// <summary>The renderer detail is off the front page entirely — behind its own chip.</summary>
+    [Fact]
+    public async Task UnderTheHoodChip_IsTheOnlyPlaceTheRendererIsNamed()
+    {
+        var page = await OpenAsync("");
+        await Expect(Status(page)).ToContainTextAsync("Choose how you'd like to play",
+            new() { Timeout = BootTimeout });
+
+        await Expect(page.Locator(".titlebar")).Not.ToContainTextAsync("WebGl.Renderer");
+
+        await page.Locator("button.chip", new() { HasTextString = "Under the hood" }).ClickAsync();
+        await Expect(page.Locator(".panel")).ToContainTextAsync("WebAssembly");
+        await Expect(page.Locator(".panel")).ToContainTextAsync("WebGl.Renderer");
     }
 
     [Fact]

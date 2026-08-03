@@ -12,8 +12,10 @@ namespace Chess.Tests;
 
 /// <summary>
 /// Offline render tests for <see cref="PixelGameDisplay{TSurface}"/> over the CPU
-/// <see cref="RgbaImageRenderer"/> (the same surface Chess.Web's <c>?renderer=cpu</c> fallback uses) —
-/// no GPU/device needed. These pin the responsive layout: a portrait phone surface must actually draw
+/// <see cref="RgbaImageRenderer"/> — no GPU/device needed, which is also what keeps the software
+/// rasterizer an honest A/B reference for the GPU front-ends now that Chess.Web has none of its own
+/// (its <c>?renderer=cpu</c> path is gone; this is where that comparison lives).
+/// These pin the responsive layout: a portrait phone surface must actually draw
 /// the board. Regression guard for the bug where the history panel width (derived from screen height)
 /// exceeded a narrow screen, giving the board a NEGATIVE width so nothing painted.
 /// </summary>
