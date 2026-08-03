@@ -319,10 +319,20 @@ public sealed class GameFrameLayout
     /// <summary>Full-width board with the history stacked in the strip left over above the status bar.</summary>
     private Layout.Node StackedFrame()
     {
-        // The one number the engine can't resolve: the board's own aspect. Clamped so it never eats the
-        // space below it, and the history Star then takes whatever remains.
+        // The one number the engine can't resolve: the board's own aspect. TWO clamps, and the history
+        // Star then takes whatever the board leaves.
+        //
+        // The second clamp is what makes this shape honest. ChooseShape prices a stacked candidate with
+        // MinStackedHistoryHeight already deducted, so a board allowed to grow back into that strip is
+        // claiming a win it was not costed for — and because a Star with nothing left to share resolves
+        // to zero without complaining, the history does not shrink, it VANISHES. It did: every surface
+        // wider than 1 : BoardAspect is height-bound here, which is every landscape and near-square one
+        // (a desktop window, the web canvas, a tablet), so the board took the whole strip and the panel
+        // arranged zero pixels tall.
         var availH = SafeArea.Height - _metrics.StatusBarHeight;
-        var boardH = MathF.Min(availH, SafeArea.Width * BoardAspect);
+        var boardH = MathF.Min(
+            MathF.Max(0f, availH - _metrics.MinStackedHistoryHeight),
+            SafeArea.Width * BoardAspect);
 
         var board = Layout.Builder.Fill(key: SlotBoard).RowH(boardH);
         var history = Layout.Builder.Fill(key: SlotHistory).Stretch();

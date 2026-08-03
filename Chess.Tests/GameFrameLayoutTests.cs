@@ -44,11 +44,51 @@ public class GameFrameLayoutTests
     // out of the board is worth more than the width the second gutter costs.
     [InlineData(1920, 1080, GameFrameShape.Flanked)]
     [InlineData(1280, 720, GameFrameShape.Flanked)]
+    [InlineData(1280, 800, GameFrameShape.Flanked)]
     // A tablet in portrait and a phone in either orientation cannot afford two gutters.
     [InlineData(1080, 2400, GameFrameShape.Stacked)]
     [InlineData(800, 1280, GameFrameShape.Stacked)]
+    // A NEAR-SQUARE landscape surface still stacks, and this is the interesting case: chess sizes its
+    // chrome off the surface HEIGHT, so a flanked gutter costs 0.275x the height whatever the width is.
+    // Two of them eat 43% of a 1050-wide surface, which starves a flanked board below what a stacked one
+    // yields — the crossover sits near 1.32:1. Stacked here is height-bound with width to spare, so it
+    // is also the shape where a board that ignores its costing swallows the history whole.
+    [InlineData(1050, 830, GameFrameShape.Stacked)]
     public void PixelSurface_GetsTheShapeItsProportionsAfford(float w, float h, GameFrameShape expected)
         => Pixels(w, h).Shape.ShouldBe(expected);
+
+    /// <summary>
+    /// A stacked candidate is COSTED with <see cref="GameFrameMetrics.MinStackedHistoryHeight"/> already
+    /// deducted, so the shape owes that strip: a board that grows back into it wins a comparison it never
+    /// paid for. And the failure is silent — a Star left with nothing resolves to zero rather than
+    /// complaining — so the panel does not get cramped, it disappears.
+    ///
+    /// <para>Which is what shipped. Every surface wider than 1 : <c>BoardAspect</c> is height-bound in this
+    /// shape, so on the near-square desktop window and the web canvas alike the history arranged zero pixels
+    /// tall and all three pixel hosts drew a board with no move list beside or below it. The suite could not
+    /// see it because the only stacked surfaces it probed were PORTRAIT, where the board is width-bound and
+    /// leaves the strip alone of its own accord.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(1050, 830)]    // near-square: height-bound, the regression
+    [InlineData(1380, 1085)]   // the web canvas at a real backing size
+    [InlineData(1050, 1000)]   // barely landscape, and still height-bound
+    [InlineData(1080, 2400)]   // portrait: width-bound, so the board leaves far more than the minimum
+    public void StackedBoard_LeavesTheHistoryStripItsCostingReserved(float w, float h)
+    {
+        var frame = Pixels(w, h);
+        frame.Shape.ShouldBe(GameFrameShape.Stacked);
+
+        var arranged = Layout.Engine.Arrange(frame.Build(),
+            new Rect<float>(0, 0, w, h), new UnitPixels());
+        var history = GameFrameLayout.Slot(arranged, GameFrameLayout.SlotHistory);
+
+        // Not merely non-zero: at least the depth the costing spent, or the win was fictitious. (This is
+        // also PixelGameDisplay's own threshold for painting a stacked history at all.)
+        history.Height.ShouldBeGreaterThanOrEqualTo(
+            ChromeFontSize(h) * 5f, $"{w}x{h} stacked history depth");
+        history.Width.ShouldBe(w, tolerance: 0.5f);
+    }
 
     /// <summary>
     /// The rule that makes the flanked shape spend a gutter it mostly leaves empty: every pixel host can
@@ -220,7 +260,8 @@ public class GameFrameLayoutTests
     private static IEnumerable<GameFrameLayout> AllShapes()
     {
         yield return Pixels(1920, 1080);   // Flanked
-        yield return Pixels(1080, 2400);   // Stacked
+        yield return Pixels(1080, 2400);   // Stacked, width-bound (portrait)
+        yield return Pixels(1050, 830);    // Stacked, HEIGHT-bound — the near-square landscape case
         yield return Terminal(108, 30);    // Flanked, in cells
         yield return Terminal(60, 12);     // SideBySide
         yield return Terminal(60, 50);     // Stacked, in cells
