@@ -17,10 +17,18 @@ to the focused canvas — so no pixel math is involved.
 
 ## Why it lives outside `Chess.sln`
 
-Exactly like `Chess.Web` itself: this project needs a browser and a running dev server, so it must
-**not** be picked up by the solution-wide `dotnet test` that CI runs on every push. It also opts out
-of the repo's Central Package Management (carries its Playwright/xUnit versions inline). Run it
+This project needs a browser and a running dev server, so it must **not** be picked up by the
+solution-wide `dotnet test` that CI runs on every push. Staying out of the solution is what makes
+that fail-**safe**: excluding it with a `--filter` instead would mean it runs whenever someone
+forgets the filter, and a browser launch failing in CI is a confusing way to find that out. Run it
 explicitly.
+
+It is **not** like `Chess.Web`, which it used to cite as precedent — that project joined the
+solution, because nothing about it required staying out. And it does **not** opt out of Central
+Package Management: versions live in `Directory.Packages.props` like every other project's. CPM is
+directory-scoped and independent of solution membership, so the opt-out bought nothing and only
+meant the `Microsoft.NET.Test.Sdk` / `xunit.v3` / `xunit.runner.visualstudio` pins here duplicated
+the central ones, free to drift the moment either side moved.
 
 ## Running
 
