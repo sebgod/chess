@@ -5,11 +5,12 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
-    <!-- The browser app is a consumer of Chess.Lib, not a shipped artifact and not
-         part of the test/desktop-release chain. It lives OUTSIDE Chess.sln and opts
-         out of the repo's Central Package Management so the Blazor deps carry their
-         own versions without touching Directory.Packages.props. Mirrors ../dotcc/DotCC.Web. -->
-    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    <!-- The browser app is a consumer of Chess.Lib and not a shipped artifact, but it IS in
+         Chess.sln and IS under the repo's Central Package Management (every version lives in
+         Directory.Packages.props). It used to be outside both, on the reasoning that it is not
+         part of the test/desktop-release chain. That cost more than it saved: `dotnet restore
+         Chess.sln` silently skipped it, so a UseLocalSiblings=false verification covered 8 of 9
+         projects, and the WebGl.Renderer pin sat here where no solution-wide sweep could see it. -->
     <IsPackable>false</IsPackable>
     <!-- A chess board doesn't need culture data; dropping ICU trims the payload. -->
     <InvariantGlobalization>true</InvariantGlobalization>
@@ -19,8 +20,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.9" />
-    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.9" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
@@ -31,13 +32,14 @@
     <ProjectReference Include="..\Chess.UCI\Chess.UCI.csproj" />
   </ItemGroup>
 
-  <!-- WebGL backend: sibling working copy for local iteration, NuGet in CI (same switch as
-       the other sibling references — Chess.Web opts out of CPM so the version rides inline). -->
+  <!-- WebGL backend: sibling working copy for local iteration, NuGet in CI — the same switch as
+       every other sibling reference, and now the same place for the version too (the pin is
+       WebGl.Renderer in Directory.Packages.props, not an inline attribute here). -->
   <ItemGroup Condition="'$(UseLocalSiblings)' == 'true'">
     <ProjectReference Include="..\..\WebGl.Renderer\src\WebGl.Renderer\WebGl.Renderer.csproj" />
   </ItemGroup>
   <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
-    <PackageReference Include="WebGl.Renderer" Version="1.16.*" />
+    <PackageReference Include="WebGl.Renderer" />
   </ItemGroup>
 
   <!-- The pure-managed render stack (board logic, DIR.Lib RgbaImageRenderer,

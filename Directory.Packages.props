@@ -9,6 +9,11 @@
     <PackageVersion Include="Console.Lib" Version="4.16.*" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="DIR.Lib" Version="7.8.*" />
+    <!-- Chess.Web's Blazor WebAssembly deps. They used to ride inline in Chess.Web.csproj, which
+         opted out of CPM entirely; that also hid the WebGl.Renderer pin below from every
+         solution-wide sweep, which is how it twice ended up two minors behind DIR.Lib. -->
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.9" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.9" />
     <!-- LAN.Lib: the LAN peer discovery (UDP announce beacon + self-expiring peer table) that was
          extracted OUT of this repo's Chess.Net — chess is now a consumer, keeping only the
          chess-specific TCP session layer on top. Same pin as tianwen's. -->
@@ -22,6 +27,9 @@
     <PackageVersion Include="SDL3-CS.Native" Version="3.5.0-preview.20260205-174353" />
     <PackageVersion Include="Vortice.Vulkan" Version="3.2.1" />
     <PackageVersion Include="Vortice.VulkanMemoryAllocator" Version="1.7.0" />
+    <!-- WebGL2 backend for Chess.Web. Floats within its minor like the other siblings; move it in
+         lockstep with the DIR.Lib pin above, since both are rebuilt from the same DIR.Lib. -->
+    <PackageVersion Include="WebGl.Renderer" Version="1.16.*" />
     <!-- Vortice.ShaderCompiler pin removed: SdlVulkan.Renderer 6.29+ embeds pre-baked SPIR-V and no
          longer compiles GLSL at runtime, and no chess project ever referenced the package directly. -->
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.9" />

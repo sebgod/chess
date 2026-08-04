@@ -1,6 +1,6 @@
 ---
 name: release-lib
-description: Release a SharpAstro sibling library to NuGet and update this chess project to consume it. Use when the user asks to release/publish DIR.Lib, Console.Lib, SdlVulkan.Renderer, Fonts.Lib, or Codecs, or to bump the chess project onto a new library version.
+description: Release a SharpAstro sibling library to NuGet and update this chess project to consume it. Use when the user asks to release/publish DIR.Lib, Console.Lib, SdlVulkan.Renderer, WebGl.Renderer, LAN.Lib, Fonts.Lib, or Codecs, to "publish the train" / run the release chain, or to bump the chess project onto a new library version.
 argument-hint: <library-name>
 ---
 
@@ -12,17 +12,31 @@ Example: /release-lib SdlVulkan.Renderer
 
 ## Library locations
 
-| Library | NuGet Package(s) | Repo | csproj | CI workflow |
-|---------|------------------|------|--------|-------------|
-| Fonts.Lib | `SharpAstro.Fonts`, `SharpAstro.Fonts.Shaping` | `../../sharpastro/Fonts.Lib` | `src/SharpAstro.Fonts/SharpAstro.Fonts.csproj` | `.github/workflows/dotnet.yml` |
-| Codecs | `SharpAstro.Codecs`, `SharpAstro.Png`, `SharpAstro.Jpeg`, … | `../../sharpastro/Codecs` | `src/SharpAstro.Codecs/SharpAstro.Codecs.csproj` (one per package) | `.github/workflows/dotnet.yml` |
-| DIR.Lib | `DIR.Lib` | `../../sharpastro/DIR.Lib` | `src/DIR.Lib/DIR.Lib.csproj` | `.github/workflows/dotnet.yml` |
-| Console.Lib | `Console.Lib` | `../../sharpastro/Console.Lib` | `src/Console.Lib/Console.Lib.csproj` | `.github/workflows/dotnet.yml` |
-| SdlVulkan.Renderer | `SdlVulkan.Renderer` | `../../sharpastro/SdlVulkan.Renderer` | `src/SdlVulkan.Renderer/SdlVulkan.Renderer.csproj` | `.github/workflows/dotnet.yml` |
+Every repo's CI workflow is `.github/workflows/dotnet.yml`. The **version file** is
+the ONE place `X.Y` is written, and its path is NOT the same in every repo — the four
+libraries with a `src/` props file keep it there, the other three at the repo root:
 
-The same repos are also reachable via junctions next to this repo (`../DIR.Lib`,
-`../Console.Lib`, `../SdlVulkan.Renderer`, `../Fonts.Lib`, `../Codecs`) — those
-junctions are what chess's `UseLocalSiblings` auto-detection looks at.
+| Library | NuGet Package(s) | Repo | Version file (`VersionMajorMinor`) |
+|---------|------------------|------|------------------------------------|
+| Fonts.Lib | `SharpAstro.Fonts`, `SharpAstro.Fonts.Shaping` | `../../sharpastro/Fonts.Lib` | `Directory.Build.props` (root) |
+| Codecs | `SharpAstro.Codecs`, `SharpAstro.Png`, `SharpAstro.Jpeg`, … | `../../sharpastro/Codecs` | `Directory.Build.props` (root) |
+| DIR.Lib | `DIR.Lib` | `../../sharpastro/DIR.Lib` | `src/Directory.Build.props` |
+| Console.Lib | `Console.Lib` | `../../sharpastro/Console.Lib` | `src/Directory.Build.props` |
+| SdlVulkan.Renderer | `SdlVulkan.Renderer` | `../../sharpastro/SdlVulkan.Renderer` | `src/Directory.Build.props` |
+| WebGl.Renderer | `WebGl.Renderer` | `../../sharpastro/WebGl.Renderer` | `src/Directory.Build.props` |
+| LAN.Lib | `LAN.Lib` | `../../sharpastro/LAN.Lib` | `Directory.Build.props` (root) |
+
+Read the value back rather than guessing which file it is in:
+`dotnet msbuild <version-file> -getProperty:VersionMajorMinor -nologo` — that is
+literally what each CI workflow does, so if the path is wrong here the same command
+fails the same way.
+
+All seven repos are also reachable via junctions next to this repo (`../DIR.Lib`,
+`../Console.Lib`, `../SdlVulkan.Renderer`, `../WebGl.Renderer`, `../LAN.Lib`,
+`../Fonts.Lib`, `../Codecs`) — those junctions are what chess's `UseLocalSiblings`
+auto-detection looks at. Note it requires **all five** of DIR.Lib, Console.Lib,
+SdlVulkan.Renderer, WebGl.Renderer and LAN.Lib to be present; a missing junction
+silently flips the whole build to NuGet.
 
 ## Floating pins (X.Y.*)
 
@@ -40,30 +54,107 @@ Consequences:
 
 ## Steps for a single library release
 
-1. **Bump version** in the library repo. Update BOTH:
-   - `<VersionPrefix>X.Y.0</VersionPrefix>` in the `.csproj`
-   - `VERSION_PREFIX: X.Y.${{ github.run_number }}` in `.github/workflows/dotnet.yml`
-   - Increment minor for new features, major for breaking changes
+1. **Bump version** — ONE line, in the repo's version file (see the table above):
+   ```xml
+   <VersionMajorMinor>X.Y</VersionMajorMinor>
+   ```
+   Increment minor for new features, major for breaking changes.
 
-2. **Build and test** the library locally:
+   Since 2026-08-02 this is single-sourced: CI reads the value back with
+   `dotnet msbuild <version-file> -getProperty:VersionMajorMinor` and stamps
+   `-p:Version=X.Y.<run><attempt>+<sha>` across every package in the repo. Do **not**
+   restate the version in a `.csproj` or as `VERSION_PREFIX:` in the workflow — an
+   older layout did both, they drifted, and a local `dotnet pack` shipped
+   `DIR.Lib.Shaping 6.8.0` alongside `DIR.Lib 7.5.0`. (A `VERSION_PREFIX` grep still
+   hits SdlVulkan.Renderer's workflow, where it is only passed through to a job — not
+   a version declaration.)
+
+   **The invariant (all seven repos, since 2026-08-04): the version file holds exactly
+   these three properties, and no `.csproj` holds any version property at all.**
+   ```xml
+   <VersionMajorMinor>X.Y</VersionMajorMinor>
+   <VersionPrefix Condition="'$(VersionPrefix)' == ''">$(VersionMajorMinor).0</VersionPrefix>
+   <AssemblyVersion>$(VersionMajorMinor).0.0</AssemblyVersion>
+   ```
+   Check it before and after any release:
+   ```bash
+   grep -rn "VersionMajorMinor>\|VersionPrefix>\|AssemblyVersion>\|FileVersion>\|<Version>" \
+     <repo> --include=*.csproj --include=*.props | grep -v "/obj/\|/bin/"
+   ```
+   Any hit in a `.csproj` is a regression, whatever value it holds.
+
+   **`AssemblyVersion` is the trap, because CI does not stamp it.** The workflow passes
+   `-p:Version` and `-p:FileVersion` and nothing else, so a csproj literal loses to CI
+   for the package version but *wins* for assembly identity — meaning a stale
+   `VersionPrefix` only spoils a local pack, while a stale `AssemblyVersion` spoils the
+   shipped assembly and no local build reveals it. That is how `DIR.Lib` and
+   `DIR.Lib.Shaping` published `6.4.0.0` from 6.5 through 7.8, and
+   `SdlVulkan.Renderer` published `6.11.0.0` (plus `6.0.0.0` on both WebView projects)
+   through 7.6, each against an informational version two majors ahead. Nothing
+   compares the two values, so nothing ever complained.
+
+   The property is deliberately **unconditional** — not
+   `Condition="'$(AssemblyVersion)' == ''"` — because a conditional lets a csproj
+   literal win again, silently, which is the whole bug. Only Major.Minor is
+   significant: the build counter stays out, so a build-counter republish of the same
+   X.Y never churns assembly identity.
+
+   To read the *effective* value, build and inspect the generated attributes —
+   `-getProperty:AssemblyVersion` returns empty, because the SDK fills it in during
+   build, not evaluation:
+   ```bash
+   dotnet build <proj> -c Release -p:Version=X.Y.9991+deadbeef -p:GeneratePackageOnBuild=false
+   grep AssemblyVersionAttribute <proj-dir>/obj/Release/net10.0/*.AssemblyInfo.cs
+   ```
+
+   An assembly-identity correction does **not** need a minor bump. The value moves *up*,
+   toward what the package already advertised, and the runtime rejects a loaded assembly
+   *lower* than the compiled reference, never higher — so consumers built against the old
+   identity keep loading, and floating `X.Y.*` pins take the fix on the next restore with
+   no props change anywhere downstream. Record it as a "later in X.Y" note appended to
+   that version's existing changelog entry.
+
+2. **Write the changelog entry in the same commit as the bump.** Each workflow's
+   `env:` block carries a comment block, newest entry last, that is the de-facto
+   release notes; it lives in the yml because entries contain `--`, which XML forbids
+   inside a comment. Say what changed, what is NOT included, which pins moved, and
+   flag any behaviour change explicitly (`BEHAVIOUR CHANGE`) — a consumer left on a
+   default whose meaning changed has no other warning.
+
+   Write it **before the first push**, not after. Remembering it later means either an
+   extra commit or amending an already-pushed `main`; the amend route force-pushes a
+   published commit and burns a second build-counter publish for the same X.Y.
+
+3. **Build and test** the library locally:
    ```
    cd <repo>/src && dotnet test
    ```
 
-3. **Commit and push** the version bump in the library repo
+4. **Commit and push** the bump + changelog in the library repo. Check first that
+   `main` has not diverged (`git fetch && git status`): a stale unpushed bump whose
+   base is behind origin can duplicate a bump origin **already landed**, in which case
+   the local commit is superseded and should be dropped
+   (`git rebase --onto origin/main <stale-sha> main`), not merged. Verify by reading
+   origin's version file and changelog, not by trusting the local one.
 
-4. **Wait for NuGet publication** - CI builds, packs, and publishes to nuget.org.
-   Poll until the new version appears (typically 2-5 minutes after CI completes):
+5. **Wait for NuGet publication** - CI builds, packs, and publishes to nuget.org.
+   Poll the flat container, which is authoritative and updates within seconds:
+   ```bash
+   curl -s https://api.nuget.org/v3-flatcontainer/<packageid-lowercase>/index.json
    ```
-   dotnet package search <PackageName> --exact-match --source https://api.nuget.org/v3/index.json
-   ```
+   Do **not** poll with `dotnet package search` — it reads the search index, which lags
+   the flat container by many minutes. It showed nothing for DIR.Lib 7.8 across four
+   minutes of polling while the package was already restorable, which reads as a failed
+   publish when nothing is wrong. If even the flat container lags, read the publish
+   step's log in the Actions run (`gh run view <id> --log`) for the pushed `.nupkg`.
+
    The published version is `X.Y.<run_number>`, e.g. `6.9.1421`. You need the
    new `X.Y` to be live before updating downstream floating pins.
 
-5. **Update downstream `Directory.Packages.props`** to the new `X.Y.*` pin
+6. **Update downstream `Directory.Packages.props`** to the new `X.Y.*` pin
    (only needed if X.Y changed — see the chain below for ordering).
 
-6. **Build and test** the downstream project:
+7. **Build and test** the downstream project:
    ```
    dotnet restore && dotnet build -c Release && dotnet test -c Release
    ```
@@ -73,19 +164,37 @@ Consequences:
 ```
 Fonts.Lib (SharpAstro.Fonts) ─┐
 Codecs (SharpAstro.Png) ──────┴─> DIR.Lib ─┬─> Console.Lib        ─┐
-Codecs (SharpAstro.Codecs) ────────────────┼─> (Console.Lib)       ├─> chess
-                                           └─> SdlVulkan.Renderer ─┘
+Codecs (SharpAstro.Codecs) ────────────────┼─> (Console.Lib)       │
+                                           ├─> SdlVulkan.Renderer ─┼─> chess
+                                           └─> WebGl.Renderer     ─┘
+LAN.Lib ───────────────────────────────────────────────────────────> chess (Chess.Net)
 Codecs (SharpAstro.Png) ───────────────────────────────────────────> chess (Chess.MCP)
+DIR.Lib ───────────────────────────────────────────────────────────> tianwen (see below)
 ```
 
-- **Fonts.Lib** and **Codecs** are roots. Only bump when their own code changes.
+- **Fonts.Lib**, **Codecs** and **LAN.Lib** are roots. Only bump when their own code
+  changes. LAN.Lib does not reference DIR.Lib at all, so a DIR.Lib bump never drags it.
 - **DIR.Lib** depends on SharpAstro.Fonts + SharpAstro.Png. When DIR.Lib gets an
-  X.Y bump, ALL downstream libs need a release even if their code didn't change -
+  X.Y bump, ALL THREE backends need a release even if their code didn't change -
   this keeps all versions in sync and ensures CI builds pick up the new DIR.Lib
   transitively.
-- **Console.Lib** and **SdlVulkan.Renderer** both depend on DIR.Lib but NOT
-  on each other, so they can be released in parallel. Console.Lib additionally
-  depends on SharpAstro.Codecs.
+- **Console.Lib**, **SdlVulkan.Renderer** and **WebGl.Renderer** each depend on DIR.Lib
+  but NOT on each other, so they release in parallel. Console.Lib additionally depends
+  on SharpAstro.Codecs. Move all three together: leaving one behind lets a consumer
+  holding two backends restore two DIR.Lib versions and unify on the higher one by luck
+  rather than by intent (WebGl.Renderer was found two minors behind twice this way).
+
+**Note — WebGl.Renderer's pin is NOT in `Directory.Packages.props`.** It sits inline in
+`Chess.Web/Chess.Web.csproj` (`<PackageReference Include="WebGl.Renderer" Version="1.16.*" />`,
+next to the `UseLocalSiblings` ProjectReference). A chess repin that edits only
+`Directory.Packages.props` silently leaves Chess.Web on the old backend. Grep for the
+package name across the repo rather than assuming one pin file.
+
+**Note — `tianwen` is the OTHER DIR.Lib consumer** (`../../sharpastro/tianwen`) and is
+not in this repo's chain. It carries its own DIR.Lib `X.Y.*` pin, so it is insulated
+until it repins deliberately — but that is exactly why a DIR.Lib **behaviour** change
+must be checked against it before release, not after: build it and run its tests
+(~3800) while the change is still yours to reconsider.
 
 **Note — `SharpAstro.Png` is always NuGet-sourced by chess.** `UseLocalSiblings`
 only redirects DIR.Lib / Console.Lib / SdlVulkan.Renderer, NOT Codecs/Png.
@@ -103,32 +212,45 @@ published X.Y pin - CI will fail because it doesn't have sibling repos
 and the old NuGet versions won't have the new APIs.
 
 1. (If Fonts.Lib/Codecs changed) Bump + push them, poll NuGet for the new X.Y
-2. Update DIR.Lib's `Directory.Packages.props` to the new `X.Y.*` pins (if bumped)
-3. Bump + push DIR.Lib, poll NuGet for the new X.Y (e.g. `DIR.Lib 6.9.1421`)
-4. In parallel:
+2. Update DIR.Lib's `src/Directory.Packages.props` to the new `X.Y.*` pins (if bumped)
+3. Bump + push DIR.Lib, poll NuGet for the new X.Y (e.g. `DIR.Lib 7.8.1841`)
+4. In parallel — all **three** backends, not two:
    a. Update Console.Lib's `Directory.Packages.props` DIR.Lib pin,
       bump Console.Lib minor, push. Poll NuGet.
-   b. Update SdlVulkan.Renderer's `Directory.Packages.props` DIR.Lib pin,
-      bump SdlVulkan.Renderer minor, push. Poll NuGet.
-5. ONLY AFTER both Console.Lib and SdlVulkan.Renderer are on NuGet:
+   b. Update SdlVulkan.Renderer's `src/SdlVulkan.Renderer/Directory.Packages.props`
+      DIR.Lib pin (note the nested path), bump minor, push. Poll NuGet.
+   c. Update WebGl.Renderer's `src/Directory.Packages.props` DIR.Lib pin,
+      bump minor, push. Poll NuGet.
+5. ONLY AFTER all three backends are on NuGet:
    Update chess project's `Directory.Packages.props` with the new X.Y pins:
    ```xml
-   <PackageVersion Include="DIR.Lib" Version="6.9.*" />
-   <PackageVersion Include="Console.Lib" Version="3.6.*" />
-   <PackageVersion Include="SdlVulkan.Renderer" Version="6.22.*" />
+   <PackageVersion Include="DIR.Lib" Version="7.8.*" />
+   <PackageVersion Include="Console.Lib" Version="4.16.*" />
+   <PackageVersion Include="SdlVulkan.Renderer" Version="7.6.*" />
    ```
-6. Commit + push chess project. CI will now restore the correct NuGet versions.
+   …and **`Chess.Web/Chess.Web.csproj`** for `WebGl.Renderer` (its pin is not
+   centralised — see the note above).
+6. Verify against the published packages before pushing:
+   `dotnet build -c Release -p:UseLocalSiblings=false && dotnet test -c Release -p:UseLocalSiblings=false`.
+   This is the only local run that exercises the path CI takes.
+7. Commit + push chess project. CI will now restore the correct NuGet versions.
 
 ## Polling for NuGet availability
 
 ```bash
-# Check if package version is available (repeat every 30s until it appears)
-dotnet package search DIR.Lib --exact-match --source https://api.nuget.org/v3/index.json
+# Authoritative and near-instant. Package id must be LOWERCASE in the URL.
+curl -s https://api.nuget.org/v3-flatcontainer/dir.lib/index.json
 ```
 
-The version published by CI is `X.Y.<run_number>` where `<run_number>` comes
-from `${{ github.run_number }}` in the workflow. Check the GitHub Actions run
-to see the exact run number, or just poll the NuGet search output.
+The version published by CI is `X.Y.<run_number><run_attempt>` where the numbers come
+from `${{ github.run_number }}` / `${{ github.run_attempt }}` in the workflow. Check the
+Actions run for the exact number, or read the tail of the flat-container list.
+
+**Do not poll with `dotnet package search`.** It queries the search index, which trails
+the flat container by many minutes — long enough to look like a failed publish while the
+package is already restorable. If the flat container itself has not caught up, the
+publish step's log is the ground truth: `gh run view <id> --log` and look for the pushed
+`<Package>.X.Y.NNNN.nupkg`.
 
 ## IMPORTANT: Do NOT push downstream until packages are on NuGet
 
@@ -140,8 +262,8 @@ isn't published yet, CI will fail. This wastes CI minutes and creates noise.
 unpublished package version.** Commit locally, wait for NuGet, update the
 version, THEN push.
 
-The same applies to Console.Lib and SdlVulkan.Renderer when DIR.Lib is bumped:
-do not push them until DIR.Lib's new version is confirmed on NuGet and their
+The same applies to Console.Lib, SdlVulkan.Renderer and WebGl.Renderer when DIR.Lib is
+bumped: do not push them until DIR.Lib's new version is confirmed on NuGet and their
 `Directory.Packages.props` is updated.
 
 ## Notes
@@ -153,8 +275,22 @@ do not push them until DIR.Lib's new version is confirmed on NuGet and their
   before trusting/pushing a pin change.
 - Never use `dotnet nuget locals all -c` to clear cache (breaks concurrent
   processes). Just bump the version instead.
-- The intermediate libraries (Console.Lib, SdlVulkan.Renderer) also have their
+- The backends (Console.Lib, SdlVulkan.Renderer, WebGl.Renderer) also have their
   own `Directory.Packages.props` that reference DIR.Lib - these must be updated
-  with a published DIR.Lib X.Y before their own CI push.
+  with a published DIR.Lib X.Y before their own CI push. The paths differ:
+  `src/Directory.Packages.props` for Console.Lib and WebGl.Renderer, but
+  `src/SdlVulkan.Renderer/Directory.Packages.props` for SdlVulkan.Renderer.
+- **A CI test step must never re-pack.** Every shipped project sets
+  `GeneratePackageOnBuild`, and the version file falls back to `$(VersionMajorMinor).0`
+  when CI's `-p:Version` is absent — so any step that *rebuilds* one packs a second
+  `X.Y.0` into the same `bin/Release` the publish job globs with `**/*.nupkg`, and
+  `--skip-duplicate` ships it without complaint. That is where `DIR.Lib 7.5.0` beside
+  `7.5.NNNN` came from. Two accepted guards, both in use: `dotnet test --no-build`
+  (DIR.Lib, Console.Lib, Fonts.Lib, Codecs, SdlVulkan.Renderer, LAN.Lib) or
+  `-p:GeneratePackageOnBuild=false` where the test project restores separately
+  (WebGl.Renderer). Don't drop either.
+- Watch CI to completion rather than assuming green. `publish`/`release` jobs showing
+  `skipping` on a PR run is expected (they are gated on push-to-main); the pre-existing
+  Node 20 deprecation warnings from `actions/checkout@v4` / `setup-dotnet@v4` are noise.
 
 The library to release is: $ARGUMENTS

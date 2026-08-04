@@ -2,15 +2,16 @@ name: pages
 
 # Deploy the Chess.Web in-browser app to GitHub Pages.
 #
-# Chess.Web is a standalone Blazor WebAssembly app that runs the chess engine
-# (Chess.Lib) and the DIR.Lib software renderer entirely in the browser — a fully
-# static site, no server. It lives OUTSIDE Chess.sln + CPM, so the desktop `CI`
-# workflow (dotnet-desktop.yml) never builds it; this workflow is its sole CI and
-# publishes it to https://sebgod.github.io/chess/.
+# Chess.Web is a Blazor WebAssembly app that runs the chess engine (Chess.Lib) and the
+# WebGl.Renderer backend entirely in the browser — a fully static site, no server. It is
+# IN Chess.sln and under CPM, so dotnet-desktop.yml compiles it on every push and PR;
+# this workflow owns the part that one cannot do — the AOT publish and the Pages deploy.
 #
-# Runs on pushes to main that touch the app or the engine it embeds (so the live
-# site tracks the latest engine), and on manual dispatch for a forced redeploy.
-# Publish target is browser-wasm (OS-neutral), so ubuntu publishes fine.
+# Runs on pushes to main that touch the app or the engine it embeds (so the live site
+# tracks the latest engine), on PRs touching the same paths (build only, no deploy —
+# an AOT publish is the one way to break the site that a plain solution build cannot
+# catch, and finding that out post-merge means a broken deploy), and on manual dispatch
+# for a forced redeploy. Publish target is browser-wasm (OS-neutral), so ubuntu is fine.
 #
 # NOTE: enable Pages once in repo Settings -> Pages -> Source: "GitHub Actions".
 
@@ -22,6 +23,16 @@ on:
       - 'Chess.Lib/**'
       - 'Chess.UCI/**'
       - 'tools/**'
+      - 'Directory.Packages.props'
+      - '.github/workflows/pages.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'Chess.Web/**'
+      - 'Chess.Lib/**'
+      - 'Chess.UCI/**'
+      - 'tools/**'
+      - 'Directory.Packages.props'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -91,6 +102,9 @@ jobs:
 
   deploy:
     needs: build
+    # A pull_request run stops after build: it proves the AOT publish still works without
+    # putting an unmerged branch on the live site.
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
