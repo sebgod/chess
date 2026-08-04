@@ -5,9 +5,14 @@ the last-move-arrow clip-rect fix, the engine's deadline-aware search, and **the
 (`GameSession`, now driving all three front-ends)** have landed. The clock and the extraction tiers
 below are proposed, not built.
 
-**Scope:** a second board game — "Memory" (concentration) — would live in its **own repo**, the way
-Chess.Web and Chess.Droid are their own heads. The question this document answers is what, if
-anything, chess should give up to a shared library first, and in what order.
+**Scope:** a second game lives in its **own repo**, the way Chess.Web and Chess.Droid are their own
+heads. The question this document answers is what, if anything, chess should give up to a shared
+library first, and in what order.
+
+**Two second games are tracked, not one** (see [The two candidate games](#the-two-candidate-games)):
+**Skat** (`../skat`, an existing 2014 Mercury skeleton, near-term) and **Memory** (concentration, not
+started). They are both kept because they validate *different tiers*, and Skat's arrival in this
+document on 2026-08-04 **reversed the extraction order** recorded below.
 
 ## Why not just extract everything
 
@@ -59,6 +64,73 @@ just an `RgbaImage` backend. **ASCII is the only backend that cannot** — it co
 So the gap is not capability, it is genericity: those draws are private methods keyed on `Position`
 with chess colours and chess semantics baked in.
 
+## The two candidate games
+
+Both are tracked because they validate **different tiers** — which is the whole reason not to pick
+one and drop the other.
+
+| | Skat | Memory |
+|---|---|---|
+| Repo | **exists** — `../skat`, Mercury, 110 commits, 2014 | not started |
+| Grid? | **no** — hands are fans, a trick is a 3-card cluster | yes, 4×4 / 6×6 |
+| Validates tier 1 | **nothing** | grid geometry + annotations, cheaply |
+| Validates tier 2 | turn model, wizard, frame, LAN lobby — hard | little |
+| Cost to finish | high — bidding, trick play, hidden-info AI | low |
+
+**Skat teaches more; Memory is cheaper.** Skat is the better forcing function for the library and the
+worse route to a *finished* second game. Neither claim cancels the other, hence both.
+
+### What the Skat skeleton actually is
+
+1304 lines of Mercury. The domain model is done; the game is not.
+
+| Module | Lines | State |
+|---|---|---|
+| `card.m` | 187 | done — packed int, `suit_index << 3 \| rank_index` |
+| `deck.m` | 291 | done — 32-card bitset, draw/filter/subtract, Spitzen count |
+| `suit.m` / `rank.m` | 176 / 91 | done — value tables, pips, colours |
+| `game_type.m` | 133 | done — base factors + null flats, `game_value` |
+| `game.m` | 74 | **init + deal only** |
+| `player.m` | 48 | bare record, `% TODO: implement predicates & functions` |
+| `eval.m` | 89 | **stub** — `count_succ/6` computes `ByRank` and discards it |
+
+No bidding, no trick play, no scoring loop, no AI. What *is* there is the part that is tedious to
+re-derive: `straight_by_rank` returning ±1..±4 **is** the Spitzen count (mit/ohne N), and
+`game_value`'s base table (♦9 ♥10 ♠11 ♣12, grand 24, null 23/35/46/59) is the scoring core.
+
+**Three things a port must fix rather than reproduce faithfully:**
+
+- `member_card/2` is broken. `member_bit` yields `number_of_cards - Index`, so bit 0 produces 32 and
+  `det_from_int` aborts; it should yield `Index`. Declared, defined, and **never called** (`deck.m`
+  goes through `contains_card`/`cards_in_deck` instead) and untested — which is exactly why nothing
+  ever caught it.
+- `game_value` mis-branches on null: a `null` base with `game_factor = yes(_)` takes the colour/grand
+  branch and computes `23 × (Tips + grade)`. Only the `Factor = no` path reaches the flat table.
+- `announced_grade_to_factor` is a **ladder, not a sum**. Official Skat adds independent multipliers
+  (game + hand + schneider + announced + schwarz + announced + ouvert); this returns a level
+  (playing 1, hand 2, schneider 3, …). Right for the common cases, wrong for schneider without hand
+  — 3 here, 2 officially.
+
+One thing to preserve deliberately: `suit` carries **two** int meanings. `suit.suit_value` is 9–12
+*and* is its `enum(suit)` instance, while `card.suit_index` is 0–3 for bit packing. Same type, two
+numberings, in different modules.
+
+### Why a port is cheap and lands in-idiom
+
+- `Board` is 8 `uint`s at 4 bits/square; a Skat `Deck` is **one `uint`** at 1 bit/card — 32 cards is
+  exactly one word. Same bit-twiddling, same value-semantics record struct, and Mercury's
+  `deck - deck` maps onto the `Board` `+`/`-` operators the tests already use.
+- **The card glyphs already ship with chess.** `DejaVuSans.ttf`'s cmap covers all 32 Skat cards
+  (U+1F0A1…U+1F0DE), the card back (U+1F0A0) and the four pips (U+2660–2667) — read out of the font,
+  not assumed — and the `.sdfg` bake takes its charset as a parameter. Caveat: one card glyph is
+  monochrome, so a red suit renders as an entirely red card; a proper face wants compositing (fill +
+  rank text + pip glyph), which needs only primitives DIR.Lib already has.
+- `tests/skat.exp` is a golden file from a fixed seed (231238), so its set/ordering assertions port
+  for free. Reproducing Mercury's exact PRNG *stream* is not worth it.
+- **Licence: skat was LGPL-3.0, relicensed MIT on 2026-08-04** (sole author) so a port can sit beside
+  the MIT siblings without LGPL §4 relinking trouble under NativeAOT. Only `LICENSE` carried the
+  notice — no source file did. **chess itself still has no LICENSE file**; separate gap, still open.
+
 ## Extraction tiers
 
 | Tier | What | Where it lives now | Confidence it generalises |
@@ -71,14 +143,33 @@ with chess colours and chess semantics baked in.
 | 2 | LAN lobby, invite dance, session transport | `Chess.Net` | **High** — only `Magic="CHESSLAN"`, `ServiceName="chess"` and a UCI `Move` payload are chess |
 | 3 | Rules, `Board`, `AiEngine`, FEN/SAN/UCI | `Chess.Lib` | Never |
 
-**Recommended order.** Extract **tier 1 only** now, into a new sibling (`BoardGame.Lib`, depending on
-DIR.Lib), with the grid parameterised on rows×cols and annotations as a data list of cell-indexed
-marks. Chess adopts it immediately at 8×8, which validates it against a real consumer *before*
-Memory exists. Then build Memory against it, deliberately **copying** the frame/wizard/loop rather
-than extracting them — copies are cheap, a wrong abstraction is not. Only then extract tier 2, with
-two data points, starting with the LAN lobby.
+**On the AI specifically:** tier 3's "never" is right, but for Skat the reason is sharper than
+"chess-specific". Hidden information makes negamax the *wrong algorithm*, not a chess-flavoured one —
+it wants Monte-Carlo sampling over perfect-information deals. What does transfer is the search
+*harness*: checking a deadline every 2048 nodes and discarding the unfinished iteration is the same
+discipline a sampler needs.
 
-## The two things chess genuinely lacks
+**Recommended order — revised 2026-08-04, when Skat became the near-term second game.**
+
+The original recommendation was **tier 1 first**, because Memory at 4×4/6×6 validates grid geometry
+cheaply. **Skat reverses it: Skat has no grid at all**, so extracting tier 1 for Skat's sake would
+still be generalising from a single consumer — the exact trap this document opens with. So:
+
+1. **Tier 2 first, driven by Skat**: the turn model, the wizard, the frame, the LAN lobby. This is
+   also where the mass is — `GameSession` 393, `PixelGameDisplay` 649, `GameFrameLayout` 362,
+   `StartupWizard` 215 lines, plus all of `Chess.Net`.
+2. **Tier 1 becomes chess-local cleanup, not a library step.** Parameterising the grid is worth doing
+   on its own merits — it is eight lines in `GameUI` (200, 212, 224, 233, 492, 751, 753, 936) — but it
+   stays unvalidated by a second consumer until Memory exists, and should not be sold as otherwise.
+
+The original reasoning is kept verbatim below, because it is still exactly right *for Memory* and
+becomes live again the moment Memory starts: extract tier 1 into a new sibling (`BoardGame.Lib`,
+depending on DIR.Lib) with the grid parameterised on rows×cols and annotations as a data list of
+cell-indexed marks; chess adopts it immediately at 8×8, which validates it against a real consumer
+before Memory exists; then build Memory against it, deliberately **copying** the frame/wizard/loop
+rather than extracting them — copies are cheap, a wrong abstraction is not.
+
+## The three things chess genuinely lacks
 
 ### 1. Time
 
@@ -86,6 +177,10 @@ two data points, starting with the LAN lobby.
 animation concept anywhere in the stack. Memory's core mechanic *is* a timed transition (two cards
 visible, then hidden). This is the one real architectural addition, and chess benefits too — a clock,
 and eventually move animation.
+
+**Skat forces the same thing**, which is worth noting because it was not obvious: the trick-complete
+pause — three cards face up, held a beat, then collected by the winner — is precisely a Memory-shaped
+timed transition. What Skat does *not* force is the clock, since it needs none for correctness.
 
 Crucially, **a timed state transition is not an animation**. "Reveal, then hide 800 ms later" is two
 redraws 800 ms apart, not 48 frames. Board games need the cheap thing; tweening is separable polish.
@@ -112,9 +207,38 @@ Three decisions were settled in the process, recorded here so they are not re-li
 "match → same player goes again". Generalising `Side` to a player index plus a turn policy is the
 other structural change.
 
-Per-cell state is a third difference but explicitly *not* a library problem: chess's packed
-4-bits-per-square `Board` cannot express face-down/face-up/matched and should not try. Memory brings
-its own board type.
+**Skat makes this concrete and unavoidable:** three seats, and the order is not a rotation either —
+bidding runs forehand/middlehand/rearhand, a trick runs from its leader, and the next trick's leader
+is the previous one's winner. The two-seat assumption is *literal*, not diffuse: `GameSession.cs:160`
+is `_game.CurrentSide == Side.White ? _whitePlayer : _blackPlayer`, and `_opponent` is a single
+distinguished slot. With three seats and two engines, "poll the opponent every tick regardless of
+turn" — the fix for the LAN `PeerLeft` bug described below — has to become "poll every non-active
+seat".
+
+Skat also wants a level chess has no type for: a **match** above the game. It scores across a series
+of deals with a running sheet, and `Game`/`GameStatus` sit one level too low for that.
+
+Per-cell state is a further difference but explicitly *not* a library problem: chess's packed
+4-bits-per-square `Board` cannot express face-down/face-up/matched, nor a 32-card hand, and should not
+try. Each game brings its own board type.
+
+### 3. Hidden information, and the randomness that creates it
+
+Chess has nothing to hide, and two interfaces quietly depend on that:
+
+- **The display is handed the whole truth.** `IGameDisplay.RenderInitial(Game game)` passes the game
+  itself. Skat needs the session to yield a **per-seat projection**, and the display to render a
+  *view* rather than a game. This is the single biggest interface change either candidate forces, and
+  it is the right change independent of Skat.
+- **LAN needs an authority.** chess relays a UCI move and both ends recompute — sound only because
+  there is no hidden state. Skat cannot: somebody must deal, and tell each seat only its own cards.
+  `SessionProtocol`'s `Move`-only wire format and its two-peer invite/accept lobby do not stretch that
+  far. Memory needs an authority too (the face-down identities are hidden from everyone), but only
+  weakly — its hidden state is *shared*, where Skat's is *asymmetric per seat*.
+- **The session must carry a seed.** Chess's save/replay is a ply list. A Skat hand is replayable only
+  if the deal is derivable, which makes the seed part of session state — and therefore part of the
+  save format, of any play-by-link fragment, and of every deterministic test. `prng.m`'s
+  `init_determ` is the skeleton's version of this.
 
 ## The tick model
 
@@ -280,7 +404,15 @@ specifically, and ideally a test of the same shape as
 2. **Committed sixel benchmark**, replacing the orphaned artifacts, measuring single-region encode
    *and* write time.
 3. **Sixel video mode** — inter-frame band diffing, gated on (2).
-4. **Tier-1 extraction** into `BoardGame.Lib`, chess as first consumer.
-5. **Memory**, in its own repo, copying tier 2 — but the turn model is now worth *taking* rather than
-   copying. Its shape is proven across all three driver paradigms; what still ties it to chess is its
-   types (`Game`, `Side`, `GameUI`), not its structure. Generalising those is the tier-1 job.
+4. **Port the Skat model** into a `Skat.Lib` in `../skat` — C# beside the Mercury, which stays as the
+   executable spec. `Card`/`Deck`/`Suit`/`Rank`/`GameType`, xUnit tests pinning the Spitzen count and
+   the game values, with the three defects above *fixed* rather than reproduced. No UI, no session:
+   this step exists to answer "does the domain fit the house style" concretely and cheaply.
+5. **Tier-2 extraction**, driven by a terminal-only Skat that bids and plays tricks: per-seat view
+   projection, seat + turn policy, decision-kind. Two real consumers, so the abstraction is read off
+   two data points instead of one. The turn model is worth *taking* rather than copying — its shape is
+   proven across all three driver paradigms; what ties it to chess is its types (`Game`, `Side`,
+   `GameUI`), not its structure.
+6. **Tier-1 extraction** into `BoardGame.Lib`, chess as first consumer — now a chess-local cleanup
+   whose second consumer arrives only with Memory.
+7. **Memory**, in its own repo: tier 1's validator, and the cheap route to a finished second game.
