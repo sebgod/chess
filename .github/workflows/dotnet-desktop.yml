@@ -21,8 +21,14 @@ jobs:
   # would force the android workload (and a JDK, and the Android SDK) on everyone who
   # builds it, the `test` job above included. The cost of staying out is that nothing
   # compiled it -- a change to Chess.Lib/Chess.UCI/Chess.Net could break the Android head
-  # and still show green. This job is that missing gate. Same arrangement as Chess.Web,
-  # which has pages.yml for the same reason.
+  # and still show green. This job is that missing gate.
+  #
+  # Chess.Web is NOT the same arrangement, though it used to be described as one. It joined
+  # Chess.sln, so the `test` job above compiles it and this kind of gate job is unnecessary:
+  # its TFM is plain net10.0 (the browser-wasm asset pipeline comes from the in-box
+  # BlazorWebAssembly SDK) and only the AOT publish needs the wasm-tools workload, which
+  # pages.yml installs for itself. That is the difference from Android, where the workload
+  # is needed to compile at all.
   android:
     runs-on: ubuntu-latest
     steps:

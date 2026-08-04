@@ -26,6 +26,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Chess.MCP", "Chess.MCP\Ches
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Chess.Net", "Chess.Net\Chess.Net.csproj", "{AF346676-CFB0-48B7-ACB5-B357F879A5EE}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Chess.Web", "Chess.Web\Chess.Web.csproj", "{9CBCD74B-59CB-4470-A923-4D60359610E5}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -220,6 +222,26 @@ Global
 		{AF346676-CFB0-48B7-ACB5-B357F879A5EE}.Release|x64.Build.0 = Release|Any CPU
 		{AF346676-CFB0-48B7-ACB5-B357F879A5EE}.Release|x86.ActiveCfg = Release|Any CPU
 		{AF346676-CFB0-48B7-ACB5-B357F879A5EE}.Release|x86.Build.0 = Release|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Debug|ARM.ActiveCfg = Debug|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Debug|ARM.Build.0 = Debug|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Debug|ARM64.ActiveCfg = Debug|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Debug|ARM64.Build.0 = Debug|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Debug|x64.Build.0 = Debug|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Debug|x86.Build.0 = Debug|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Release|ARM.ActiveCfg = Release|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Release|ARM.Build.0 = Release|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Release|ARM64.ActiveCfg = Release|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Release|ARM64.Build.0 = Release|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Release|x64.ActiveCfg = Release|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Release|x64.Build.0 = Release|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Release|x86.ActiveCfg = Release|Any CPU
+		{9CBCD74B-59CB-4470-A923-4D60359610E5}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
