@@ -345,42 +345,14 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
     private void RenderHistoryPanel(RectF32 rect)
     {
         var fontSize = ChromeFontSize;
-        var headerFontSize = fontSize * 1.1f;
         var headerH = fontSize * 2f;
         var rowH = fontSize * 1.5f;
 
         FillRect(rect.X, rect.Y, rect.Width, rect.Height, HistoryBg);
-
-        DrawText("Move History", _labelFont,
-            rect.X + 8, rect.Y, rect.Width - 8, headerH,
-            headerFontSize, HistoryHeaderColor, TextAlign.Near, TextAlign.Center);
-
+        RenderHistoryHeader(new RectF32(rect.X + HistoryPad, rect.Y, rect.Width - HistoryPad * 2f, headerH), fontSize);
         FillRect(rect.X + 4, rect.Y + headerH, rect.Width - 8, 1, HistorySepColor);
 
         if (_game is null || _gameUI is null) return;
-
-        // A chip in the header is the touch path out of a mode that has a KEY on the desktop: back to
-        // the live game from playback (Esc), and out of custom-game setup into play (s). Both click
-        // regions are auto-bound by RenderLayout; the playback one uses the index one past the last
-        // ply, GameUI's exit-playback sentinel (see TryHistoryClick), and setup uses its own list id.
-        var headerChip = _gameUI.Mode switch
-        {
-            GameUIMode.Playback => Layout.Builder
-                .Text("▶ Latest", fontSize, PlaybackHighlightText, TextAlign.Far, TextAlign.Center)
-                .Stretch()
-                .Clickable(new HitResult.ListItemHit(GameUI.HistoryListId, _game.Plies.Count)),
-            GameUIMode.Setup => Layout.Builder
-                .Text("▶ Start", fontSize, PlaybackHighlightText, TextAlign.Far, TextAlign.Center)
-                .Stretch()
-                .Clickable(new HitResult.ListItemHit(SetupStartListId, 0)),
-            _ => null,
-        };
-        if (headerChip is not null)
-        {
-            RenderLayout(Layout.Builder.HStack(headerChip),
-                new RectF32(rect.X + rect.Width * 0.55f, rect.Y, rect.Width * 0.45f - 8, headerH),
-                _labelFont, dpiScale: 1f);
-        }
 
         var plies = _game.Plies;
         var plyCount = plies.Count;
@@ -421,6 +393,88 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         // Theme colours so the bar reads against the dark history panel (the DIR.Lib defaults are
         // near-black and vanish here): the separator tone for the track, the index grey for the thumb.
         _historyScroll.DrawScrollBar(FillRect, track: HistorySepColor, thumb: HistoryIndexColor);
+    }
+
+    /// <summary>The history panel's own side gutter — the inset the header and the separator sit inside.</summary>
+    private const float HistoryPad = 8f;
+
+    /// <summary>The history panel's title. Only ever scaled to fit, never reworded.</summary>
+    private const string HistoryTitle = "Move History";
+
+    /// <summary>
+    /// The header strip: the panel's title, plus — in playback or setup — the chip that is the touch way out
+    /// of a mode the desktop leaves by key ("▶ Latest" back to the live game, for Esc; "▶ Start" out of
+    /// custom-game setup, for <c>s</c>).
+    ///
+    /// <para><b>One layout, not two positioners.</b> The chip is a docked strip of its own MEASURED width and
+    /// the title takes the remainder, so the two rects are disjoint by construction. They used to be
+    /// independent: the title was drawn across the whole panel width while the chip was placed at a
+    /// hard-coded 55% of it. Both of those scale with the chrome font — but the panel does NOT. The panel is
+    /// the flanking gutter clamped to <see cref="HistoryPanelWidth"/> (18 em), and a gutter squeezed to its
+    /// <see cref="GameFrameMetrics.MinSideGutter"/> floor is 11. Every surface aspect between the
+    /// flanked/stacked crossover and about 1.53 lands in that squeeze, and there "Move History" (7.6 em) plus
+    /// "▶ Latest" (4.5 em) plus the gutters no longer fit the ~12 em the panel actually got — so the chip
+    /// drew over the title's tail. A fraction cannot express "beside the chip"; a layout can.</para>
+    ///
+    /// <para>The title then has to stay inside that remainder, and it says so itself:
+    /// <see cref="TextTrim.Shrink"/> scales it to whatever it is handed rather than truncating it, because
+    /// "Move Hist…" is a worse header than a slightly smaller whole one. The painter does the fitting — this
+    /// is only where the policy is chosen.</para>
+    /// </summary>
+    /// <param name="strip">The header's rect, already inset by the panel's <see cref="HistoryPad"/> gutter.</param>
+    /// <param name="fontSize">The chrome font size; the title is drawn a tenth larger, the chip at it.</param>
+    private void RenderHistoryHeader(RectF32 strip, float fontSize)
+    {
+        if (strip.Width <= 0f) return;
+
+        var chip = HeaderChip();
+
+        // The chip's strip is its own glyph width plus a little: the slack lands on the title side as a gap,
+        // and it doubles as touch slop, since on a phone this chip is the only way out of playback.
+        var chipStrip = chip is null
+            ? 0f
+            : Renderer.MeasureText(chip.Value.Label.AsSpan(), _labelFont, fontSize).Width + fontSize * 0.6f;
+
+        // Below a couple of ems the title is unreadable noise beside a control, and a panel full of moves
+        // hardly needs telling it holds moves — so the chip gets the strip to itself.
+        var title = strip.Width - chipStrip < fontSize * 2f
+            ? null
+            : Layout.Builder.Text(HistoryTitle, fontSize * 1.1f, HistoryHeaderColor,
+                TextAlign.Near, TextAlign.Center, TextTrim.Shrink).Stretch();
+
+        if (chip is null)
+        {
+            if (title is not null) RenderLayout(title, strip, _labelFont, dpiScale: 1f);
+            return;
+        }
+
+        // Far-aligned inside its strip, so the label keeps the panel's right gutter whatever it measures.
+        var chipNode = Layout.Builder
+            .Text(chip.Value.Label, fontSize, PlaybackHighlightText, TextAlign.Far, TextAlign.Center)
+            .Stretch()
+            .Clickable(chip.Value.Hit);
+
+        RenderLayout(
+            Layout.Builder.Dock(title ?? Layout.Builder.Spacer(), Layout.Builder.Right(chipNode, chipStrip)),
+            strip, _labelFont, dpiScale: 1f);
+    }
+
+    /// <summary>
+    /// The header chip's label and what a tap on it means, or null in ordinary play. Both click regions are
+    /// auto-bound to the drawn rect by the layout paint: playback claims the index one past the last ply,
+    /// which is <see cref="GameUI"/>'s exit-playback sentinel (see its TryHistoryClick), and setup claims
+    /// <see cref="SetupStartListId"/> — its own list, so a tap on it can never be read as a ply.
+    /// </summary>
+    private (string Label, HitResult Hit)? HeaderChip()
+    {
+        if (_game is null || _gameUI is null) return null;
+        return _gameUI.Mode switch
+        {
+            GameUIMode.Playback => ("▶ Latest",
+                (HitResult)new HitResult.ListItemHit(GameUI.HistoryListId, _game.Plies.Count)),
+            GameUIMode.Setup => ("▶ Start", new HitResult.ListItemHit(SetupStartListId, 0)),
+            _ => null,
+        };
     }
 
     /// <summary>This display's colours for a shared <see cref="HistoryRowLayout"/> row. No row background:
@@ -511,16 +565,11 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
 
     private void RenderStatusBar(RectF32 rect)
     {
-        var fontSize = ChromeFontSize;
-
         var status = StatusOverride
             ?? (_game is null || _gameUI is null ? "" : _gameUI.StatusLine(KeyboardHints));
 
         // The bar doesn't clip: scale a too-long status down rather than overflow the screen edge.
-        var available = rect.Width - 16f;
-        var measured = Renderer.MeasureText(status.AsSpan(), _labelFont, fontSize).Width;
-        if (measured > available && available > 0)
-            fontSize = MathF.Max(10f, fontSize * (available / measured));
+        var fontSize = FitFontSize(status, _labelFont, ChromeFontSize, rect.Width - 16f);
 
         RenderTextBar(status, _labelFont,
             rect.X, rect.Y, rect.Width, rect.Height,
@@ -568,18 +617,13 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         var leftW = leftEnd - (rect.X + pad);
         var rightW = rect.X + rect.Width - pad - rightStart;
 
-        // DrawText does NOT clip to the given width, so a long label would overrun its column and
-        // collide with the counter across the camera gap — measure and scale down to fit instead
-        // (same approach as DIR.Lib's PixelMenuWidget width cap).
+        // Both ends are fitted: a long label would otherwise overrun its column and collide with the
+        // counter across the camera gap. See FitFontSize.
         void DrawFitted(string text, float x, float w, TextAlign align)
         {
             if (w <= 0) return;
-            var fs = fontSize;
-            var measured = Renderer.MeasureText(text.AsSpan(), _labelFont, fs).Width;
-            if (measured > w)
-                fs = MathF.Max(10f, fs * (w / measured));
             DrawText(text, _labelFont, x, textY, w, textH,
-                fs, FontColor, align, TextAlign.Center);
+                FitFontSize(text, _labelFont, fontSize, w), FontColor, align, TextAlign.Center);
         }
 
         if (!string.IsNullOrEmpty(TopStripLabel))

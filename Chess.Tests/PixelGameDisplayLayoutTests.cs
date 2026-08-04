@@ -7,6 +7,7 @@ using SharpAstro.Png;
 using Shouldly;
 using Xunit;
 using File = System.IO.File;
+using Layout = DIR.Lib.Layout;
 
 namespace Chess.Tests;
 
@@ -130,6 +131,139 @@ public sealed class PixelGameDisplayLayoutTests
 
         // The title + prompt + three items are light text on the dark menu — thousands of light pixels.
         light.ShouldBeGreaterThan(2000, "startup menu drew too little text");
+    }
+
+    /// <summary>
+    /// Records the geometry of every text run the display hands the renderer — the string, the size it was
+    /// finally drawn at (which the painter may have reduced to fit), and the rect it was drawn into. Drawing
+    /// is skipped; measuring goes through the real font, so widths are the ones the app produces.
+    /// </summary>
+    private sealed class RunRecorder(uint w, uint h) : RgbaImageRenderer(w, h)
+    {
+        public List<(string Text, string Font, float FontSize, RectInt Rect)> Runs { get; } = [];
+
+        public override void DrawText(ReadOnlySpan<char> text, string fontFamily, float fontSize,
+            RGBAColor32 fontColor, in RectInt layout, TextAlign horizAlign = TextAlign.Near,
+            TextAlign vertAlign = TextAlign.Center)
+            => Runs.Add((text.ToString(), fontFamily, fontSize, layout));
+    }
+
+    /// <summary>Two moves deep, including the longest notation the history draws (<c>Nc6xb4</c>).</summary>
+    private static Game TwoMovesWithACapture()
+    {
+        var game = new Game();
+        game.TryMove(Position.B1, Position.A3);
+        game.TryMove(Position.B8, Position.C6);
+        game.TryMove(Position.B2, Position.B4);
+        game.TryMove(Position.C6, Position.B4);
+        return game;
+    }
+
+    /// <summary>
+    /// Renders a playback frame (so the header carries its "▶ Latest" chip) and hands back both what reached
+    /// the renderer and the display itself.
+    /// </summary>
+    private static (RunRecorder Renderer, PixelGameDisplay<RgbaImage> Display, Game Game) RenderPlayback(
+        int width, int height)
+    {
+        // Makes the arranged tree readable back through GetCapturedLayout(); process-wide and additive, so
+        // leaving it on only costs other tests a retained list.
+        LayoutInspection.Enabled = true;
+
+        var renderer = new RunRecorder((uint)width, (uint)height);
+        var game = TwoMovesWithACapture();
+        var display = new PixelGameDisplay<RgbaImage>(renderer);
+        display.ResetGame(game);
+        display.UI.Mode = GameUIMode.Playback;
+        display.Render();
+        return (renderer, display, game);
+    }
+
+    // The sizes below bracket the case that broke. The history panel is the flanking gutter clamped to
+    // HistoryPanelWidth (18 em) — and on every surface aspect between the flanked/stacked crossover and
+    // about 1.53 that gutter sits at its MinSideGutter floor of 11 em instead. The header's title (7.6 em)
+    // and its chip (4.5 em) do not both fit that, nor do the longest move notations fit their Star cells.
+    // 16:10 and portrait are the roomy cases, included so a "fix" that merely shrank everything can't pass.
+    public static TheoryData<int, int> PanelWidths() => new()
+    {
+        { 1440, 1080 },  // 4:3   — gutter at its floor; header overlapped by 24 px before the fix
+        { 1400, 1000 },  // 1.40  — 21 px
+        { 1500, 1000 },  // 1.50  — 7 px, the edge of the band
+        { 1600, 1100 },  // 1.45  — 16 px
+        { 1600, 1000 },  // 16:10 — roomy gutter, always fitted
+        { 1280, 800 },   // 16:10, the GUI's default window
+        { 1080, 2408 },  // portrait — stacked, so the panel is the full surface width
+    };
+
+    /// <summary>
+    /// The history header's title must never be laid over its mode chip. Asserted on the rects the engine
+    /// arranged, which is the property the fix actually establishes: the chip is a docked strip of its own
+    /// measured width and the title takes the remainder, so the two cannot intersect at any size.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(PanelWidths))]
+    public void History_header_title_never_overlaps_its_mode_chip(int width, int height)
+    {
+        var (renderer, display, game) = RenderPlayback(width, height);
+        using var _ = renderer;
+
+        var runs = display.GetCapturedLayout()
+            .Where(n => n.Node is Layout.Node.Leaf { Content: Layout.Content.Text })
+            .Select(n => (Text: ((Layout.Content.Text)((Layout.Node.Leaf)n.Node).Content).Value, n.Bounds))
+            .ToList();
+
+        var title = runs.SingleOrDefault(r => r.Text == "Move History");
+        var chip = runs.SingleOrDefault(r => r.Text.Contains('▶'));
+        title.Text.ShouldNotBeNull($"{width}x{height}: the header drew no title");
+        chip.Text.ShouldNotBeNull($"{width}x{height}: playback drew no exit chip");
+
+        (title.Bounds.X + title.Bounds.Width).ShouldBeLessThanOrEqualTo(chip.Bounds.X + 0.5f,
+            $"{width}x{height}: the title's rect runs into the chip's — the header is hand-split again");
+
+        // And the chip is still a control: draw == hit, so its own drawn rect must answer the tap that
+        // leaves playback (the index one past the last ply is GameUI's exit sentinel).
+        var hit = display.HitTest(chip.Bounds.X + chip.Bounds.Width / 2f, chip.Bounds.Y + chip.Bounds.Height / 2f);
+        hit.ShouldBe(new HitResult.ListItemHit(GameUI.HistoryListId, game.Plies.Count),
+            $"{width}x{height}: the chip's drawn rect does not answer a tap");
+    }
+
+    /// <summary>
+    /// Nothing the display draws may be wider than the rect it was drawn into — the invariant that covers
+    /// BOTH panel bugs at once, because a pixel surface neither clips nor wraps: a run wider than its rect
+    /// simply draws over its neighbour, or off the screen entirely when the rect ends at the surface edge.
+    ///
+    /// <para>That is how the move rows were losing their tails: <c>Nc6xb4</c> overflowed its Star cell by
+    /// ~15 px at 4:3, and since the panel's right edge IS the screen edge on a flanked frame, the missing
+    /// part had nowhere to go. Both the header title and the ply cells now declare
+    /// <see cref="TextTrim.Shrink"/> and the painter honours it, so this holds by construction rather than by
+    /// every caller remembering to pre-measure.</para>
+    ///
+    /// <para>Measured at the size each run was ACTUALLY drawn at, which is the whole point — the authored
+    /// size is what the tree asked for, not what reached the surface.</para>
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(PanelWidths))]
+    public void No_text_run_is_drawn_wider_than_the_rect_it_was_given(int width, int height)
+    {
+        var (renderer, _, _) = RenderPlayback(width, height);
+        using var _r = renderer;
+
+        // Single characters are the board's own rank/file labels, drawn into deliberately generous label
+        // margins rather than into a layout rect; the piece glyphs come from the Merida font. Everything
+        // else is chrome sharing a strip with something, which is exactly what must fit.
+        var chrome = renderer.Runs
+            .Where(r => r.Font == FontPaths.DejaVuSans && r.Text.Trim().Length > 1)
+            .ToList();
+
+        chrome.ShouldNotBeEmpty($"{width}x{height}: recorded no chrome runs at all");
+
+        foreach (var (text, font, fontSize, rect) in chrome)
+        {
+            var glyphs = renderer.MeasureText(text.AsSpan(), font, fontSize).Width;
+            glyphs.ShouldBeLessThanOrEqualTo(rect.Width + 1f,
+                $"{width}x{height}: \"{text}\" was drawn {glyphs:F0} px wide at {fontSize:F1} into a " +
+                $"{rect.Width} px rect — it overhangs whatever sits beside it");
+        }
     }
 
     private static void FillBackground(byte[] px, RGBAColor32 c)

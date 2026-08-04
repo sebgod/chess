@@ -88,13 +88,25 @@ public static class HistoryRowLayout
         return palette.Background is { } bg ? row.Bg(bg) : row;
     }
 
-    /// <summary>One ply: a star-width cell that pads itself in its own colour, so the playback highlight
-    /// fills its column exactly, and that claims the click for its own ply.</summary>
+    /// <summary>
+    /// One ply: a star-width cell that pads itself in its own colour, so the playback highlight fills its
+    /// column exactly, and that claims the click for its own ply.
+    ///
+    /// <para><b>The ply shrinks rather than truncates.</b> A Star cell is half of whatever the panel got, and
+    /// the panel is only ever as wide as the frame's gutter allows — 11 em at its floor, where 18 is what the
+    /// content wants. The longest notations do not fit that: <c>Nc6xb4</c> ran ~15 px past its cell at a 4:3
+    /// surface, and since the panel's right edge IS the screen edge there, the tail was simply gone. Trimming
+    /// it would be worse than the overflow — <c>Nc6x…</c> has lost the destination square, which is the part
+    /// being read — so the cell asks for a smaller whole move instead
+    /// (<see cref="TextTrim.Shrink"/>). A cell surface cannot scale a face and end-trims, which is what the
+    /// terminal already did.</para>
+    /// </summary>
     private static Layout.Node PlyCell(string text, int plyIndex, int? highlightPlyIndex, float fontSize,
         in HistoryRowPalette palette)
     {
         var highlighted = highlightPlyIndex == plyIndex;
-        var cell = Layout.Builder.Text(text, fontSize, highlighted ? palette.Highlight : palette.Ply)
+        var cell = Layout.Builder.Text(text, fontSize, highlighted ? palette.Highlight : palette.Ply,
+                trim: TextTrim.Shrink)
             .Stretch()
             .Clickable(new HitResult.ListItemHit(GameUI.HistoryListId, plyIndex));
         return highlighted ? cell.Bg(palette.HighlightBackground) : cell;
