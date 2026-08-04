@@ -25,6 +25,10 @@ on:
       - 'tools/**'
       - 'Directory.Packages.props'
       - '.github/workflows/pages.yml'
+      # Markdown inside those trees (Chess.Web/docs/, a README) cannot change the published
+      # site. A negation is the only way to say that: `paths` and `paths-ignore` may not both
+      # appear on one event, and later patterns override earlier ones, so this must stay last.
+      - '!**/*.md'
   pull_request:
     branches: [main]
     paths:
@@ -34,6 +38,9 @@ on:
       - 'tools/**'
       - 'Directory.Packages.props'
       - '.github/workflows/pages.yml'
+      # Keep in step with the push filter above — see the note there on why this is a
+      # negation rather than a paths-ignore.
+      - '!**/*.md'
   workflow_dispatch:
 
 permissions:

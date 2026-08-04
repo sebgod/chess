@@ -1,10 +1,28 @@
 name: CI
 
+# Markdown-only changes skip the whole workflow. Without this a docs commit ran the
+# test job, the android gate AND all six publish legs, then cut a release -- which is
+# how a design-doc edit came to produce a cross-platform release.
+#
+# The ignore list is deliberately narrow: `**/*.md` and nothing else. Getting a paths
+# filter wrong is asymmetric -- too broad means CI silently does not run on a real
+# change, too narrow only means it runs when it need not -- so err toward running. A
+# doc asset that is not markdown (a diagram added under docs/) therefore still triggers
+# a full run, on purpose. Note also that a push touching code AND docs still runs
+# everything: the workflow is skipped only when EVERY changed path matches.
+#
+# Safe here because no markdown is a build input (no csproj references one, nothing
+# opens one at test time) and `main` has no branch protection or rulesets. That second
+# condition is load-bearing: if required status checks are ever turned on, a docs-only
+# PR would sit forever waiting for a check this filter prevents from ever reporting,
+# and the fix is a no-op job that reports success rather than deleting this filter.
 on:
   push:
     branches: [ "main" ]
+    paths-ignore: [ '**/*.md' ]
   pull_request:
     branches: [ "main" ]
+    paths-ignore: [ '**/*.md' ]
 
 jobs:
 
