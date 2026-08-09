@@ -140,12 +140,13 @@ public sealed class HistoryRowLayoutTests
     /// drifted 4.14px per pad character and this test failed. Tabular figures make digits equal to EACH
     /// OTHER; they never made a digit equal to a space.</para>
     ///
-    /// <para>The quarter-pixel tolerance is therefore regime-spanning, not slack: against the pinned DIR.Lib
-    /// (≤7.12) U+2007 still borrows <c>'n'</c>'s advance and the field drifts ~0.1px, while against 7.13+ it
-    /// is exact. It can tighten to an exact comparison once the pin moves past 7.13. Either way it stays far
-    /// below the 4px-per-character drift a non-digit-width pad produces, which is the failure being
-    /// caught — without it the terminal would stay perfect while the pixel ply columns silently jittered row
-    /// to row.</para>
+    /// <para>The tolerance is a thousandth of a pixel — float noise and nothing else. It was a quarter pixel
+    /// while the pin was a DIR.Lib that measured whitespace as <c>'n'</c>, where U+2007 borrowed that advance
+    /// and the field drifted ~0.1px; the pin now sits past 7.13, so the two widths come off the same
+    /// <c>hmtx</c> advance and agree exactly. That matters more than tidiness: the failure being caught is a
+    /// 4px-per-character drift, and a tolerance loose enough to hide float noise is also loose enough to hide
+    /// the first character of real drift. Without this test the terminal would stay perfect while the pixel
+    /// ply columns jittered row to row.</para>
     /// </summary>
     [Fact]
     public void OnAPixelSurface_TheIndexColumnIsTheSameWidthForOneDigitAndTwo()
@@ -156,10 +157,10 @@ public sealed class HistoryRowLayoutTests
         var move1 = Cells(OnPixels(renderer, plies, moveIndex: 0));
         var move12 = Cells(OnPixels(renderer, plies, moveIndex: 11));
 
-        move12[0].Bounds.Width.ShouldBe(move1[0].Bounds.Width, 0.25f,
+        move12[0].Bounds.Width.ShouldBe(move1[0].Bounds.Width, 0.001f,
             "the two-digit index must measure as wide as the one-digit one — the pad is digit-width");
-        move12[1].Bounds.X.ShouldBe(move1[1].Bounds.X, 0.25f, "so the ply columns cannot drift between rows");
-        move12[1].Bounds.Width.ShouldBe(move1[1].Bounds.Width, 0.25f);
+        move12[1].Bounds.X.ShouldBe(move1[1].Bounds.X, 0.001f, "so the ply columns cannot drift between rows");
+        move12[1].Bounds.Width.ShouldBe(move1[1].Bounds.Width, 0.001f);
     }
 
     /// <summary>
@@ -168,10 +169,12 @@ public sealed class HistoryRowLayoutTests
     /// cause. The pad character must advance like a digit; that is the whole reason it is U+2007 and not a
     /// space.
     ///
-    /// <para>Asserted positively only. The obvious companion — that an ordinary space is NOT digit-width —
-    /// cannot be asserted while the pin is a DIR.Lib that measures whitespace as <c>'n'</c> (there a space
-    /// reports 8.2393px, a thirtieth of a pixel off a digit). Add it when the pin moves past 7.13; until then
-    /// this direction is the half that holds in both regimes.</para>
+    /// <para>Now asserted in BOTH directions. The negative half — that an ordinary space is <em>not</em>
+    /// digit-width — is the one that would have caught the original mistake, and it could not be stated
+    /// while the pin was a DIR.Lib measuring whitespace as <c>'n'</c>: there a space reported 8.2393px, a
+    /// thirtieth of a pixel off a digit, so "a space is not digit-width" was FALSE against the library and
+    /// true against the font. The pin now sits past 7.13, so both halves hold and the pair pins the
+    /// distinction itself rather than one side of it.</para>
     /// </summary>
     [Fact]
     public void ThePadCharacterAdvancesLikeADigit()
@@ -179,9 +182,16 @@ public sealed class HistoryRowLayoutTests
         using var renderer = new RgbaImageRenderer(300, 100);
         float Width(string s) => renderer.MeasureText(s.AsSpan(), FontPaths.DejaVuSans, 13f).Width;
 
-        Width("\u2007").ShouldBe(Width("0"), 0.25f,
+        Width("\u2007").ShouldBe(Width("0"), 0.001f,
             "U+2007 FIGURE SPACE is defined to advance like a digit, and the index pad is built on that");
-        Width("0").ShouldBe(Width("1"), 0.25f, "and the figures themselves are tabular, digit to digit");
+        Width("0").ShouldBe(Width("1"), 0.001f, "and the figures themselves are tabular, digit to digit");
+
+        // The half that names the original bug, and the one that could not be stated before the pin
+        // passed 7.13. An ordinary space is 651/2048 em against a digit's 1303, so it is HALF a digit --
+        // not the thirtieth-of-a-pixel difference the old measurement reported when whitespace borrowed
+        // the 'n' glyph's advance. Asserted as a RATIO, so it reads as "about half a digit" at any size.
+        (Width(" ") / Width("0")).ShouldBe(0.5f, 0.01f,
+            "an ordinary space is about HALF a digit, which is why it cannot pad this column");
     }
 
     /// <summary>The highlight is per PLY, not per row — the reason each ply is its own cell.</summary>
