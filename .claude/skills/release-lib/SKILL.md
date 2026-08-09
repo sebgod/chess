@@ -125,10 +125,21 @@ Consequences:
    extra commit or amending an already-pushed `main`; the amend route force-pushes a
    published commit and burns a second build-counter publish for the same X.Y.
 
-3. **Build and test** the library locally:
+3. **Build and test** the library locally. **The solution is not always under `src/`** — a bare
+   `cd <repo>/src && dotnet test` fails with `MSB1003: Specify a project or solution file`
+   in DIR.Lib, whose solution sits at the repo ROOT. Pass the solution explicitly:
+   ```bash
+   cd <repo> && dotnet test DIR.Lib.sln        # DIR.Lib: solution at the repo root
+   cd <repo>/src && dotnet test                # Console.Lib, SdlVulkan.Renderer, WebGl.Renderer
+   cd <repo>/src && dotnet test TianWen.slnx   # tianwen (see the note further down)
    ```
-   cd <repo>/src && dotnet test
-   ```
+
+   **Never pipe it through `tail`/`head`.** A pipeline's exit code is the LAST command's, so
+   `dotnet test | tail -40` reports success for a failed run, and the truncation drops the
+   FIRST assembly's summary — which is how a tianwen run that looked like "371 tests, exit 0"
+   was really 4442 tests whose largest assembly had scrolled off. Let the output land in full
+   (background it if long) and read the `Passed!`/`Failed!` line per assembly. Count the
+   assemblies: a missing one is a silent gap, not a pass.
 
 4. **Commit and push** the bump + changelog in the library repo. Check first that
    `main` has not diverged (`git fetch && git status`): a stale unpushed bump whose
@@ -136,6 +147,23 @@ Consequences:
    the local commit is superseded and should be dropped
    (`git rebase --onto origin/main <stale-sha> main`), not merged. Verify by reading
    origin's version file and changelog, not by trusting the local one.
+
+   **`git fetch` BEFORE writing the changelog entry, not just before pushing.** A clean
+   `git status` says nothing about origin. The likelier find is not a duplicate bump but
+   **unreleased CODE commits** sitting on origin above the last release commit — this repo
+   family lands work on `main`, which publishes it as a build-counter republish of the
+   CURRENT X.Y, and the X.Y bump comes later as its own commit. So the release entry you are
+   writing must describe **everything since the previous release commit**, not just your own
+   change:
+   ```bash
+   git fetch && git log --oneline <last-release-commit>..origin/main
+   ```
+   On 2026-08-10 SdlVulkan.Renderer was five renderer fixes ahead (device loss, a present-wait
+   semaphore VUID, subpass-dependency compatibility, validation reporting, GPU selection) while
+   `git status` read clean, and a lockstep entry saying "no renderer code change" was drafted
+   and committed before the push revealed them. The push is rejected non-fast-forward, so the
+   *pin* cannot go out wrong — but the changelog would have, and the changelog is the only
+   place those five fixes are ever described to a consumer.
 
 5. **Wait for NuGet publication** - CI builds, packs, and publishes to nuget.org.
    Poll the flat container, which is authoritative and updates within seconds:
@@ -184,11 +212,13 @@ DIR.Lib ────────────────────────
   holding two backends restore two DIR.Lib versions and unify on the higher one by luck
   rather than by intent (WebGl.Renderer was found two minors behind twice this way).
 
-**Note — WebGl.Renderer's pin is NOT in `Directory.Packages.props`.** It sits inline in
-`Chess.Web/Chess.Web.csproj` (`<PackageReference Include="WebGl.Renderer" Version="1.16.*" />`,
-next to the `UseLocalSiblings` ProjectReference). A chess repin that edits only
-`Directory.Packages.props` silently leaves Chess.Web on the old backend. Grep for the
-package name across the repo rather than assuming one pin file.
+**Note — WebGl.Renderer's pin IS centralised now** (`<PackageVersion Include="WebGl.Renderer" ... />`
+in `Directory.Packages.props`; `Chess.Web.csproj` carries a versionless `PackageReference`
+beside its `UseLocalSiblings` ProjectReference). It used to sit inline in the csproj, which
+opted that project out of CPM and hid the pin from every solution-wide sweep — which is how
+it twice ended up two minors behind DIR.Lib. The habit the old warning taught is still the
+right one: **grep for the package name across the repo** rather than trusting any single pin
+file, because that is what catches the next one that escapes.
 
 **Note — `tianwen` is the OTHER DIR.Lib consumer** (`../../sharpastro/tianwen`) and is
 not in this repo's chain. It carries its own DIR.Lib `X.Y.*` pin, so it is insulated
@@ -222,14 +252,15 @@ and the old NuGet versions won't have the new APIs.
    c. Update WebGl.Renderer's `src/Directory.Packages.props` DIR.Lib pin,
       bump minor, push. Poll NuGet.
 5. ONLY AFTER all three backends are on NuGet:
-   Update chess project's `Directory.Packages.props` with the new X.Y pins:
+   Update chess project's `Directory.Packages.props` with the new X.Y pins — **all four
+   in one edit**, since they are one lockstep set (values below are the 2026-08-10 set,
+   for shape; read the current ones out of the file):
    ```xml
-   <PackageVersion Include="DIR.Lib" Version="7.8.*" />
-   <PackageVersion Include="Console.Lib" Version="4.16.*" />
-   <PackageVersion Include="SdlVulkan.Renderer" Version="7.6.*" />
+   <PackageVersion Include="DIR.Lib" Version="7.14.*" />
+   <PackageVersion Include="Console.Lib" Version="4.20.*" />
+   <PackageVersion Include="SdlVulkan.Renderer" Version="7.11.*" />
+   <PackageVersion Include="WebGl.Renderer" Version="1.18.*" />
    ```
-   …and **`Chess.Web/Chess.Web.csproj`** for `WebGl.Renderer` (its pin is not
-   centralised — see the note above).
 6. Verify against the published packages before pushing:
    `dotnet build -c Release -p:UseLocalSiblings=false && dotnet test -c Release -p:UseLocalSiblings=false`.
    This is the only local run that exercises the path CI takes.
