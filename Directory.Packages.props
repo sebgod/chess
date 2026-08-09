@@ -6,21 +6,21 @@
     <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Console.Lib" Version="4.16.*" />
+    <PackageVersion Include="Console.Lib" Version="4.20.*" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
-    <PackageVersion Include="DIR.Lib" Version="7.8.*" />
+    <PackageVersion Include="DIR.Lib" Version="7.14.*" />
     <!-- Chess.Web's Blazor WebAssembly deps. They used to ride inline in Chess.Web.csproj, which
          opted out of CPM entirely; that also hid the WebGl.Renderer pin below from every
          solution-wide sweep, which is how it twice ended up two minors behind DIR.Lib. -->
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.9" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.9" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.10" />
     <!-- LAN.Lib: the LAN peer discovery (UDP announce beacon + self-expiring peer table) that was
          extracted OUT of this repo's Chess.Net — chess is now a consumer, keeping only the
          chess-specific TCP session layer on top. Same pin as tianwen's. -->
     <PackageVersion Include="LAN.Lib" Version="1.2.*" />
     <PackageVersion Include="SharpAstro.Png" Version="3.8.*" />
-    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.7.0" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.8.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <!-- Browser automation for Chess.Web.E2E.Tests. That project stays OUT of Chess.sln on purpose
          (it needs a browser and a running dev server), but it is under CPM like everything else:
          solution membership and central versions are independent, and keeping it out of CPM only
@@ -29,18 +29,18 @@
     <PackageVersion Include="Microsoft.Playwright" Version="1.61.0" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
     <PackageVersion Include="SDL3-CS" Version="3.5.0-preview.20260213-150035" />
-    <PackageVersion Include="SdlVulkan.Renderer" Version="7.6.*" />
+    <PackageVersion Include="SdlVulkan.Renderer" Version="7.11.*" />
     <PackageVersion Include="SDL3-CS.Native" Version="3.5.0-preview.20260205-174353" />
-    <PackageVersion Include="Vortice.Vulkan" Version="3.2.1" />
+    <PackageVersion Include="Vortice.Vulkan" Version="3.2.3" />
     <PackageVersion Include="Vortice.VulkanMemoryAllocator" Version="1.7.0" />
     <!-- WebGL2 backend for Chess.Web. Floats within its minor like the other siblings; move it in
          lockstep with the DIR.Lib pin above, since both are rebuilt from the same DIR.Lib. -->
-    <PackageVersion Include="WebGl.Renderer" Version="1.16.*" />
+    <PackageVersion Include="WebGl.Renderer" Version="1.18.*" />
     <!-- Vortice.ShaderCompiler pin removed: SdlVulkan.Renderer 6.29+ embeds pre-baked SPIR-V and no
          longer compiles GLSL at runtime, and no chess project ever referenced the package directly. -->
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
     <PackageVersion Include="ModelContextProtocol" Version="2.1.0" />
-    <PackageVersion Include="System.CommandLine" Version="2.0.9" />
+    <PackageVersion Include="System.CommandLine" Version="2.0.10" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
   </ItemGroup>
