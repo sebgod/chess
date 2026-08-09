@@ -37,18 +37,35 @@ public readonly record struct HistoryRowPalette(
 ///
 /// <para><b>The row states no absolute extent, which is what lets one tree serve a cell surface and a pixel
 /// surface.</b> The index cell is <c>Auto</c> — as wide as its own text — and the two ply cells are
-/// <c>Star</c>, so they split whatever is left. That works on both surfaces because the PGN index is
-/// space-padded to a constant character count (<see cref="RecordedPlyExtensions.GetRecordAndPGNIdx"/>'s
-/// <c>{0,4}</c>) and DejaVu Sans advances a space all but exactly like a digit — 1298 against 1303 units of a
-/// 2048 em, a thirty-second of a pixel at a 13px chrome font — so the index column is constant-width whether
-/// it measures in cells or in pixels, and the ply columns below it stay aligned. That is a property of the
-/// font, so it is pinned by a test (<c>HistoryRowLayoutTests</c>).
-/// A row that DID need an absolute extent (a fixed column, a gap in cells) would have to declare the tree's
+/// <c>Star</c>, so they split whatever is left. On a cell surface that is constant-width for free: the index
+/// is padded to a fixed character count (<see cref="RecordedPlyExtensions.GetRecordAndPGNIdx"/>'s
+/// <c>{0,4}</c>) and every character is one cell. On a pixel surface it is constant-width because the pad is
+/// <see cref="FigureSpace"/> — U+2007, the space a font defines to advance exactly like a digit — so swapping
+/// a pad for a digit as the move number grows is width-neutral by construction. In DejaVu Sans at a 13px
+/// chrome font, U+2007 and a digit both advance 8.2710px, while an ordinary space advances 4.1323px: HALF a
+/// digit. Pinned by <c>HistoryRowLayoutTests</c>.</para>
+///
+/// <para><b>Why the pad character is load-bearing, and was not always this one.</b> The pad used to be an
+/// ordinary space, on the belief that DejaVu advanced one "all but exactly like a digit — 1298 against 1303
+/// units of a 2048 em". Those two numbers are <c>'n'</c> and a digit, not a space and a digit: the probe that
+/// produced them ran through a DIR.Lib bug where an ink-free glyph discarded its <c>hmtx</c> advance and
+/// whitespace borrowed <c>'n'</c>'s instead (fixed in DIR.Lib 7.13). So the columns lined up only because a
+/// space was being measured as something twice its true width, and the moment that was corrected the index
+/// column drifted 4.14px per pad character. Tabular figures make digits equal to EACH OTHER; they never made
+/// a digit equal to a space. U+2007 is the character that actually carries the property this column needs.
+/// A row that needed a real absolute extent (a fixed column, a gap in cells) would have to declare the tree's
 /// unit convention instead, via <c>CellMeasureContext.PixelAuthored</c> or DIR.Lib 7.4's mirror
-/// <c>PixelMeasureContext.CellAuthored</c>; this row needs neither.</para>
+/// <c>PixelMeasureContext.CellAuthored</c>; a width-neutral pad means this row still needs neither.</para>
 /// </summary>
 public static class HistoryRowLayout
 {
+    /// <summary>
+    /// U+2007 FIGURE SPACE — the space a font defines to advance exactly like a digit, which is what makes the
+    /// index column constant-width on a proportional surface (see the type's remarks). Display only: the PGN
+    /// the game serializes keeps ASCII spaces, because a figure space is typography, not a wire format.
+    /// </summary>
+    private const char FigureSpace = '\u2007';
+
     /// <summary>
     /// Builds move <paramref name="moveIndex"/> (0-based: move 1 is index 0) as a row.
     /// <para>The returned node states no sizing of its own, so the caller sizes it for its own container:
@@ -75,7 +92,9 @@ public static class HistoryRowLayout
         var row = Layout.Builder.HStack(
             // Auto width: the padded index text IS the column. The pad also right-aligns the number for
             // free ("   1." / "  12."), so this needs no Far alignment inside a fixed box to line up.
-            Layout.Builder.Text($" {idxStr} ", fontSize, palette.Index).HStar()
+            // Its spaces are the {0,4} pad and nothing else, so re-padding with FigureSpace is a pure
+            // width fix -- see the type's remarks for why an ordinary space cannot hold this column.
+            Layout.Builder.Text($" {idxStr.Replace(' ', FigureSpace)} ", fontSize, palette.Index).HStar()
                 .Clickable(new HitResult.ListItemHit(GameUI.HistoryListId, whitePlyIdx)),
             PlyCell(whitePly.ToString(), whitePlyIdx, highlightPlyIndex, fontSize, palette),
             // The leading space rides INSIDE the black cell, so a highlighted reply reads as one continuous

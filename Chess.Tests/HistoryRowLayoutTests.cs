@@ -125,16 +125,27 @@ public sealed class HistoryRowLayoutTests
     }
 
     /// <summary>
-    /// <b>The assumption the shared row rests on.</b> The PGN index is space-padded to a constant character
-    /// count, so on a cell surface every index column is 7 wide no matter the move number. On a PROPORTIONAL
-    /// surface that only holds if a space advances like a digit — tabular figures, which DejaVu Sans has:
-    /// measured at a 13px chrome font its space is 8.2393px against a digit's 8.2710px (1298 vs 1303 units of
-    /// a 2048 em), so swapping a pad character for a digit moves the column by 1/32 of a pixel and the whole
-    /// four-character field by at most an eighth. Hence the quarter-pixel tolerance: it is not slack, it is
-    /// the hinting rounding. A font with a typical narrow space (a third of an em against a digit's half)
-    /// would move the column by ~2px per pad character — six pixels across the field — which this catches
-    /// decisively. Without it, the terminal would stay perfect while the pixel ply columns silently jittered
-    /// row to row.
+    /// <b>The assumption the shared row rests on.</b> The index is padded to a constant character count, so on
+    /// a cell surface every index column is 7 wide no matter the move number. On a PROPORTIONAL surface that
+    /// only holds if the PAD CHARACTER advances like a digit — which is why the pad is U+2007 FIGURE SPACE,
+    /// the space a font defines to be digit-width, and not an ordinary space. In DejaVu Sans at a 13px chrome
+    /// font U+2007 and a digit both advance 8.2710px, so the four-character field measures identically at
+    /// every move number.
+    ///
+    /// <para>It was an ordinary space until 2026-08-10, justified by "a space advances all but exactly like a
+    /// digit — 8.2393 against 8.2710px, 1298 vs 1303 units of a 2048 em". That measurement was of
+    /// <c>'n'</c>: DIR.Lib had a bug where an ink-free glyph dropped its <c>hmtx</c> advance and whitespace
+    /// borrowed <c>'n'</c>'s instead, and <c>'n'</c> happens to sit within a thirtieth of a pixel of a digit.
+    /// A DejaVu space is really 4.1323px — HALF a digit — so once DIR.Lib 7.13 measured it correctly the field
+    /// drifted 4.14px per pad character and this test failed. Tabular figures make digits equal to EACH
+    /// OTHER; they never made a digit equal to a space.</para>
+    ///
+    /// <para>The quarter-pixel tolerance is therefore regime-spanning, not slack: against the pinned DIR.Lib
+    /// (≤7.12) U+2007 still borrows <c>'n'</c>'s advance and the field drifts ~0.1px, while against 7.13+ it
+    /// is exact. It can tighten to an exact comparison once the pin moves past 7.13. Either way it stays far
+    /// below the 4px-per-character drift a non-digit-width pad produces, which is the failure being
+    /// caught — without it the terminal would stay perfect while the pixel ply columns silently jittered row
+    /// to row.</para>
     /// </summary>
     [Fact]
     public void OnAPixelSurface_TheIndexColumnIsTheSameWidthForOneDigitAndTwo()
@@ -146,9 +157,31 @@ public sealed class HistoryRowLayoutTests
         var move12 = Cells(OnPixels(renderer, plies, moveIndex: 11));
 
         move12[0].Bounds.Width.ShouldBe(move1[0].Bounds.Width, 0.25f,
-            "\"  12. \" must measure as wide as \"   1. \" — tabular figures");
+            "the two-digit index must measure as wide as the one-digit one — the pad is digit-width");
         move12[1].Bounds.X.ShouldBe(move1[1].Bounds.X, 0.25f, "so the ply columns cannot drift between rows");
         move12[1].Bounds.Width.ShouldBe(move1[1].Bounds.Width, 0.25f);
+    }
+
+    /// <summary>
+    /// The premise of the test above, asserted directly on the font instead of through an arranged layout —
+    /// because the premise is what silently broke, and a column-width failure is a long way from naming its
+    /// cause. The pad character must advance like a digit; that is the whole reason it is U+2007 and not a
+    /// space.
+    ///
+    /// <para>Asserted positively only. The obvious companion — that an ordinary space is NOT digit-width —
+    /// cannot be asserted while the pin is a DIR.Lib that measures whitespace as <c>'n'</c> (there a space
+    /// reports 8.2393px, a thirtieth of a pixel off a digit). Add it when the pin moves past 7.13; until then
+    /// this direction is the half that holds in both regimes.</para>
+    /// </summary>
+    [Fact]
+    public void ThePadCharacterAdvancesLikeADigit()
+    {
+        using var renderer = new RgbaImageRenderer(300, 100);
+        float Width(string s) => renderer.MeasureText(s.AsSpan(), FontPaths.DejaVuSans, 13f).Width;
+
+        Width("\u2007").ShouldBe(Width("0"), 0.25f,
+            "U+2007 FIGURE SPACE is defined to advance like a digit, and the index pad is built on that");
+        Width("0").ShouldBe(Width("1"), 0.25f, "and the figures themselves are tabular, digit to digit");
     }
 
     /// <summary>The highlight is per PLY, not per row — the reason each ply is its own cell.</summary>
