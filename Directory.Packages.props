@@ -39,7 +39,7 @@
     <!-- Vortice.ShaderCompiler pin removed: SdlVulkan.Renderer 6.29+ embeds pre-baked SPIR-V and no
          longer compiles GLSL at runtime, and no chess project ever referenced the package directly. -->
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
-    <PackageVersion Include="ModelContextProtocol" Version="1.4.0" />
+    <PackageVersion Include="ModelContextProtocol" Version="2.1.0" />
     <PackageVersion Include="System.CommandLine" Version="2.0.9" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="xunit.v3" Version="3.2.2" />
