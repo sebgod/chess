@@ -8,7 +8,7 @@
   <ItemGroup>
     <PackageVersion Include="Console.Lib" Version="4.20.*" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
-    <PackageVersion Include="DIR.Lib" Version="7.14.*" />
+    <PackageVersion Include="DIR.Lib" Version="7.17.*" />
     <!-- Chess.Web's Blazor WebAssembly deps. They used to ride inline in Chess.Web.csproj, which
          opted out of CPM entirely; that also hid the WebGl.Renderer pin below from every
          solution-wide sweep, which is how it twice ended up two minors behind DIR.Lib. -->
@@ -29,12 +29,17 @@
     <PackageVersion Include="Microsoft.Playwright" Version="1.61.0" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
     <PackageVersion Include="SDL3-CS" Version="3.5.0-preview.20260213-150035" />
-    <PackageVersion Include="SdlVulkan.Renderer" Version="7.11.*" />
+    <PackageVersion Include="SdlVulkan.Renderer" Version="7.12.*" />
     <PackageVersion Include="SDL3-CS.Native" Version="3.5.0-preview.20260205-174353" />
     <PackageVersion Include="Vortice.Vulkan" Version="3.2.3" />
     <PackageVersion Include="Vortice.VulkanMemoryAllocator" Version="1.7.0" />
-    <!-- WebGL2 backend for Chess.Web. Floats within its minor like the other siblings; move it in
-         lockstep with the DIR.Lib pin above, since both are rebuilt from the same DIR.Lib. -->
+    <!-- WebGL2 backend for Chess.Web. Floats within its minor like the other siblings. It used to say
+         "move it in lockstep with the DIR.Lib pin above"; that only holds while the backends have a
+         build following the DIR.Lib pin, and as of 7.17 they don't — 1.18 (like Console.Lib 4.20 and
+         SdlVulkan 7.12) is the newest published build and each still pins DIR.Lib 7.14.*. Chess's own
+         higher direct pin unifies everyone up to 7.17, which is only safe because 7.15-7.17 are
+         additive (tabbar hover, tabbar "+", a Fonts.Lib follow) and DIR.Lib's MIGRATION.md still tops
+         out at the 7.11 UiPalette reshape. Restore the lockstep when a backend does follow 7.17. -->
     <PackageVersion Include="WebGl.Renderer" Version="1.18.*" />
     <!-- Vortice.ShaderCompiler pin removed: SdlVulkan.Renderer 6.29+ embeds pre-baked SPIR-V and no
          longer compiles GLSL at runtime, and no chess project ever referenced the package directly. -->
