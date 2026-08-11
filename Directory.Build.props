@@ -1,5 +1,32 @@
 <Project>
 
+  <!--
+    The ONE place chess's X.Y is written. CI reads it back with
+    `dotnet msbuild Directory.Build.props -getProperty:VersionMajorMinor` and appends the run
+    number to form `X.Y.<run>`, which becomes both the `v` tag and the stamped binary version.
+    Bump the minor here when the shipped feature set moves; nothing else needs editing.
+
+    This is the same three-property shape the seven sibling repos use, and the reasons for the
+    shape are theirs. `VersionPrefix` is conditional so CI's `-p:Version` wins; `AssemblyVersion`
+    is deliberately NOT conditional, because a conditional lets a csproj literal win silently —
+    which is exactly how DIR.Lib shipped assembly identity 6.4.0.0 from 6.5 through 7.8. Only
+    Major.Minor is significant there, so a build-counter republish never churns identity.
+
+    The trap that shape defends against: CI passes `-p:Version` and `-p:FileVersion` and nothing
+    else. It never stamps `AssemblyVersion`. So a stale `VersionPrefix` only spoils a local
+    build, while a stale `AssemblyVersion` spoils the shipped assembly and no local build reveals
+    it. Keep all three here and none in any .csproj.
+
+    Before this existed chess had no version property at all, so every published binary — GUI,
+    console, engine, Android and MCP alike — reported the SDK default 1.0.0, and a build's only
+    identity was the `build-<run_number>` tag the release job invented.
+  -->
+  <PropertyGroup>
+    <VersionMajorMinor>1.0</VersionMajorMinor>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">$(VersionMajorMinor).0</VersionPrefix>
+    <AssemblyVersion>$(VersionMajorMinor).0.0</AssemblyVersion>
+  </PropertyGroup>
+
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <DebugType>none</DebugType>
   </PropertyGroup>
