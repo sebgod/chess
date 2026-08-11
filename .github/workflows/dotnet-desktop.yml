@@ -23,16 +23,48 @@ on:
   pull_request:
     branches: [ "main" ]
     paths-ignore: [ '**/*.md' ]
+  # Cutting a release is a decision, not a side effect of merging. The `release` job below is
+  # gated on this event alone; `publish` also accepts it so a dispatch has fresh binaries to
+  # attach. Mirrors tianwen, where release piggybacks off a dispatch-gated publish.
+  workflow_dispatch:
+
+env:
+  # Version identity, in the shape the sibling repos use. The X.Y comes from
+  # Directory.Build.props (resolved in `test` below) and is NOT restated here -- an older
+  # layout in the siblings declared it in both places and they drifted.
+  #   Version     = X.Y.<run_number>+<sha>   informational, what `--version` shows
+  #   FileVersion = X.Y.<run_number>.<attempt>
+  # A re-run of the same run_number therefore differs only in the attempt component.
+  VERSION_REV: ${{ github.run_attempt }}
+  VERSION_HASH: +${{ github.sha }}
 
 jobs:
 
   test:
     runs-on: ubuntu-latest
+    outputs:
+      version-prefix: ${{ steps.resolve-version.outputs.prefix }}
     steps:
     - uses: actions/checkout@v4
     - uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 10.0.x
+    # Read the X.Y back out of the props file rather than restating it here, so the version
+    # lives in exactly one place. `-getProperty` only EVALUATES the file: nothing is built and
+    # no restore is needed, so this costs a second. The guard matters because a typo or a
+    # renamed property yields an EMPTY string, which would otherwise sail through and tag a
+    # release `v.142`.
+    - name: Resolve version
+      id: resolve-version
+      shell: bash
+      run: |
+        MM="$(dotnet msbuild Directory.Build.props -getProperty:VersionMajorMinor -nologo | tr -d '[:space:]')"
+        case "$MM" in
+          [0-9]*.[0-9]*) ;;
+          *) echo "::error::VersionMajorMinor did not resolve from Directory.Build.props (got '$MM')"; exit 1 ;;
+        esac
+        echo "prefix=${MM}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
+        echo "Resolved VERSION_PREFIX=${MM}.${{ github.run_number }}"
     - run: dotnet test --configuration Release
 
   # The Android head is deliberately outside Chess.sln: an Android TFM in the solution
@@ -75,7 +107,9 @@ jobs:
 
   publish:
     needs: test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
+    env:
+      VERSION_PREFIX: ${{ needs.test.outputs.version-prefix }}
     strategy:
       fail-fast: false
       matrix:
@@ -93,24 +127,46 @@ jobs:
     - uses: actions/setup-dotnet@v4
       with:
         dotnet-version: 10.0.x
+    # `shell: bash` is load-bearing on the windows legs: the default there is PowerShell, which
+    # does not expand ${VERSION_PREFIX} and would publish a literal string as the version.
     - name: Publish Chess.Console
-      run: dotnet publish Chess.Console/Chess.Console.csproj -r ${{ matrix.rid }} -c Release
+      run: dotnet publish Chess.Console/Chess.Console.csproj -r ${{ matrix.rid }} -c Release -p:Version=${VERSION_PREFIX}${VERSION_HASH} -p:FileVersion=${VERSION_PREFIX}.${VERSION_REV}
+      shell: bash
     - name: Publish Chess.GUI
-      run: dotnet publish Chess.GUI/Chess.GUI.csproj -r ${{ matrix.rid }} -c Release
+      run: dotnet publish Chess.GUI/Chess.GUI.csproj -r ${{ matrix.rid }} -c Release -p:Version=${VERSION_PREFIX}${VERSION_HASH} -p:FileVersion=${VERSION_PREFIX}.${VERSION_REV}
+      shell: bash
+    # retention-days is explicit because the default is 90, and six RIDs x two apps x every
+    # push to main is how this repo accumulated 3.92 GB of live artifacts. 14 days outlives any
+    # plausible "grab the binary from that merge" request; anything meant to last belongs on a
+    # release instead.
     - uses: actions/upload-artifact@v4
       with:
         name: chess-console-${{ matrix.rid }}
         path: Chess.Console/bin/Release/net10.0/${{ matrix.rid }}/publish/
+        retention-days: 14
     - uses: actions/upload-artifact@v4
       with:
         name: chess-gui-${{ matrix.rid }}
         path: Chess.GUI/bin/Release/net10.0/${{ matrix.rid }}/publish/
+        retention-days: 14
 
+  # Gating: only ship binaries to a GitHub Release on an explicit dispatch, and only when tests
+  # passed AND all six publish legs succeeded. Previously this job needed nothing but `publish`,
+  # which was gated on main+push alone -- so every merge cut a release. That produced 90 of them
+  # (`build-1` .. `build-141`), 996 assets and 8.04 GB that never expires, none of it carrying a
+  # version anyone could act on.
+  #
+  # `needs: test` is not redundant with `needs: publish`: publish already depends on test, but
+  # this job reads test's version-prefix OUTPUT, and an output is only readable from a job named
+  # in your own `needs`.
   release:
-    needs: publish
+    needs: [test, publish]
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      VERSION_PREFIX: ${{ needs.test.outputs.version-prefix }}
     steps:
     - uses: actions/download-artifact@v4
       with:
@@ -125,7 +181,7 @@ jobs:
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: build-${{ github.run_number }}
-        name: Build ${{ github.run_number }}
+        tag_name: v${{ env.VERSION_PREFIX }}
+        name: v${{ env.VERSION_PREFIX }}
         generate_release_notes: true
         files: chess-*.tar.gz
