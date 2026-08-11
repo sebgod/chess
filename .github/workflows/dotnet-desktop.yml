@@ -45,8 +45,8 @@ jobs:
     outputs:
       version-prefix: ${{ steps.resolve-version.outputs.prefix }}
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-dotnet@v4
+    - uses: actions/checkout@v7
+    - uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
     # Read the X.Y back out of the props file rather than restating it here, so the version
@@ -82,13 +82,13 @@ jobs:
   android:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-dotnet@v4
+    - uses: actions/checkout@v7
+    - uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
     # The Android SDK itself is preinstalled on the runner, but pin the JDK: .NET Android
     # wants 17, and the image's default has moved on.
-    - uses: actions/setup-java@v4
+    - uses: actions/setup-java@v5
       with:
         distribution: temurin
         java-version: '17'
@@ -123,8 +123,8 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-dotnet@v4
+    - uses: actions/checkout@v7
+    - uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
     # `shell: bash` is load-bearing on the windows legs: the default there is PowerShell, which
@@ -139,12 +139,12 @@ jobs:
     # push to main is how this repo accumulated 3.92 GB of live artifacts. 14 days outlives any
     # plausible "grab the binary from that merge" request; anything meant to last belongs on a
     # release instead.
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: chess-console-${{ matrix.rid }}
         path: Chess.Console/bin/Release/net10.0/${{ matrix.rid }}/publish/
         retention-days: 14
-    - uses: actions/upload-artifact@v4
+    - uses: actions/upload-artifact@v7
       with:
         name: chess-gui-${{ matrix.rid }}
         path: Chess.GUI/bin/Release/net10.0/${{ matrix.rid }}/publish/
@@ -168,7 +168,7 @@ jobs:
     env:
       VERSION_PREFIX: ${{ needs.test.outputs.version-prefix }}
     steps:
-    - uses: actions/download-artifact@v4
+    - uses: actions/download-artifact@v8
       with:
         path: artifacts
     - name: Create release archives
@@ -178,8 +178,26 @@ jobs:
           name="${dir%/}"
           tar -czf "../${name}.tar.gz" -C "$dir" .
         done
+    # SharpAstro/action-gh-release, not softprops/action-gh-release, and the fork IS the point.
+    #
+    # A `uses:` tag is not a version, it is a moving pointer in a repo someone else controls. An
+    # action runs arbitrary code inside this job, and this job holds `contents: write` -- so
+    # whoever can move `@v2` can push a commit, or read any secret the job can see. Nothing about
+    # the reference changes when they do; the same line keeps building, green, against different
+    # code. That is not hypothetical: it is how the tj-actions/changed-files compromise reached
+    # thousands of repos, by retagging.
+    #
+    # Forking moves the tag under an account we control, so the code this line resolves to can
+    # only change when WE change it. The cost is that upstream fixes are not automatic -- the fork
+    # sits at softprops v3.0.0 while upstream is v3.0.2 -- so pulling upstream periodically is
+    # part of owning it. Pinning a full commit SHA would give the same immutability without a
+    # fork, but then every bump is a 40-character churn and Dependabot owns the tag anyway.
+    #
+    # The policy this follows, from tianwen: nothing outside `actions/*` runs un-forked. GitHub's
+    # own actions are the deliberate exception -- same mutable-tag exposure, but trusting them is
+    # already implied by running on their runners at all.
     - name: Create GitHub Release
-      uses: softprops/action-gh-release@v2
+      uses: SharpAstro/action-gh-release@v3
       with:
         tag_name: v${{ env.VERSION_PREFIX }}
         name: v${{ env.VERSION_PREFIX }}
