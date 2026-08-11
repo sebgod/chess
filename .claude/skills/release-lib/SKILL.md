@@ -266,6 +266,46 @@ and the old NuGet versions won't have the new APIs.
    This is the only local run that exercises the path CI takes.
 7. Commit + push chess project. CI will now restore the correct NuGet versions.
 
+## The catch-up repin, when only DIR.Lib moved
+
+Step 5 above says to move all four pins "in one edit, since they are one lockstep
+set". That holds for a release chain *this repo drives*. It does **not** describe the
+other, more common case: DIR.Lib gains an X.Y for a different consumer (tianwen), no
+backend ever follows it, and chess later wants to catch up. Then there is no lockstep
+set to move — Console.Lib, SdlVulkan.Renderer and WebGl.Renderer are already at their
+newest published builds and each still pins the *older* DIR.Lib.
+
+Repin DIR.Lib alone. Chess's own direct `PackageReference` is the higher one, so NuGet
+unifies every project — including the ones that reach DIR.Lib only *through* a backend —
+up to it. Confirm that rather than assume it:
+
+```bash
+python -c "
+import json,glob
+for f in glob.glob('*/obj/project.assets.json'):
+    d=json.load(open(f)); libs=[k for k in d.get('libraries',{}) if k.split('/')[0]=='DIR.Lib']
+    if libs: print(f.split('/')[0].ljust(20), libs)"
+```
+
+Unification is only *safe* when the skipped minors are additive. Check
+**DIR.Lib's `MIGRATION.md`**, whose top entry is the newest breaking release — if it
+predates the version you are leaving, every minor you cross is additive. Do not judge
+this from commit subjects: a `feat(...)` reads additive and a reshape like 7.11's
+`UiPalette` does not announce itself in the subject line.
+
+Two verification traps specific to chess:
+
+- **`chess-mcp` locks its own exe.** If the MCP server is registered in the running
+  session, `dotnet build Chess.sln` fails with `MSB3027`/`MSB3021` copying `apphost.exe`
+  over `bin/Release/net10.0/chess-mcp.exe`. The copy runs *after* `CoreCompile`, so this
+  is not a compile failure and the pin is not implicated — `dotnet test` (which never
+  builds Chess.MCP) plus `dotnet build Chess.MCP -t:CoreCompile` covers it without
+  killing the server.
+- **Three projects sit outside `Chess.sln`** — `Chess.Droid`, `Chess.Web.E2E.Tests` —
+  and consume the same CPM pins, so a solution-wide build proves nothing about them.
+  Build each explicitly. Chess.Droid's 4 SDL3-CS.Android warnings (16 KB page size,
+  duplicate `libSDL3.so`) are pre-existing and unrelated to any pin move.
+
 ## Polling for NuGet availability
 
 ```bash
