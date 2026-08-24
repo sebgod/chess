@@ -1,4 +1,4 @@
-using System.Collections.Immutable;
+﻿using System.Collections.Immutable;
 using Chess.Lib;
 using Chess.Lib.UI;
 using DIR.Lib;
@@ -653,6 +653,200 @@ public class GameUITests
         ui.TogglePlacementSide();
 
         ui.PlacementSide.ShouldBe(Side.White);
+    }
+
+    // ── Setup mode: pick up and drop ───────────────────────────────
+
+    /// <summary>
+    /// The use case the whole grammar exists for: a custom game started from the STANDARD board,
+    /// with an opening nudged into shape. Two designations per piece, and neither square goes
+    /// anywhere near the palette.
+    /// </summary>
+    [Fact]
+    public void TrySetupAction_OccupiedThenEmpty_RelocatesWithoutOpeningThePalette()
+    {
+        var game = new Game();
+        var ui = CreateUI(game);
+        ui.IsSetupMode = true;
+
+        var (pickUp, _) = ui.TrySetupAction(E2);
+
+        pickUp.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
+        ui.PickedUp.ShouldBe(E2);
+        ui.PendingPlacement.ShouldBeNull();
+
+        var (drop, _) = ui.TrySetupAction(E4);
+
+        drop.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
+        game.Board[E2].PieceType.ShouldBe(PieceType.None);
+        game.Board[E4].ShouldBe(new Piece(PieceType.Pawn, Side.White));
+        ui.PickedUp.ShouldBeNull();
+        ui.PendingPlacement.ShouldBeNull();
+    }
+
+    /// <summary>
+    /// Dropping onto an occupied square REPLACES the occupant, either colour — setting up a problem
+    /// routinely means landing a piece where something else has to stop existing.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TrySetupAction_DropOnOccupiedSquare_ReplacesTheOccupant(bool occupantIsOpponent)
+    {
+        var game = new Game(new Board(), Side.White, []);
+        game.SetPiece(D1, new Piece(PieceType.Queen, Side.White));
+        game.SetPiece(D8, new Piece(PieceType.Rook, occupantIsOpponent ? Side.Black : Side.White));
+        var ui = CreateUI(game);
+        ui.IsSetupMode = true;
+
+        ui.TrySetupAction(D1);
+        ui.TrySetupAction(D8);
+
+        game.Board[D1].PieceType.ShouldBe(PieceType.None);
+        game.Board[D8].ShouldBe(new Piece(PieceType.Queen, Side.White));
+    }
+
+    /// <summary>Relocation ignores the rules entirely — it never reaches Board.EvaluateAction.</summary>
+    [Fact]
+    public void TrySetupAction_RelocationIsNotAMove_AndNeedsNoLegality()
+    {
+        var game = new Game();
+        var ui = CreateUI(game);
+        ui.IsSetupMode = true;
+
+        ui.TrySetupAction(B1); // knight
+        ui.TrySetupAction(H6); // nothing legal about it
+
+        game.Board[H6].ShouldBe(new Piece(PieceType.Knight, Side.White));
+        game.PlyCount.ShouldBe(0);
+    }
+
+    [Fact]
+    public void TrySetupAction_EmptySquare_OpensThePalette()
+    {
+        var game = new Game(new Board(), Side.White, []);
+        var ui = CreateUI(game);
+        ui.IsSetupMode = true;
+
+        var (response, _) = ui.TrySetupAction(E4);
+
+        response.HasFlag(UIResponse.NeedsPiecePlacement).ShouldBeTrue();
+        ui.PendingPlacement.ShouldBe(E4);
+        ui.PickedUp.ShouldBeNull();
+    }
+
+    /// <summary>Designating the square already in hand is how you reach the palette for an
+    /// occupied square — to change its type, or to clear it with the red cross.</summary>
+    [Fact]
+    public void TrySetupAction_SameSquareTwice_OpensThePalette()
+    {
+        var game = new Game();
+        var ui = CreateUI(game);
+        ui.IsSetupMode = true;
+
+        ui.TrySetupAction(E2);
+        var (response, _) = ui.TrySetupAction(E2);
+
+        response.HasFlag(UIResponse.NeedsPiecePlacement).ShouldBeTrue();
+        ui.PendingPlacement.ShouldBe(E2);
+        ui.PickedUp.ShouldBeNull();
+        game.Board[E2].ShouldBe(new Piece(PieceType.Pawn, Side.White));
+    }
+
+    /// <summary>Del on a piece in hand removes it — the branch existed already but was
+    /// unreachable, because a setup selection always opened the palette.</summary>
+    [Fact]
+    public void HandleKeyDown_SetupMode_DeleteWithPieceInHand_ClearsTheSquare()
+    {
+        var game = new Game();
+        var ui = CreateUI(game);
+        ui.IsSetupMode = true;
+
+        ui.TrySetupAction(E2);
+        ui.HandleKeyDown(InputKey.Delete, InputModifier.None);
+
+        game.Board[E2].PieceType.ShouldBe(PieceType.None);
+        ui.PickedUp.ShouldBeNull();
+    }
+
+    [Fact]
+    public void HandleKeyDown_SetupMode_CoordinatesRelocate()
+    {
+        var game = new Game();
+        var ui = CreateUI(game);
+        ui.IsSetupMode = true;
+
+        ui.HandleKeyDown(InputKey.G, InputModifier.None);
+        ui.HandleKeyDown(InputKey.D1, InputModifier.None);
+        ui.PickedUp.ShouldBe(G1);
+
+        ui.HandleKeyDown(InputKey.F, InputModifier.None);
+        ui.HandleKeyDown(InputKey.D3, InputModifier.None);
+
+        game.Board[G1].PieceType.ShouldBe(PieceType.None);
+        game.Board[F3].ShouldBe(new Piece(PieceType.Knight, Side.White));
+    }
+
+    /// <summary>
+    /// The palette is drawn over a scrim spanning the WHOLE board, and its click handler used to
+    /// swallow everything that missed the seven-square strip — so no square on the board responded
+    /// while it was up, and Escape was the only way out. A click elsewhere now dismisses it and
+    /// counts as a fresh designation.
+    /// </summary>
+    [Fact]
+    public void HandleMouseDown_SetupMode_ClickOffThePalette_DismissesItAndRedesignates()
+    {
+        var game = new Game();
+        var ui = CreateUI(game);
+        ui.IsSetupMode = true;
+
+        ui.SetupSelect(A1);
+        ui.PendingPlacement.ShouldBe(A1);
+
+        // H8 is a corner: the palette anchors on a1's column, seven squares wide, one row away.
+        var target = ui.SquareRect(H8);
+        var (response, clips) = ui.HandleMouseDown(target.UpperLeft.X + 5, target.UpperLeft.Y + 5);
+
+        response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
+        // The retired scrim invalidates the whole board, whatever the re-dispatch alone would need.
+        clips.ShouldBeEmpty();
+        ui.PendingPlacement.ShouldBeNull();
+        ui.PickedUp.ShouldBe(H8);
+    }
+
+    /// <summary>
+    /// The palette's render branch keys on PendingPlacement alone, not on the mode — so a pending
+    /// square used to survive into the live game as a ghost popup (press s with it open), and a
+    /// piece in hand as a phantom selection the first real click moved from.
+    /// </summary>
+    [Fact]
+    public void LeavingSetupMode_DropsAnyHalfFinishedPlacement()
+    {
+        var game = new Game();
+        var ui = CreateUI(game);
+        ui.IsSetupMode = true;
+        ui.SetupSelect(E4);
+
+        ui.HandleKeyDown(InputKey.S, InputModifier.None);
+
+        ui.IsSetupMode.ShouldBeFalse();
+        ui.PendingPlacement.ShouldBeNull();
+        ui.Selected.ShouldBeNull();
+    }
+
+    [Fact]
+    public void StatusLine_SetupMode_NamesThePieceInHand()
+    {
+        var game = new Game();
+        var ui = CreateUI(game);
+        ui.IsSetupMode = true;
+
+        ui.StatusLine().ShouldContain("placing");
+
+        ui.TrySetupAction(E2);
+
+        ui.StatusLine().ShouldContain("Pawn");
+        ui.StatusLine().ShouldContain("e2");
     }
 
     /// <summary>
