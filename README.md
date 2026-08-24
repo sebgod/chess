@@ -13,7 +13,7 @@ A chess game with browser (WebGL), terminal (Sixel), and Vulkan GUI rendering ba
 - [UCI](https://en.wikipedia.org/wiki/Universal_Chess_Interface) protocol support — the engine runs as a separate process, communicating via standard UCI commands
 - **Terminal app**: graphical board rendered using FreeType2 and the [Sixel](https://en.wikipedia.org/wiki/Sixel) protocol (no ImageMagick dependency)
 - **Vulkan GUI app**: standalone windowed app using SDL3 + Vortice.Vulkan
-- **Browser app**: the full engine compiled to WebAssembly, rendered with WebGL (software-canvas fallback) — [play online](https://sebgod.github.io/chess/), nothing to install
+- **Browser app**: the full engine compiled to WebAssembly, rendered with WebGL2 — [play online](https://sebgod.github.io/chess/), nothing to install
 - **Play by Link**: serverless correspondence chess (browser) — the whole game travels in the URL, so you can play someone on the other side of the planet by swapping links over any messenger. No accounts, no server, no logins
 - Move history panel with algebraic notation — click any move or use Ctrl+Arrow to review past positions
 - Cross-platform: Windows, Linux, and macOS (x64 and ARM64)
@@ -23,6 +23,7 @@ A chess game with browser (WebGL), terminal (Sixel), and Vulkan GUI rendering ba
 
 - A terminal with [Sixel](https://en.wikipedia.org/wiki/Sixel) support (e.g. Windows Terminal, mlterm, foot, WezTerm) is preferred for the console app; there is an ASCII-only fallback
 - Vulkan-capable GPU for the GUI app
+- A browser with WebGL2 for the browser app (anything from 2017 onwards); there is no software fallback
 - .NET 10 SDK (to build from source)
 
 ## Getting started
@@ -132,7 +133,7 @@ In Custom Game mode, you place pieces on the board before playing. The popup app
 | `Chess.Engine` | Standalone UCI engine executable (`chess-engine`), supports `go depth N` |
 | `Chess.GUI` | Vulkan chess app (SDL3 + Vortice.Vulkan windowing/rendering) |
 | `Chess.Console` | Terminal chess app with Sixel and ASCII display backends |
-| `Chess.Web` | Browser app: Blazor WebAssembly, WebGL renderer with software-canvas fallback, Play by Link |
+| `Chess.Web` | Browser app: Blazor WebAssembly, WebGL2 renderer, Play by Link |
 | `Chess.Tests` | xUnit v3 test suite |
 
 ### NuGet library dependencies
