@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using Chess.Lib.UI;
 using DIR.Lib;
 
@@ -14,10 +14,11 @@ public sealed class HumanPlayer : IGamePlayer, IWidget
         if (evt is InputEvent.KeyDown(InputKey.F11, _)) return false;
 
         // Now that every pointer event arrives through the unified OnPointerInput path, only queue
-        // the ones TryMakeMove actually consumes — a key, a press, or a wheel tick. MouseMove/MouseUp
-        // would otherwise pile up (one per pixel of travel) behind the one-event-per-frame drain with
-        // no consumer; drop them here. A future drag interaction would opt them back in.
-        if (evt is not (InputEvent.KeyDown or InputEvent.MouseDown or InputEvent.Scroll))
+        // the ones TryMakeMove actually consumes — a key, a press, a release, or a wheel tick.
+        // MouseMove still goes nowhere: it would pile up (one per pixel of travel) behind the
+        // one-event-per-frame drain with no consumer, and the setup drag needs only where a gesture
+        // ended, not the path it took. MouseUp is one event per gesture, so it costs nothing.
+        if (evt is not (InputEvent.KeyDown or InputEvent.MouseDown or InputEvent.MouseUp or InputEvent.Scroll))
             return false;
 
         _eventQueue.Enqueue(evt);
@@ -42,6 +43,7 @@ public sealed class HumanPlayer : IGamePlayer, IWidget
         {
             InputEvent.KeyDown k => ui.HandleKeyDown(k.Key, k.Modifiers),
             InputEvent.MouseDown m => ui.HandleMouseDown((int)m.X, (int)m.Y),
+            InputEvent.MouseUp m => ui.HandlePointerUp((int)m.X, (int)m.Y),
             InputEvent.Scroll s => ui.HandleMouseWheel((int)s.Delta),
             _ => (UIResponse.None, System.Collections.Immutable.ImmutableArray<RectInt>.Empty)
         };

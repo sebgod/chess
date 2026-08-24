@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Numerics;
@@ -204,9 +204,20 @@ public sealed class MainActivity : SdlVulkanActivity
         loop.OnMouseUp = _ =>
         {
             // OnMouseUp carries no coordinates, hence the tracked position.
-            if (!IsMenuUp || _pointerDown is not { } down) { _pointerDown = null; return; }
+            if (_pointerDown is not { } down) { _pointerDown = null; return; }
             _pointerDown = null;
             var up = _pointerLast;
+            if (!IsMenuUp)
+            {
+                // The board commits on touch-DOWN, so the release only ever adds the one thing a tap
+                // cannot say: that a setup drag ended on a different square. Queued rather than
+                // applied here because every other board input goes through the session tick, and
+                // CheckNeedsRedraw already wakes the loop for pending input. No slop test — the
+                // squares are far apart and GameUI ignores a release on the square it started from,
+                // which is precisely the wobble case the menus need TapSlop for.
+                _input.ReleasePointer((int)MathF.Round(up.X), (int)MathF.Round(up.Y));
+                return;
+            }
             if (Vector2.Distance(down, up) > TapSlop) return; // dragged — not a tap, so not a click
             HandleTap((int)MathF.Round(up.X), (int)MathF.Round(up.Y));
             // A handler that RETURNS true tells the loop to repaint; OnMouseUp returns nothing, so a

@@ -1,4 +1,4 @@
-using Microsoft.Playwright;
+﻿using Microsoft.Playwright;
 using Xunit;
 using static Microsoft.Playwright.Assertions;
 
@@ -59,6 +59,52 @@ public sealed class CustomGameSetupTests(ChessWebFixture fixture)
 
         // The Start button exists only while setting up — its presence is the screen.
         await Expect(StartButton(page)).ToBeVisibleAsync();
+    }
+
+    /// <summary>
+    /// The setup hint names the gesture that now exists. Asserting on "drag" rather than only on
+    /// the "Set up the board" prefix is deliberate: the prefix is in BOTH the old and new wording,
+    /// so a dev server serving a stale build would pass it — the exact false pass that cost tianwen
+    /// two debugging sessions (see its 39df8fb8). This assertion can only pass against a build that
+    /// has the feature.
+    /// </summary>
+    [Fact]
+    public async Task Setup_TellsYouThePieceCanBeDragged()
+    {
+        var page = await EnterSetupAsync();
+
+        await Expect(Status(page)).ToContainTextAsync("drag a piece");
+    }
+
+    /// <summary>
+    /// Relocation on the web, driven by the square-entry keymap so no pixel math is involved: g1
+    /// takes the knight into hand — which the status says, and saying it IS the feedback on this
+    /// front-end — and f3 puts it down. Then g1 reports as empty by opening the picker instead of
+    /// picking anything up, which is what proves the knight actually left rather than being copied.
+    /// </summary>
+    [Fact]
+    public async Task Setup_APieceCanBePickedUpAndDroppedOnAnotherSquare()
+    {
+        var page = await EnterSetupAsync();
+
+        await PressAsync(page, "g");
+        await PressAsync(page, "1");
+        await Expect(Status(page)).ToContainTextAsync("moving White Knight from g1");
+
+        await PressAsync(page, "f");
+        await PressAsync(page, "3");
+        await Expect(Status(page)).ToContainTextAsync("Set up the board");
+
+        // f3 now holds it...
+        await PressAsync(page, "f");
+        await PressAsync(page, "3");
+        await Expect(Status(page)).ToContainTextAsync("moving White Knight from f3");
+
+        // ...and g1 does not: an empty square opens the picker, which takes nothing into hand.
+        await PressAsync(page, "Escape");
+        await PressAsync(page, "g");
+        await PressAsync(page, "1");
+        await Expect(Status(page)).ToContainTextAsync("Set up the board");
     }
 
     [Fact]
