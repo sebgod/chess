@@ -37,6 +37,18 @@ Useful non-interactive flags for a quick check that needs no terminal at all:
 `--render-fen <fen>` writes a board as **Sixel to stdout** (`--render-size`, `--move` for
 the arrow overlay), and `--mode`/`--side`/`--board` skip the startup wizard.
 
+**`--side` is required by `custom` as well as `pvc`**, not just `pvc` as the option's own
+description implies (`Chess.Console/Program.cs`, `rootCommand.Validators`). Custom setup is a
+one-human flow, so the requirement is easy to forget: `--mode custom --side white --board
+standard` is the full line.
+
+**A launch that only prints the help block is a VALIDATION FAILURE you redirected away, not a
+bad `--help` guess.** `System.CommandLine` writes the usage block to stdout and the actual
+reason to **stderr**, so the `2> inspector.log` in every launch line here sends the one useful
+sentence to the log while the window shows a bare help dump. Before re-guessing the flags, run
+`head -3 inspector.log` — the answer is sitting in it (`--side is required when --mode is
+'pvc' or 'custom'.`, exit 1).
+
 ## Driving it yourself: the debug inspector
 
 Do **not** ask the user to click things you can drive. The TUI has a DEBUG-only inspector —

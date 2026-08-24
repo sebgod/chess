@@ -141,9 +141,12 @@ public class GameUI
         "  n/b/r/q  Select piece\n" +
         "\n" +
         "Custom Setup\n" +
+        "  a-h,1-8      Empty square: pick piece type\n" +
+        "               Occupied: take it, then a square to move it\n" +
         "  p/n/b/r/q/k  Place piece\n" +
         "  Tab    Toggle side\n" +
         "  Del    Clear square\n" +
+        "  Esc    Put the piece back\n" +
         "  s      Start game\n" +
         "\n" +
         "F1       Toggle this help\n" +
@@ -281,7 +284,21 @@ public class GameUI
     public bool IsSetupMode
     {
         get => Mode == GameUIMode.Setup;
-        set => Mode = value ? GameUIMode.Setup : GameUIMode.Playing;
+        set
+        {
+            // Leaving setup drops any half-finished placement. The palette's render branch is keyed
+            // on PendingPlacement ALONE (not on the mode), so a pending square used to survive the
+            // transition as a ghost popup floating over the live game — reachable by pressing s with
+            // the palette open, since the s check runs before the palette branch. A picked-up square
+            // would likewise survive as a phantom selection that the first real click "moved" from.
+            if (!value && Mode == GameUIMode.Setup)
+            {
+                PendingPlacement = default;
+                Selected = default;
+                PendingFile = null;
+            }
+            Mode = value ? GameUIMode.Setup : GameUIMode.Playing;
+        }
     }
 
     public int PlaybackPlyIndex { get; private set; }
@@ -332,6 +349,14 @@ public class GameUI
     public Side? MoveLockSide { get; set; }
 
     public Position? PendingPlacement { get; private set; }
+
+    /// <summary>
+    /// The square whose piece is "picked up" for relocation in setup mode, if any — set by
+    /// designating an occupied square, cleared when it is dropped. Distinct from
+    /// <see cref="Selected"/> because the palette state sets <see cref="Selected"/> too (to tint
+    /// the square it refers to under the scrim); a piece is only in hand while NO palette is open.
+    /// </summary>
+    public Position? PickedUp => IsSetupMode && PendingPlacement is null ? Selected : null;
 
     public File? PendingFile { get; set; }
 
@@ -1134,10 +1159,23 @@ public class GameUI
                         return TryPlacePiece(pendingPos, pieceType, PlacementSide);
                     }
                 }
+
+                // Any OTHER board square dismisses the palette and is re-dispatched as a fresh
+                // designation. The scrim spans the whole board, and this branch used to consume
+                // every click that missed the seven-square strip — so while the palette was up not
+                // one square on the board responded, and Escape was the only way out. Full repaint
+                // (no clip rects): the scrim being retired invalidates the entire board, whatever
+                // the re-dispatched action alone would have needed.
+                if (FindSelected(x, y) is { } redesignated)
+                {
+                    var (cancelled, _) = CancelPlacement();
+                    var (redispatched, _) = TrySetupAction(redesignated);
+                    return (cancelled | redispatched, []);
+                }
             }
             else if (FindSelected(x, y) is { } selected)
             {
-                return SetupSelect(selected);
+                return TrySetupAction(selected);
             }
 
             // Off the board: fall through to the chrome, so a touch-only host's "start the game" chip
@@ -1357,11 +1395,86 @@ public class GameUI
         return (UIResponse.None, []);
     }
 
+    /// <summary>
+    /// Opens the piece-type palette anchored on <paramref name="position"/>. The board is inert
+    /// while it is up (it is drawn over a full-board scrim), so this is a modal state about one
+    /// square — see <see cref="TrySetupAction"/> for how a square gets here.
+    /// </summary>
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) SetupSelect(Position position)
     {
         PendingPlacement = position;
         Selected = position;
         return (UIResponse.NeedsRefresh | UIResponse.NeedsPiecePlacement, []);
+    }
+
+    /// <summary>
+    /// The one setup-mode grammar for "a square was designated", shared by the pointer and the
+    /// keyboard so the two can't drift:
+    /// <list type="bullet">
+    /// <item>nothing in hand, occupied square — pick the piece up</item>
+    /// <item>nothing in hand, empty square — open the palette there</item>
+    /// <item>piece in hand, the same square again — open the palette there (change type, or clear)</item>
+    /// <item>piece in hand, any other square — drop it there</item>
+    /// </list>
+    /// The dominant setup job is nudging an opening around from the standard board, and that used
+    /// to cost four clicks and an inversion per piece (open the palette on the source, click the
+    /// piece type it already holds — which CLEARS it — then open the palette on the target and
+    /// place it again). Pick-up-and-drop makes it two.
+    /// </summary>
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TrySetupAction(Position position)
+    {
+        if (!IsSetupMode)
+            return (UIResponse.None, []);
+
+        if (PickedUp is { } inHand)
+        {
+            return inHand == position ? SetupSelect(position) : SetupRelocate(inHand, position);
+        }
+
+        return Game[position].PieceType is PieceType.None
+            ? SetupSelect(position)
+            : SetupPickUp(position);
+    }
+
+    /// <summary>
+    /// Takes the piece on <paramref name="position"/> into hand without opening the palette, so the
+    /// board stays live for a drop. Renders as the existing "picked up" tint for free —
+    /// <see cref="Selected"/> already fills that square, and the legal-move dots that would
+    /// accompany it in a real game are gated on <see cref="GameUIMode.Playing"/>.
+    /// </summary>
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) SetupPickUp(Position position)
+    {
+        Selected = position;
+        PendingPlacement = default;
+        // IsUpdate, not just NeedsRefresh: the status line names the piece in hand, and console
+        // displays only repaint their status bar for IsUpdate/NeedsPiecePlacement.
+        return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
+    }
+
+    /// <summary>
+    /// Moves the piece on <paramref name="from"/> to <paramref name="to"/>, REPLACING whatever
+    /// stood there, of either colour. Nothing about legality is consulted — like every other setup
+    /// operation this goes straight to <see cref="Chess.Lib.Game.SetPiece"/>/
+    /// <see cref="Chess.Lib.Game.ClearPiece"/> and never reaches <c>Board.EvaluateAction</c>, so a
+    /// knight can go to h8 and a king can stand next to a king. Replacing is deliberate: setting up
+    /// a problem routinely means landing a piece on a square whose occupant should just be gone.
+    /// </summary>
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) SetupRelocate(Position from, Position to)
+    {
+        var piece = Game[from];
+        if (piece.PieceType is PieceType.None)
+        {
+            // Nothing to move (public entry point — the internal paths only pick up occupied
+            // squares). Treat it as designating the target afresh rather than silently doing nothing.
+            Selected = default;
+            return TrySetupAction(to);
+        }
+
+        Game.ClearPiece(from);
+        Game.SetPiece(to, piece);
+        Selected = default;
+        PendingPlacement = default;
+        return (UIResponse.NeedsRefresh | UIResponse.IsUpdate, []);
     }
 
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) TryPlacePiece(Position position, PieceType pieceType, Side side)
@@ -1696,6 +1809,10 @@ public class GameUI
                 return ClearSquare(pendingPos);
             }
 
+            // Piece letters are parsed HERE and only here, and squares are not parsed here at all —
+            // the two alphabets overlap on 'b' (file b vs. bishop). The open palette is exactly what
+            // disambiguates them, which is why the keyboard cannot re-anchor to another square while
+            // it is up (Escape first), and why a piece in hand takes coordinates rather than letters.
             var pieceType = PieceType.TryParseFromKey(key);
             if (pieceType is not null)
             {
@@ -1731,7 +1848,7 @@ public class GameUI
         if (RankExtensions.TryParseFromKey(key) is { } rank && PendingFile is { } pf)
         {
             PendingFile = null;
-            return SetupSelect(new Position(pf, rank));
+            return TrySetupAction(new Position(pf, rank));
         }
 
         PendingFile = null;
@@ -1754,7 +1871,16 @@ public class GameUI
             return $"Playback: ply {PlaybackPlyIndex + 2}/{Game.PlyCount + 1}{(keyHints ? "  [Ctrl+Arrows, Esc exit]" : "")}";
 
         if (IsSetupMode)
+        {
+            if (PickedUp is { } inHand)
+            {
+                var piece = Game[inHand];
+                return $"Setup: moving {piece.Side} {piece.PieceType} from {inHand} — pick a square"
+                    + $"{(keyHints ? " [Del remove, Esc drop]" : "")}{fileInfo}";
+            }
+
             return $"Setup: placing {PlacementSide} pieces{(keyHints ? " [Tab toggle, s start]" : "")}{fileInfo}";
+        }
 
         return $"{Game.GameStatus.ToMessage(Game.CurrentSide)}{fileInfo}";
     }
