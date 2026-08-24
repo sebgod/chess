@@ -1,4 +1,4 @@
-using Chess.Lib;
+﻿using Chess.Lib;
 using Chess.Lib.UI;
 using DIR.Lib;
 using Shouldly;
@@ -66,6 +66,59 @@ public sealed class SharedPlayerTests
         player.TryMakeMove(ui);
 
         ui.Selected.ShouldBe(Position.D2);
+    }
+
+    [Fact]
+    public void QueuedInput_AppliesAReleaseAfterThePressItEnds()
+    {
+        var game = new Game();
+        var ui = NewUi(game);
+        ui.IsSetupMode = true;
+        var player = new QueuedInputPlayer();
+        var (downX, downY) = CentreOf(ui, Position.D2);
+        var (upX, upY) = CentreOf(ui, Position.D4);
+
+        // A quick drag delivers both before the driver ticks, which is the normal case, not an edge.
+        player.PressPointer(downX, downY);
+        player.ReleasePointer(upX, upY);
+
+        player.TryMakeMove(ui).ShouldNotBeNull();
+        ui.PickedUp.ShouldBe(Position.D2); // the press: picked up, not yet dropped
+
+        player.TryMakeMove(ui).ShouldNotBeNull();
+        game.Board[Position.D4].ShouldBe(new Piece(PieceType.Pawn, Side.White));
+        game.Board[Position.D2].PieceType.ShouldBe(PieceType.None);
+    }
+
+    /// <summary>
+    /// A release belongs to the press before it, so a NEWER press must kill it. A browser queues
+    /// every pointer event that arrives during a stall and delivers the burst at once, which is how
+    /// a release from one gesture and a press from the next end up in the same slot pair — and
+    /// pairing them drops a piece on a square the player released over a gesture ago.
+    /// </summary>
+    [Fact]
+    public void QueuedInput_ANewerPress_DiscardsTheReleaseItSuperseded()
+    {
+        var game = new Game();
+        var ui = NewUi(game);
+        ui.IsSetupMode = true;
+        var player = new QueuedInputPlayer();
+        var (d2X, d2Y) = CentreOf(ui, Position.D2);
+        var (d4X, d4Y) = CentreOf(ui, Position.D4);
+        var (g1X, g1Y) = CentreOf(ui, Position.G1);
+
+        player.PressPointer(d2X, d2Y);   // gesture 1 begins
+        player.ReleasePointer(d4X, d4Y); // gesture 1 ends over d4
+        player.PressPointer(g1X, g1Y);   // gesture 2 begins before either was applied
+
+        player.TryMakeMove(ui).ShouldNotBeNull();
+        ui.PickedUp.ShouldBe(Position.G1);
+
+        // Nothing left to apply: the stale release died with the press it belonged to.
+        player.HasPendingInput.ShouldBeFalse();
+        player.TryMakeMove(ui).ShouldBeNull();
+        game.Board[Position.D4].PieceType.ShouldBe(PieceType.None);
+        game.Board[Position.G1].ShouldBe(new Piece(PieceType.Knight, Side.White));
     }
 
     [Fact]

@@ -849,6 +849,130 @@ public class GameUITests
         ui.StatusLine().ShouldContain("e2");
     }
 
+    // ── Setup mode: drag (press, release elsewhere) ────────────────
+
+    private static (int X, int Y) Centre(GameUI ui, Position square)
+    {
+        var rect = ui.SquareRect(square);
+        return ((int)(rect.UpperLeft.X + rect.Width / 2), (int)(rect.UpperLeft.Y + rect.Height / 2));
+    }
+
+    private static GameUI SetupUI(Game game)
+    {
+        var ui = CreateUI(game);
+        ui.IsSetupMode = true;
+        return ui;
+    }
+
+    [Fact]
+    public void HandlePointerUp_ReleaseOnAnotherSquare_CompletesTheDrag()
+    {
+        var game = new Game();
+        var ui = SetupUI(game);
+
+        var (dx, dy) = Centre(ui, D2);
+        var (ux, uy) = Centre(ui, D4);
+        ui.HandleMouseDown(dx, dy);
+        ui.PickedUp.ShouldBe(D2);
+
+        var (response, _) = ui.HandlePointerUp(ux, uy);
+
+        response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
+        game.Board[D2].PieceType.ShouldBe(PieceType.None);
+        game.Board[D4].ShouldBe(new Piece(PieceType.Pawn, Side.White));
+        ui.PickedUp.ShouldBeNull();
+    }
+
+    /// <summary>
+    /// The release that ends a plain click must do nothing — the press already picked the piece up,
+    /// and dispatching the same square again would re-open the palette on it. This is what keeps
+    /// click-click and drag-drop one gesture instead of two models.
+    /// </summary>
+    [Fact]
+    public void HandlePointerUp_ReleaseWhereItStarted_LeavesThePieceInHand()
+    {
+        var game = new Game();
+        var ui = SetupUI(game);
+
+        var (x, y) = Centre(ui, D2);
+        ui.HandleMouseDown(x, y);
+        var (response, _) = ui.HandlePointerUp(x, y);
+
+        response.ShouldBe(UIResponse.None);
+        ui.PickedUp.ShouldBe(D2);
+        ui.PendingPlacement.ShouldBeNull();
+        game.Board[D2].ShouldBe(new Piece(PieceType.Pawn, Side.White));
+    }
+
+    /// <summary>A press on an EMPTY square opens the palette; dragging off a modal is a cancel,
+    /// not a place, so the release must not reach through it.</summary>
+    [Fact]
+    public void HandlePointerUp_AfterAPressThatOpenedThePalette_DoesNothing()
+    {
+        var game = new Game(new Board(), Side.White, []);
+        var ui = SetupUI(game);
+
+        var (dx, dy) = Centre(ui, D4);
+        ui.HandleMouseDown(dx, dy);
+        ui.PendingPlacement.ShouldBe(D4);
+
+        var (ux, uy) = Centre(ui, F6);
+        var (response, _) = ui.HandlePointerUp(ux, uy);
+
+        response.ShouldBe(UIResponse.None);
+        ui.PendingPlacement.ShouldBe(D4);
+        game.Board[F6].PieceType.ShouldBe(PieceType.None);
+    }
+
+    /// <summary>Dragging off the board leaves the piece in hand rather than inventing a destination
+    /// (or, worse, deleting it — a drag off the board is the classic "did I just lose that?").</summary>
+    [Fact]
+    public void HandlePointerUp_ReleaseOffTheBoard_LeavesThePieceInHand()
+    {
+        var game = new Game();
+        var ui = SetupUI(game);
+
+        var (dx, dy) = Centre(ui, D2);
+        ui.HandleMouseDown(dx, dy);
+
+        var (response, _) = ui.HandlePointerUp(0, 0);
+
+        response.ShouldBe(UIResponse.None);
+        ui.PickedUp.ShouldBe(D2);
+        game.Board[D2].ShouldBe(new Piece(PieceType.Pawn, Side.White));
+    }
+
+    [Fact]
+    public void HandlePointerUp_WithNoPressBeforeIt_DoesNothing()
+    {
+        var game = new Game();
+        var ui = SetupUI(game);
+
+        var (x, y) = Centre(ui, D4);
+        var (response, _) = ui.HandlePointerUp(x, y);
+
+        response.ShouldBe(UIResponse.None);
+        game.PlyCount.ShouldBe(0);
+    }
+
+    /// <summary>A release during a real game is inert — the press committed the move already, and a
+    /// second dispatch of the destination would select the piece that had just landed there.</summary>
+    [Fact]
+    public void HandlePointerUp_OutsideSetupMode_IsInert()
+    {
+        var game = new Game();
+        var ui = CreateUI(game);
+
+        var (dx, dy) = Centre(ui, E2);
+        var (ux, uy) = Centre(ui, E4);
+        ui.HandleMouseDown(dx, dy);
+        var (response, _) = ui.HandlePointerUp(ux, uy);
+
+        response.ShouldBe(UIResponse.None);
+        ui.Selected.ShouldBe(E2);
+        game.PlyCount.ShouldBe(0);
+    }
+
     /// <summary>
     /// Setup mode is the one place the board can hold more pieces than a legal army, and RenderBoard's
     /// piece buffer was sized 32 — so a custom game started from the STANDARD board (already 32 pieces)

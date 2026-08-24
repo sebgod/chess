@@ -358,6 +358,14 @@ public class GameUI
     /// </summary>
     public Position? PickedUp => IsSetupMode && PendingPlacement is null ? Selected : null;
 
+    /// <summary>
+    /// The board square the last press landed on, so <see cref="HandlePointerUp"/> can tell a drag
+    /// from a click. Not a drag state machine: the press has already run the full grammar by the
+    /// time this is set, and a release only ever adds the one thing a click cannot say — that the
+    /// gesture ENDED somewhere else.
+    /// </summary>
+    private Position? _pressedSquare;
+
     public File? PendingFile { get; set; }
 
     public bool ShowingKeymap { get; set; }
@@ -1895,9 +1903,38 @@ public class GameUI
 
         var hadPendingFile = PendingFile is not null;
         PendingFile = null;
+        _pressedSquare = IsSetupMode ? FindSelected(x, y) : null;
         var (response, clips) = TryPerformAction(x, y);
         if (hadPendingFile) response |= UIResponse.IsUpdate;
         return (response, clips);
+    }
+
+    /// <summary>
+    /// Completes a drag: a press that took a piece into hand, released over a DIFFERENT square,
+    /// drops it there. Drag is deliberately not a second interaction model — the press already ran
+    /// <see cref="TrySetupAction"/> and picked the piece up, so the release only has to dispatch
+    /// the square it ended on, and press-and-release-in-place stays exactly the click it always
+    /// was. That is what lets the terminal, which has no drag to speak of, lose nothing.
+    ///
+    /// <para>Three releases deliberately do nothing. One on the square the press started on is the
+    /// tail of a click (dispatching again would re-open the palette on it). One where the press
+    /// opened the palette instead of picking a piece up — dragging off a modal is a cancel, not a
+    /// place — which <see cref="PickedUp"/> already encodes, since it is null whenever a palette is
+    /// open. And one off the board entirely, which leaves the piece in hand rather than inventing a
+    /// destination.</para>
+    /// </summary>
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) HandlePointerUp(int x, int y)
+    {
+        var pressed = _pressedSquare;
+        _pressedSquare = null;
+
+        if (pressed is not { } from || PickedUp is not { } inHand || inHand != from)
+            return (UIResponse.None, []);
+
+        if (FindSelected(x, y) is not { } to || to == from)
+            return (UIResponse.None, []);
+
+        return TrySetupAction(to);
     }
 
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) HandleMouseWheel(int delta)

@@ -1,4 +1,4 @@
-@page "/"
+﻿@page "/"
 @using System.Collections.Immutable
 @using Chess.Lib
 @using Chess.Lib.UI
@@ -91,6 +91,7 @@
                      OnReady="OnCanvasReadyAsync"
                      OnResized="OnCanvasResizedAsync"
                      OnPointerDown="OnPointerDownAsync"
+                     OnPointerUp="OnPointerUpAsync"
                      OnKeyDown="OnKeyDownAsync" />
 
         @if (_unsupported is { } reason)
@@ -582,18 +583,31 @@
 
     // ---- custom game: board setup ---------------------------------------------------------------
 
-    // Opens GameUI's setup mode on an empty or standard board. All placement — selecting a square,
-    // picking a piece from the on-board palette, toggling the placement colour — is handled by
-    // GameUI via the normal click routing; the display's status bar shows the setup hints.
+    // Opens GameUI's setup mode on an empty or standard board. All placement — picking a piece up,
+    // dropping it, choosing a type from the on-board palette, toggling the placement colour — is
+    // handled by GameUI via the normal pointer routing; the display's status bar shows the hints.
     async Task EnterSetupAsync(bool emptyBoard)
     {
         _screen = Screen.Setup;
         _game = emptyBoard ? new Game(new Board(), _setupSideToMove, []) : new Game();
         BeginSession(inSetup: true); // resets the display and opens GameUI's setup mode
         _busy = false;
-        _status = "Set up the board: click a square, then pick a piece. The swatch toggles colour; Start begins the game.";
+        RefreshSetupStatus();
         await RenderBoardAsync();
     }
+
+    private const string SetupHint =
+        "Set up the board: drag a piece to move it, or click it and then its new square. "
+        + "An empty square opens the piece picker; the swatch toggles colour; Start begins the game.";
+
+    /// <summary>
+    /// Setup's status is LIVE rather than a banner set once on entry. With a piece in hand the
+    /// canonical <see cref="GameUI.StatusLine"/> names it, and on this front-end that sentence is
+    /// the ONLY words-level feedback that a click picked something up instead of doing nothing —
+    /// the desktop and terminal both show it in the in-canvas status bar, which the browser layout
+    /// gives far less room to.
+    /// </summary>
+    void RefreshSetupStatus() => _status = Ui.PickedUp is not null ? Ui.StatusLine() : SetupHint;
 
     // The "▶ Start game" button. Only lowers GameUI's setup flag — freezing the arranged board into a
     // real game is the session's setup transition, which AdvanceAsync picks up as SetupFinished. The
@@ -713,7 +727,11 @@
 
                 // While placing pieces the status line is the setup instructions, not the side to
                 // move — refreshing it there would replace the only hint telling you what to do.
-                if (!_session.IsSetupMode)
+                if (_session.IsSetupMode)
+                {
+                    RefreshSetupStatus();
+                }
+                else
                 {
                     RefreshStatus();
                 }
@@ -764,6 +782,22 @@
         // exactly like the desktop; GameUI/Game reject board moves on a finished game. The session
         // applies the tap and everything that follows — the reply, the link handoff, the repaints.
         _input.PressPointer(e.X, e.Y);
+        await AdvanceAsync();
+    }
+
+    /// <summary>
+    /// Ends a setup drag: press a piece, release over another square, and it lands there. Setup
+    /// only — GameUI.HandlePointerUp is inert with nothing in hand, but there is no reason to spend
+    /// a tick finding that out on every click of a game. WebGlCanvas delivers this for a lifted
+    /// finger as well as a released mouse button, and for pointercancel/leave, so a drag that ends
+    /// off the canvas resolves as a release nowhere near a square — which leaves the piece in hand
+    /// rather than dropping it somewhere the player never pointed at.
+    /// </summary>
+    async Task OnPointerUpAsync(CanvasPointerEventArgs e)
+    {
+        if (!_ready || _busy || _screen != Screen.Setup) return;
+
+        _input.ReleasePointer(e.X, e.Y);
         await AdvanceAsync();
     }
 
