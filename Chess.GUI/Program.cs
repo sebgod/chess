@@ -1,4 +1,4 @@
-using Chess.GUI;
+﻿using Chess.GUI;
 using Chess.Lib;
 using Chess.Lib.UI;
 using Chess.Net;
@@ -29,6 +29,19 @@ var bus = new SignalBus();
 
 var cts = new CancellationTokenSource();
 PixelGameDisplay<VulkanContext>? display = null;
+
+// The display draws a "▶ Start" chip in its history header whenever GameUI is in setup mode, and
+// that is every PIXEL host — not just the touch one it was added for. The desktop never subscribed,
+// so the chip rendered as a button with no handler and setup could only be left by pressing s,
+// which is the very thing a visible button exists to spare you from having to know.
+void FinishSetup()
+{
+    // HasGameUI first: UI throws before the first ResetGame, and a property pattern short-circuits.
+    if (display is not { HasGameUI: true, UI.IsSetupMode: true }) return;
+    // Same one line the s key runs. GameLoop is parked in its setup pump polling this exact flag,
+    // so lowering it here is all the hand-off there is.
+    display.UI.IsSetupMode = false;
+}
 Task<bool>? gameTask = null;
 var currentComputerSide = Side.None;
 // Saved alongside the game: PvP and across-the-table are both engine-less, so the computer side alone
@@ -193,7 +206,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                 lobby = null;
 
                 currentGameIsNetwork = true;
-                display = new PixelGameDisplay<VulkanContext>(renderer) { Bus = bus };
+                display = new PixelGameDisplay<VulkanContext>(renderer) { Bus = bus, SetupStartRequested = FinishSetup };
 
                 var (netLoop, computerSide, sideToMove) =
                     NetworkGame.CreateLoop(TimeProvider.System, () => display, () => player, session);
@@ -260,7 +273,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                 currentComputerSide = computerSide;
                 currentGameMode = gameMode;
 
-                display = new PixelGameDisplay<VulkanContext>(renderer) { Bus = bus };
+                display = new PixelGameDisplay<VulkanContext>(renderer) { Bus = bus, SetupStartRequested = FinishSetup };
                 var timeProvider = TimeProvider.System;
 
                 var gameLoop = new GameLoop(
