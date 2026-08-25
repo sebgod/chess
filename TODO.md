@@ -13,6 +13,11 @@ defects; these are planned changes.
 - [**Content→device transform**](docs/content-transform.md) — DPI and rotation unified as one
   constrained affine map, which is what the Android "across the table" flip is built on. *Phases 1a and
   2 done; WebGL compose and the CPU backend pending.*
+- [**Setup-mode drag ghost**](docs/drag-ghost.md) — the dragged piece doesn't follow the cursor; it
+  stays on its origin square and reappears at the target on release. Chess-only, nothing blocked: all
+  three renderers already alpha-blend and every host already delivers content-mapped motion. The
+  terminal is the *best* case, not the worst — it is the only backend that honours clip rects, and
+  `?1002h` reports motion at cell resolution only while a button is held. *Not started.*
 - [**Second board game / game-library carve-out**](docs/game-library.md) — what would actually have to
   be extracted for a second game (Skat, Memory) to share this repo's turn model, wizard, frame and LAN
   lobby. *Design only.*
