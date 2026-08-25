@@ -1,5 +1,22 @@
 # TODO
 
+## Planned work (design docs)
+
+Each of these has a doc under `docs/` carrying its own **Status** header and **Phasing** table — those
+are the source of truth for progress, not this list. The gaps below the line are unplanned known
+defects; these are planned changes.
+
+- [**Play by Link on the desktop**](docs/desktop-link-play.md) — the README's Play by Link feature says
+  "(browser)"; the native app can't consume a game link at all. Phase 1 (paste/argv + reply link) needs
+  no new plumbing — the codec, the wizard entry and the clipboard all already exist. Phase 2 adds a
+  `chess://` scheme with a single-instance hand-off. *Not started.*
+- [**Content→device transform**](docs/content-transform.md) — DPI and rotation unified as one
+  constrained affine map, which is what the Android "across the table" flip is built on. *Phases 1a and
+  2 done; WebGL compose and the CPU backend pending.*
+- [**Second board game / game-library carve-out**](docs/game-library.md) — what would actually have to
+  be extracted for a second game (Skat, Memory) to share this repo's turn model, wizard, frame and LAN
+  lobby. *Design only.*
+
 ## Console Input
 
 ### ASCII mode requires a real terminal
