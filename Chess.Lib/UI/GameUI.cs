@@ -112,16 +112,16 @@ public class GameUI
         BlackSquareFill,
     ];
 
-    private readonly int _margin;
     private readonly int _squareSize;
-    private readonly int _topMargin;
     private readonly int _topOffset;
-    private readonly int _leftOffset;
-    // The leftOffset the host passed, BEFORE the centering slack was folded into _leftOffset — the
-    // x-side counterpart of _topOffset. Resize round-trips this one, not the computed offset, or the
-    // centering would be added again on every resize and walk the board off the right edge.
+    // The leftOffset the host passed, BEFORE the centering slack was folded into the content origin —
+    // the x-side counterpart of _topOffset. Resize round-trips this one, not the computed offset, or
+    // the centering would be added again on every resize and walk the board off the right edge.
     private readonly int _leftInset;
-    private readonly int _boardEnd;
+    // Every square, label and captured-band rect this class draws or hit-tests. The ctor decides WHERE
+    // the content box goes (centring slack, host offsets, cell alignment); the box's interior is the
+    // layout tree's, and nothing here recomputes a rect it could ask for.
+    private readonly BoardLayout _layout;
     private readonly int _capturedCellHeight;
     private readonly CapturedPiecesLayout _capturedLayout;
     private readonly (uint X, uint Y)? _alignment;
@@ -199,62 +199,63 @@ public class GameUI
         ResolveHistoryClick = resolveHistoryClick;
         _alignment = alignment;
         _topOffset = topOffset;
-        _leftOffset = leftOffset;
         _leftInset = leftOffset;
         _capturedLayout = capturedLayout;
         _squareSize = CalculateSquareSize(uiSizeX, uiSizeY, capturedLayout);
 
+        int margin;
+        int stripHeight;
+        int topMargin;
         if (alignment is (var alignX, var alignY))
         {
             var unit = Lcm(alignX, alignY);
             _squareSize = AlignDown(_squareSize, unit);
-            _margin = AlignDown(_squareSize / 2, unit);
+            margin = AlignDown(_squareSize / 2, unit);
             _capturedCellHeight = CapturedCellHeight(_squareSize);
             // Only the in-board strips take vertical space; External hands them to the host, and the
             // board grows into the space they no longer occupy.
-            var stripHeight = capturedLayout == CapturedPiecesLayout.Strips ? _capturedCellHeight : 0;
+            stripHeight = capturedLayout == CapturedPiecesLayout.Strips ? _capturedCellHeight : 0;
             var minTopMargin = stripHeight > 0 ? AlignUp(Math.Max(_squareSize / 2, stripHeight), unit) : 0;
-            var contentHeight = 8 * _squareSize + 2 * _margin + 2 * stripHeight;
-            _topMargin = Math.Max(minTopMargin, AlignDown(((int)uiSizeY - contentHeight) / 2 + stripHeight, unit));
+            var contentHeight = 8 * _squareSize + 2 * margin + 2 * stripHeight;
+            topMargin = Math.Max(minTopMargin, AlignDown(((int)uiSizeY - contentHeight) / 2 + stripHeight, unit));
         }
         else
         {
-            _margin = _squareSize / 2;
+            margin = _squareSize / 2;
             _capturedCellHeight = CapturedCellHeight(_squareSize);
-            var stripHeight = capturedLayout == CapturedPiecesLayout.Strips ? _capturedCellHeight : 0;
+            stripHeight = capturedLayout == CapturedPiecesLayout.Strips ? _capturedCellHeight : 0;
             // A floor only where something has to stay on-screen above the board — the top captured
             // strip. Without it (External) the floor is 0, so the content centres cleanly instead of
             // being pushed down past the bottom of the area it was given.
             var minTopMargin = stripHeight > 0 ? Math.Max((int)(_squareSize * 0.5), stripHeight) : 0;
-            var contentHeight = 8 * _squareSize + 2 * _margin + 2 * stripHeight;
-            _topMargin = Math.Max(minTopMargin, ((int)uiSizeY - contentHeight) / 2 + stripHeight);
+            var contentHeight = 8 * _squareSize + 2 * margin + 2 * stripHeight;
+            topMargin = Math.Max(minTopMargin, ((int)uiSizeY - contentHeight) / 2 + stripHeight);
         }
 
-        // Every y-coordinate (draw AND hit-test) flows through _topMargin, so folding the offset in
-        // here shifts the whole board uniformly — pushes content below a phone's display cutout
+        // Every y-coordinate (draw AND hit-test) is placed off the content origin, so folding the offset
+        // in here shifts the whole board uniformly — pushes content below a phone's display cutout
         // (PixelGameDisplay's safe-area top inset) without per-site coordinate changes. An aligned
         // host (sixel cells) should pass a cell-aligned offset to keep square boundaries aligned.
-        // X has no such funnel (_margin doubles as a y-inset and a size term), so _leftOffset is
-        // added explicitly at every x-origin site instead (landscape phones: cutout on the side).
-        _topMargin += topOffset;
+        topMargin += topOffset;
 
-        _boardEnd = _squareSize * 8 + _margin;
-
-        // Horizontal centering, the symmetric counterpart to _topMargin's vertical centering: if the
-        // given width has slack beyond the board+labels content, fold half of it into _leftOffset.
-        // Every x-origin site (board, labels, captured strips, popups) AND both hit-test/draw mappings
-        // (SquareRect, FindSelected) already read _leftOffset, so this one addition centers them all
-        // together — draw==hit-test is preserved. When the host hands a surface-centered area this
-        // puts the board on the surface centre, which is invariant under the across-the-table 180°
-        // flip (so the board no longer drifts each turn). Left-aligned when there is no slack.
-        var contentWidth = _boardEnd + _margin; // left rank-label margin + 8 squares + right margin
+        // Horizontal centering, the symmetric counterpart to topMargin's vertical centering: if the
+        // given width has slack beyond the board+labels content, fold half of it into the origin. The
+        // whole tree hangs off that one point — squares, labels, bands, and the hit test that reads the
+        // same rects — so this addition centres all of them together and draw==hit-test is preserved.
+        // When the host hands a surface-centered area this puts the board on the surface centre, which
+        // is invariant under the across-the-table 180° flip (so the board no longer drifts each turn).
+        // Left-aligned when there is no slack.
+        var contentWidth = 8 * _squareSize + 2 * margin; // left rank-label margin + 8 squares + right margin
         var leftCentering = ((int)uiSizeX - contentWidth) / 2;
         if (leftCentering > 0)
         {
             if (alignment is (var alignCenterX, var alignCenterY))
                 leftCentering = AlignDown(leftCentering, Lcm(alignCenterX, alignCenterY));
-            _leftOffset += leftCentering;
+            leftOffset += leftCentering;
         }
+
+        // topMargin is the LABEL margin's top edge; the content box starts one captured band above it.
+        _layout = new BoardLayout(_squareSize, margin, stripHeight, (leftOffset, topMargin - stripHeight));
 
         _mainFontColor = mainFontColor ?? FontColorBlack;
         _backgroundColor = backgroundColor ?? FontColorWhite;
@@ -521,16 +522,7 @@ public class GameUI
     /// below. Hosts lay their chrome against this instead of re-deriving the square math, so a panel
     /// always meets the board's real edge however much centering slack the board absorbed.
     /// </summary>
-    public RectInt ContentRect
-    {
-        get
-        {
-            var strip = _capturedLayout == CapturedPiecesLayout.Strips ? _capturedCellHeight : 0;
-            return new RectInt(
-                (_leftOffset + _boardEnd + _margin, _topMargin + _boardEnd + _margin + strip),
-                (_leftOffset, _topMargin - strip));
-        }
-    }
+    public RectInt ContentRect => _layout.Content;
 
     /// <summary>
     /// Creates a new <see cref="GameUI"/> with the given dimensions, preserving game state, selection,
@@ -589,7 +581,7 @@ public class GameUI
         // board
         RenderBoard<TRenderer, TSurface>(renderer, clip);
 
-        var boardRect = new RectInt((_leftOffset + _boardEnd, _topMargin + _boardEnd), (_leftOffset + _margin, _topMargin + _margin));
+        var boardRect = _layout.Board;
 
         // If the clip is entirely within the board area, skip chrome rendering
         if (clip.IsContainedWithin(boardRect))
@@ -600,23 +592,20 @@ public class GameUI
         // labels
         for (byte idx = 0; idx < 8; idx++)
         {
-            var x_y = idx * _squareSize + _margin;
-
-            // Column `idx` (left→right) and row `idx` (top→bottom) keep their pixel positions; only
-            // which file/rank label sits there flips. Unflipped: col idx = file idx, top row = rank 8.
+            // Column `idx` (left→right) and row `idx` (top→bottom) keep their pixel positions — the
+            // layout gives all four margin cells for that column and row — and only which file/rank
+            // label sits there flips. Unflipped: col idx = file idx, top row = rank 8.
             var fileLabelIdx = FlipBoard ? 7 - idx : idx;
             var rankLabelIdx = FlipBoard ? idx : 7 - idx;
 
             var fileText = Position.FromIndex((byte)fileLabelIdx, 0).File.ToLabel();
             var rankText = Position.FromIndex(0, (byte)rankLabelIdx).Rank.ToLabel();
 
-            // x_y doubles as an x (file labels) and a y (rank labels); only the x uses take the
-            // left offset — the y side is already shifted through _topMargin.
-            var top = new RectInt((_leftOffset + x_y + _squareSize, _topMargin + _margin), (_leftOffset + x_y, _topMargin));
-            var bottom = new RectInt((top.LowerRight.X, top.LowerRight.Y + _boardEnd), (top.UpperLeft.X, top.UpperLeft.Y + _boardEnd));
+            var top = _layout.FileLabel(idx, bottom: false);
+            var bottom = _layout.FileLabel(idx, bottom: true);
 
-            var left = new RectInt((_leftOffset + _margin, x_y + _topMargin + _squareSize), (_leftOffset, x_y + _topMargin));
-            var right = new RectInt((left.LowerRight.X + _boardEnd, left.LowerRight.Y), (left.UpperLeft.X + _boardEnd, left.UpperLeft.Y));
+            var left = _layout.RankLabel(idx, right: false);
+            var right = _layout.RankLabel(idx, right: true);
 
             renderer.DrawText(fileText, _labelFont, _labelFontSize, _mainFontColor, top, vertAlignment: TextAlign.Center);
             renderer.DrawText(fileText, _labelFont, _labelFontSize, _mainFontColor, bottom, vertAlignment: TextAlign.Center);
@@ -636,19 +625,18 @@ public class GameUI
 #endif
             CountCaptured(capturedPieceCounts);
 
-            var capturedTextX = _leftOffset + _margin;
             var (topStripSide, bottomStripSide) = CapturedStripSides();
 
-            var bottomCapturedTextY = _topMargin + _boardEnd + _margin;
-            if (clip.Contains(capturedTextX, bottomCapturedTextY))
+            var bottomStrip = _layout.CapturedTray(bottom: true);
+            if (clip.Contains(bottomStrip.UpperLeft.X, bottomStrip.UpperLeft.Y))
             {
-                DrawCapturedText<TRenderer, TSurface>(renderer, capturedPieceCounts, bottomStripSide, capturedTextX, bottomCapturedTextY);
+                DrawCapturedText<TRenderer, TSurface>(renderer, capturedPieceCounts, bottomStripSide, bottomStrip);
             }
 
-            var topCapturedTextY = _topMargin - _capturedCellHeight;
-            if (clip.Contains(capturedTextX, topCapturedTextY))
+            var topStrip = _layout.CapturedTray(bottom: false);
+            if (clip.Contains(topStrip.UpperLeft.X, topStrip.UpperLeft.Y))
             {
-                DrawCapturedText<TRenderer, TSurface>(renderer, capturedPieceCounts, topStripSide, capturedTextX, topCapturedTextY);
+                DrawCapturedText<TRenderer, TSurface>(renderer, capturedPieceCounts, topStripSide, topStrip);
             }
         }
 
@@ -818,15 +806,18 @@ public class GameUI
         }
     }
 
-    private void DrawCapturedText<TRenderer, TSurface>(TRenderer renderer, ReadOnlySpan<byte> capturedPieceCounts, Side side, int x, int y)
+    /// <summary>
+    /// Draws one side's pile along <paramref name="band"/> — the layout's captured band, which spans
+    /// exactly the eight board columns. Clearing the whole band first is what stops a shrinking pile
+    /// leaving its own last frame behind.
+    /// </summary>
+    private void DrawCapturedText<TRenderer, TSurface>(TRenderer renderer, ReadOnlySpan<byte> capturedPieceCounts, Side side, in RectInt band)
         where TRenderer : Renderer<TSurface>
     {
-        // Calculate size and clear the area first. x arrives left-offset, so measure the width
-        // against the board's right edge in the same (offset) coordinates.
         var cellSize = (int)MathF.Round(_capturedFontSize * 1.4f);
-        var maxWidth = _leftOffset + _boardEnd - x;
-        var clearRect = new RectInt((x + maxWidth, y + cellSize), (x, y));
-        renderer.FillRectangle(clearRect, _capturedAreaColor);
+        var x = band.UpperLeft.X;
+        var y = band.UpperLeft.Y;
+        renderer.FillRectangle(band, _capturedAreaColor);
 
         var pieceX = x;
         var capturedSide = side.ToOpposite();
@@ -1136,14 +1127,20 @@ public class GameUI
         renderer.DrawText(whiteText, _pieceFont, fontSize, outline, rect, vertAlignment: TextAlign.Center);
     }
 
+    /// <summary>
+    /// The square under a surface point, or null when the point is not on one. Resolved off the same
+    /// arranged tree <see cref="SquareRect"/> draws from, so a pixel belongs to the square you can see
+    /// under it by construction rather than by two formulas agreeing.
+    ///
+    /// <para>The margins are NOT the board. The arithmetic this replaced divided by the square size and
+    /// C# truncates toward zero, so a point up to one square left of (or above) the board came back as
+    /// column 0 / row 0: clicking the rank labels down the left edge silently selected the a-file.</para>
+    /// </summary>
     public Position? FindSelected(int x, int y)
     {
-        var col = (x - _margin - _leftOffset) / _squareSize;
-        var rowFromTop = (y - _margin - _topMargin) / _squareSize;
-
-        if (col is >= 0 and < 8 && rowFromTop is >= 0 and < 8)
+        if (_layout.HitTest(x, y) is { Kind: BoardSlotKind.Square } square)
         {
-            var (file, rank) = LogicalCell(col, rowFromTop);
+            var (file, rank) = LogicalCell(square.Index % BoardLayout.Files, square.Index / BoardLayout.Files);
             return Position.FromIndex((byte)file, (byte)rank);
         }
 
@@ -1165,10 +1162,7 @@ public class GameUI
     public RectInt SquareRect(Position position)
     {
         var (col, rowFromTop) = DisplayCell((int)position.File, (int)position.Rank);
-        var x = col * _squareSize + _margin + _leftOffset;
-        var y = rowFromTop * _squareSize + _margin + _topMargin;
-
-        return new RectInt((x + _squareSize, y + _squareSize), (x, y));
+        return _layout.Square(col, rowFromTop);
     }
 
     /// <summary>Maps a logical (file, rank) to its on-screen cell — column from the left, row from the
@@ -1183,11 +1177,12 @@ public class GameUI
 
     public RectInt PromotePieceTypeSelectionBox(Side side)
     {
-        var offX = _margin + _leftOffset;
-        var boardTop = _topMargin + _margin;
         // The picker sits on the promoting side's back-rank end; the flip swaps which screen end that is.
+        // It is four squares wide from the a-file end of that row, so the row's first square places it.
         var promotesAtDisplayTop = (side is Side.White) ^ FlipBoard;
-        var offY = promotesAtDisplayTop ? boardTop : boardTop + 7 * _squareSize;
+        var anchor = _layout.Square(0, promotesAtDisplayTop ? 0 : 7);
+        var offX = anchor.UpperLeft.X;
+        var offY = anchor.UpperLeft.Y;
 
         if (_alignment is (_, var alignY))
         {
@@ -1203,13 +1198,14 @@ public class GameUI
         // clamped to the board; place it above that square's on-screen row.
         var (col, rowFromTop) = DisplayCell((int)position.File, (int)position.Rank);
         var startFile = Math.Clamp(col - 3, 0, 1); // 7 squares wide, max start index is 1
-        var offX = startFile * _squareSize + _margin + _leftOffset;
+        var anchor = _layout.Square(startFile, rowFromTop);
+        var offX = anchor.UpperLeft.X;
 
-        var squareY = rowFromTop * _squareSize + _margin + _topMargin;
+        var squareY = anchor.UpperLeft.Y;
         var offY = squareY - _squareSize;
 
         // If the popup would go above the board, place it below instead
-        if (offY < _topMargin + _margin)
+        if (offY < _layout.Board.UpperLeft.Y)
         {
             offY = squareY + _squareSize;
         }
@@ -1260,22 +1256,10 @@ public class GameUI
     /// partial-redraw clipping. Empty with <see cref="CapturedPiecesLayout.External"/> — the piles
     /// are then outside the board area entirely and the host repaints them itself.
     /// </summary>
-    private (RectInt Top, RectInt Bottom) CapturedTextRects()
-    {
-        if (_capturedLayout != CapturedPiecesLayout.Strips) return (default, default);
-
-        var cellSize = _capturedCellHeight;
-        var maxWidth = _boardEnd - _margin;
-        var x = _margin + _leftOffset;
-
-        var bottomY = _topMargin + _boardEnd + _margin;
-        var topY = _topMargin - cellSize;
-
-        return (
-            new RectInt((x + maxWidth, topY + cellSize), (x, topY)),
-            new RectInt((x + maxWidth, bottomY + cellSize), (x, bottomY))
-        );
-    }
+    private (RectInt Top, RectInt Bottom) CapturedTextRects() =>
+        _capturedLayout != CapturedPiecesLayout.Strips
+            ? (default, default)
+            : (_layout.CapturedTray(bottom: false), _layout.CapturedTray(bottom: true));
 
     /// <summary>
     /// Rounds <paramref name="value"/> down to the nearest multiple of <paramref name="alignment"/>.

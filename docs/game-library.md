@@ -44,10 +44,15 @@ IEngineBasedPlayer.InitAsync(string? initialFen)
 UIResponse.NeedsPromotionType | NeedsPiecePlacement
 ```
 
-The *shapes* are reusable; the types are chess to the bone. Separately, the grid is not a parameter:
-`8` is a literal throughout `GameUI` geometry (`8 * _squareSize`, `idx < 8`, `col is >= 0 and < 8`),
-and `Position` is `File`/`Rank` enums with 64 predefined statics. Memory at 4×4 or 6×6 needs that
-parameterised — a bounded but real refactor.
+The *shapes* are reusable; the types are chess to the bone. Separately, the grid is not a parameter —
+though it is now a much smaller job than it was. **Since 2026-08-27 the board's geometry is one
+declarative `Layout` tree in `Chess.Lib/UI/BoardLayout.cs`** (squares, the four label margins, the two
+captured bands), so the per-rect `col * squareSize + margin + offset` arithmetic is gone and the grid's
+size is stated once, as `BoardLayout.Files`/`Ranks`. What is left to parameterise is the sizing
+arithmetic that costs a layout in squares (`8 * _squareSize` in `GameUI`'s ctor and
+`CalculateSquareSize`), two `idx < 8` loops, and `Position` itself — `File`/`Rank` enums with 64
+predefined statics. Memory at 4×4 or 6×6 needs those parameterised; the rect math it would have needed
+most is already behind one constant.
 
 ## What annotation support already exists
 
@@ -135,7 +140,7 @@ numberings, in different modules.
 
 | Tier | What | Where it lives now | Confidence it generalises |
 |---|---|---|---|
-| 1 | Grid geometry: cell rects, hit-test, flip/orientation, coordinate labels | `GameUI` (8×8 literals) | **High** — pure math |
+| 1 | Grid geometry: cell rects, hit-test, flip/orientation, coordinate labels | `BoardLayout` (a `Layout` tree; size stated once as `Files`/`Ranks`). The flip stays in `GameUI.DisplayCell`, deliberately | **High** — pure math, and now declarative rather than arithmetic |
 | 1 | Cell annotations: arrows, dots, rings, borders, scrims | `GameUI`, private, `Position`-typed | **High** — `ExplicitArrows` already proves the data-driven form |
 | 2 | Frame layout: board + side panel + status bar + insets + centring | `PixelGameDisplay` | Medium — captured-pieces gutter is chess |
 | 2 | Wizard state machine | `StartupWizard` | Medium — shape generic, content chess |
@@ -159,7 +164,10 @@ still be generalising from a single consumer — the exact trap this document op
    also where the mass is — `GameSession` 393, `PixelGameDisplay` 649, `GameFrameLayout` 362,
    `StartupWizard` 215 lines, plus all of `Chess.Net`.
 2. **Tier 1 becomes chess-local cleanup, not a library step.** Parameterising the grid is worth doing
-   on its own merits — it is eight lines in `GameUI` (200, 212, 224, 233, 492, 751, 753, 936) — but it
+   on its own merits, and the bulk of it happened on 2026-08-27 for its own reasons: `BoardLayout`
+   makes the board a declarative `Layout` tree, so the geometry that used to be one arithmetic formula
+   per draw site is now one tree stating `Files`/`Ranks` once. What remains is the sizing arithmetic in
+   `GameUI`'s ctor and `CalculateSquareSize`, the two `idx < 8` loops, and `Position`. It all still
    stays unvalidated by a second consumer until Memory exists, and should not be sold as otherwise.
 
 The original reasoning is kept verbatim below, because it is still exactly right *for Memory* and
