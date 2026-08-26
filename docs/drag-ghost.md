@@ -1,9 +1,10 @@
 # Design: the dragged piece follows the cursor (setup-mode drag ghost)
 
-**Status:** Not started (see [Phasing](#phasing)). **Repo scope:** **chess only** — no sibling change,
-no package repin. Every capability this needs already ships: all three renderers already alpha-blend,
-every host already delivers pointer motion in content space, and `DrawPiece` already draws a piece
-into an arbitrary rect.
+**Status:** Phase 1 done — `GameUI` carries the ghost, states its damage and renders it; no host is
+wired yet, so nothing has changed on screen. Phases 2–4 pending (see [Phasing](#phasing)).
+**Repo scope:** **chess only** — no sibling change, no package repin. Every capability this needs
+already ships: all three renderers already alpha-blend, every host already delivers pointer motion in
+content space, and `DrawPiece` already draws a piece into an arbitrary rect.
 
 ## Why
 
@@ -30,11 +31,11 @@ out of that PR rather than bolted onto it.
 | Motion, Web | `WebGlCanvas.OnPointerMove`, backing-space mapped, covers mouse and bridged single-finger touch | **Exists**, unsubscribed |
 | Motion, terminal | `\e[?1002h` button-motion tracking (`VirtualTerminal.cs:170`) → `ConsoleInputMapping.cs:108` maps it to `InputEvent.MouseMove` | **Exists**, unconsumed by `Chess.Console/HumanPlayer.cs` |
 | Partial repaint | `ConsoleGameDisplayBase.RenderFrame` unions clip rects and renders partially | **Exists** — terminal only |
-| Ghost state on `GameUI` | — | **Missing** |
-| A render branch for it | — | **Missing** |
+| Ghost state on `GameUI` | `GameUI.DragPoint` / `GrabOffset` / `GhostRect`, `HandlePointerMove` | **Exists** (phase 1) |
+| A render branch for it | `GameUI.DetachedPiece()` + the last draw in `RenderBoard` | **Exists** (phase 1) |
 
 **Nothing is blocked.** The whole change is a piece of `GameUI` state, one render branch, and four
-subscriptions.
+subscriptions — the first two of which are now in.
 
 ## The design
 
@@ -156,6 +157,44 @@ the multisample attachment is transient (`storeOp = DontCare`) and cannot be rel
 force a persistent offscreen target and a blit-back. If MSAA is ever enabled, this needs revisiting
 rather than re-testing.
 
+#### That backend half shipped while this was being written (2026-08-26)
+
+The repin to **SdlVulkan.Renderer 7.25** (chess `00e3423`) brought exactly the thing described above,
+so "if it ever does need fixing" is no longer a project:
+
+- `AddFrameDamage` / `MarkFullFrameDamage` declare a frame's damage, and `BeginFrameRenderPass` picks
+  a `loadOp = Load` variant of the swapchain pass, confining render area and scissor to it — the
+  viewport deliberately stays full-surface, since an app submits geometry in surface coordinates and a
+  shrunken viewport would squash the frame into the region rather than crop it to it.
+- Every clip is intersected with the damage, because DIR.Lib intersects a clip with its parents but
+  knows nothing about damage — without it a widget clipping to its own pane repaints that whole pane.
+- Damage is tracked **per swapchain image**, which is the part chess would have got wrong: with 2–3
+  images in rotation, the image acquired this frame holds the frame from 2–3 frames ago, so it needs
+  the union of every frame's damage since *that* image was last painted. Using the current frame's
+  alone leaves stale pixels that appear only at particular frame counts.
+- **MSAA takes the clearing path unconditionally**, for precisely the transient-attachment reason
+  recorded above. So the premise is now enforced by the backend rather than only written down here —
+  chess being `Count1` is what puts it on the fast path.
+
+Damage must be declared from `SdlWindowView.OnBeforeFrame`, which runs once a frame is committed to
+and before the pass opens; `CheckNeedsRedraw` stays a pure predicate and is the wrong place for it.
+
+**What is still chess's to do is unchanged and small**: `PixelGameDisplay.RenderMove` takes
+`clipRects` and drops them on the floor. Feeding them to `AddFrameDamage` is the whole of it — and
+phase 1 has now made `HandlePointerMove` produce exactly those rects. Do it only if a measured drag
+says it is needed; the point here is that the answer changed from "build a scissor path" to "pass the
+rects you already have".
+
+DIR.Lib 8.8's `LayoutDamage` came in the same repin and is **not** what chess needs for this. It
+derives damage by diffing paint signatures over the arranged tree — the four traps above are its
+problem, and it exists for consumers that cannot say what changed. Chess can. It would only earn its
+place for the declarative chrome around the board, which is not what a drag touches.
+
+One more thing arrived with 7.25 that phase 3 will want: the renderer inspector gained a **`move`
+verb**. Both existing pointer verbs press a button, so hover-driven behaviour was undrivable — which
+means trap 3 below (motion arriving with no button held, on hosts that deliver it that way) could not
+be tested end-to-end at all before now.
+
 ## Per-host wiring
 
 | Host | Motion source | Route | Work |
@@ -182,7 +221,11 @@ rather than re-testing.
    are already stale by the time they paint. `HumanPlayer` can peek `terminal.HasInput()` and skip the
    render when the next pending event is also motion.
 5. **Clear the drag point on drop, on cancel, and on leaving setup** — the same three exits phase 1
-   already handles for `PickedUp`, plus `IsSetupMode`'s setter.
+   already handles for `PickedUp`, plus `IsSetupMode`'s setter. *Phase 1 solved this by DERIVING
+   instead of clearing:* `DragPoint` reads as null whenever `PickedUp` is, so all four exits close the
+   ghost at once and a fifth cannot be forgotten. The backing field is reset on pick-up, which is the
+   one case derivation does not cover — a stale point would otherwise paint a ghost across the board
+   before the pointer had moved at all.
 
 ## Testing
 
@@ -253,7 +296,7 @@ today and is the whole difference between animation reusing this and reimplement
 
 | Phase | Scope | Where | Status |
 |---|---|---|---|
-| 1 | `GameUI` ghost state (`DragPoint`, `GrabOffset`), `HandlePointerMove` returning old ∪ new damage, the render branch (translucent ghost + dimmed origin) **taking `(piece, rect, suppressedSquare)` so a move animation can reuse it**, `Resize` preservation, clearing on every exit, and pixel-level tests | chess | Not started |
+| 1 | `GameUI` ghost state (`DragPoint`, `GrabOffset`), `HandlePointerMove` returning old ∪ new damage, the render branch (translucent ghost + dimmed origin) **taking `(piece, rect, suppressedSquare)` so a move animation can reuse it**, `Resize` preservation, clearing on every exit, and pixel-level tests | chess | **Done** |
 | 2 | Chess.Console wiring — one arm on `HumanPlayer`'s switch plus motion coalescing; the only host that exercises the clip rects, so it validates phase 1's damage model | chess | Not started |
 | 3 | Chess.GUI + Chess.Droid — both already deliver a content-mapped motion event on their event thread | chess | Not started |
 | 4 | Chess.Web via `WebGlCanvas.OnPointerMove` | chess | Not started |
@@ -269,10 +312,12 @@ decorative. The GPU hosts would happily accept wrong rects for ever, because the
   contact point by an offset. That would break the honest grab-offset behaviour on precisely the hosts
   where the ghost matters most, and it interacts with the four-square bound (an offset ghost can
   straddle a different 2×2). Worth deciding when Droid/Web are wired, not before.
-- **Should the ghost show while the pointer is off the board?** Hiding it keeps the bound absolute,
-  stops the piece drawing over the history panel and captured piles, and truthfully signals the
-  release semantics — a release off the board is already a no-op that leaves the piece in hand. The
-  cost is that the piece appears to vanish rather than be carried.
+- ~~**Should the ghost show while the pointer is off the board?**~~ **Decided in phase 1: it hides.**
+  That keeps the four-square bound absolute, stops the piece drawing over the history panel and the
+  captured piles, and truthfully signals the release semantics — a release off the board is already a
+  no-op that leaves the piece in hand. The cost, accepted, is that the piece appears to vanish rather
+  than be carried. Reversing it means changing one line in `HandlePointerMove` and re-reading the
+  bound, since a ghost over the chrome is no longer bounded by squares at all.
 - **Does the terminal's partial-render path stay partial here?** `RenderFrame` falls back to a full
   frame when the captured tray is stale; a ghost never changes the tray, but this has not been
   checked against a real drag.
