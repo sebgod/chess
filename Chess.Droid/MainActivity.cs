@@ -199,7 +199,12 @@ public sealed class MainActivity : SdlVulkanActivity
         loop.OnMouseMove = (x, y) =>
         {
             _pointerLast = _renderer.ContentTransform.Invert(new Vector2(x, y));
-            return false; // nothing hovers; this only tracks the finger for the tap-vs-drag test
+            // Nothing hovers, so this mostly just tracks the finger for the tap-vs-drag test. What it
+            // now also does is carry the setup drag ghost, served here on the event thread rather
+            // than queued through _input — a per-finger-position queue would tick a session per
+            // motion event. Returning true is how a handler asks the loop for the frame.
+            return !IsMenuUp
+                && (_display?.HandleDragPointer(new InputEvent.MouseMove(_pointerLast.X, _pointerLast.Y)) ?? false);
         };
         loop.OnMouseUp = _ =>
         {

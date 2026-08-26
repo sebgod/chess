@@ -159,6 +159,13 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
         {
             return true; // display.HasPendingUpdate (set on consume) drives the redraw
         }
+        // The setup drag ghost: same thread, same reasoning as the history drag above. It claims
+        // motion ONLY while a piece is in hand, so the menu and the lobby keep the hover stream they
+        // resolve out of these same events.
+        if (display is not null && display.HandleDragPointer(evt))
+        {
+            return true;
+        }
         IWidget target = menu is { IsComplete: false } ? menu : lobby is not null ? lobby : player;
         return target.HandleInput(evt);
     },

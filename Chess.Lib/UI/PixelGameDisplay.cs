@@ -28,6 +28,9 @@ public interface IPixelGameDisplay : IGameDisplay
     /// <inheritdoc cref="PixelGameDisplay{TSurface}.HandleHistoryPointer"/>
     bool HandleHistoryPointer(InputEvent evt);
 
+    /// <inheritdoc cref="PixelGameDisplay{TSurface}.HandleDragPointer"/>
+    bool HandleDragPointer(InputEvent evt);
+
     /// <inheritdoc cref="PixelGameDisplay{TSurface}.PageHistory"/>
     void PageHistory(int direction);
 }
@@ -546,6 +549,36 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
             default:
                 return false;
         }
+    }
+
+    /// <summary>
+    /// Moves the setup drag ghost, returning true when consumed. Called by the host's pointer dispatch
+    /// on the render/event thread, beside <see cref="HandleHistoryPointer"/> and for the reason that
+    /// one's comment gives — bypassing the per-move queue so it stays smooth and never races game
+    /// state. Safe because in every pixel host the pointer callback and the render run on the same
+    /// thread, so the drag point is never read by the game thread.
+    ///
+    /// <para>It returns FALSE when nothing is in hand rather than swallowing all motion, and that is
+    /// load-bearing: the menu and the lobby resolve their hover out of the same event stream, and a
+    /// ghost that claimed every move would silently kill their highlights. <see cref="GameUI"/>'s own
+    /// gate does the deciding — this only forwards its answer.</para>
+    ///
+    /// <para>The damage rects are DISCARDED here, unlike on the terminal: <see cref="RenderMove"/>
+    /// repaints the whole frame regardless. They are still worth producing, and this is the exact
+    /// place a <c>VulkanContext.AddFrameDamage</c> call would take them (SdlVulkan.Renderer 7.25) if a
+    /// measured drag ever says the full repaint costs too much.</para>
+    /// </summary>
+    public bool HandleDragPointer(InputEvent evt)
+    {
+        if (evt is not InputEvent.MouseMove(var x, var y) || !HasGameUI)
+            return false;
+
+        var (response, _) = UI.HandlePointerMove((int)x, (int)y);
+        if (!response.HasFlag(UIResponse.NeedsRefresh))
+            return false;
+
+        _hasPendingUpdate = true;
+        return true;
     }
 
     /// <summary>Pages the history by (nearly) a viewport; direction -1 = up, +1 = down. Render thread.</summary>
