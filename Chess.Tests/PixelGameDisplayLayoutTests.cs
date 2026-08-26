@@ -166,10 +166,8 @@ public sealed class PixelGameDisplayLayoutTests
     private static (RunRecorder Renderer, PixelGameDisplay<RgbaImage> Display, Game Game) RenderPlayback(
         int width, int height)
     {
-        // Makes the arranged tree readable back through GetCapturedLayout(); process-wide and additive, so
-        // leaving it on only costs other tests a retained list.
-        LayoutInspection.Enabled = true;
-
+        // The arranged tree is readable back through GetCapturedLayout() with nothing to switch on: DIR.Lib
+        // 8.8 made layout capture unconditional, because the tree is what LayoutDamage diffs a frame against.
         var renderer = new RunRecorder((uint)width, (uint)height);
         var game = TwoMovesWithACapture();
         var display = new PixelGameDisplay<RgbaImage>(renderer);
