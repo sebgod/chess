@@ -1258,6 +1258,102 @@ public class GameUITests
         ui.GhostRect.ShouldBeNull();
     }
 
+    // ── Last-move arrow: the knight's L ────────────────────────────
+
+    /// <summary>The last-move arrow's green is the only green on the board — every square fill and
+    /// piece colour has red at or above green — so "is this pixel arrow ink" needs no baseline
+    /// render to compare against.</summary>
+    private static bool IsArrowInk(RgbaImage image, int x, int y)
+    {
+        var i = (y * image.Width + x) * 4;
+        return image.Pixels[i + 1] > image.Pixels[i] + 20 && image.Pixels[i + 1] > image.Pixels[i + 2] + 20;
+    }
+
+    private static GameUI AfterMove(Position from, Position to)
+    {
+        var game = new Game();
+        game.TryMove(DoMove(from, to)).ShouldBe(ActionResult.Move);
+        return CreateUI(game);
+    }
+
+    /// <summary>
+    /// A knight moves two along a rank or file and then one across, so the arrow does too: long leg
+    /// first, up the b file to b3, then across to c3.
+    ///
+    /// <para>Drawn on a board holding nothing but the knight, because arrows are painted UNDER the
+    /// pieces — on a standard board the pawn on b2 sits on top of the long leg and the test would be
+    /// asserting the pawn's colour. An <see cref="GameUI.ExplicitArrows"/> arrow takes the same
+    /// <c>DrawLastMoveArrow</c> path as a real last move, which is also how the chess-mcp puzzle
+    /// diagrams reach it.</para>
+    /// </summary>
+    [Fact]
+    public void Render_KnightArrow_DrawsAnLRatherThanADiagonal()
+    {
+        var game = new Game(new Board(), Side.White, []);
+        game.SetPiece(B1, new Piece(PieceType.Knight, Side.White));
+        var ui = CreateUI(game);
+        ui.ExplicitArrows = [(B1, C3, false)];
+
+        var image = RenderUI(ui);
+
+        var (bx, b1y) = Centre(ui, B1);
+        var (cx, c3y) = Centre(ui, C3);
+
+        // The long leg runs up the b file, so b2's centre is on it.
+        var (b2x, b2y) = Centre(ui, B2);
+        IsArrowInk(image, b2x, b2y).ShouldBeTrue("the long leg should run up the b file through b2");
+
+        // The short leg runs along rank 3, so the point between b3 and c3 is on it.
+        IsArrowInk(image, (bx + cx) / 2, c3y).ShouldBeTrue("the short leg should run along rank 3");
+
+        // And the straight diagonal — the old arrow — is now empty.
+        IsArrowInk(image, (bx + cx) / 2, (b1y + c3y) / 2)
+            .ShouldBeFalse("no ink belongs on the diagonal the knight cannot travel");
+    }
+
+    /// <summary>The real last-move path, not just <see cref="GameUI.ExplicitArrows"/>: after 1.Nc3 the
+    /// diagonal b1–c3 carries no arrow.</summary>
+    [Fact]
+    public void Render_KnightLastMove_LeavesTheDiagonalEmpty()
+    {
+        var ui = AfterMove(B1, C3);
+        var image = RenderUI(ui);
+
+        var (bx, b1y) = Centre(ui, B1);
+        var (cx, c3y) = Centre(ui, C3);
+
+        IsArrowInk(image, (bx + cx) / 2, (b1y + c3y) / 2).ShouldBeFalse();
+    }
+
+    /// <summary>The corner is filled once rather than by two overlapping legs: the arrow colour is
+    /// translucent, so an overlap blends twice and leaves a darker blob exactly where a reader looks
+    /// to see which way the piece turned.</summary>
+    [Fact]
+    public void Render_KnightMove_JoinsTheLegsWithoutAGapAtTheCorner()
+    {
+        var ui = AfterMove(B1, C3);
+        var image = RenderUI(ui);
+
+        var (bx, _) = Centre(ui, B1);
+        var (_, c3y) = Centre(ui, C3);
+
+        IsArrowInk(image, bx, c3y).ShouldBeTrue("the corner of the L must be inked");
+    }
+
+    /// <summary>Every other piece really does travel in a straight line, so its arrow was already
+    /// telling the truth and must keep doing so.</summary>
+    [Fact]
+    public void Render_NonKnightMove_KeepsTheStraightArrow()
+    {
+        var ui = AfterMove(E2, E4);
+        var image = RenderUI(ui);
+
+        var (ex, e2y) = Centre(ui, E2);
+        var (_, e4y) = Centre(ui, E4);
+
+        IsArrowInk(image, ex, (e2y + e4y) / 2).ShouldBeTrue("a pawn's arrow runs straight up the file");
+    }
+
     /// <summary>A fresh grab must not inherit the last drag's pointer position, which would paint a
     /// ghost across the board before the pointer had moved at all.</summary>
     [Fact]
