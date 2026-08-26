@@ -1046,7 +1046,59 @@ public class GameUI
         var (x0, y0) = SquareCenter(from);
         var (x1, y1) = SquareCenter(to);
         var thickness = Math.Max(2, (int)(_squareSize * 0.07f));
+
+        // The knight is the one piece whose move is not a straight line, so a straight arrow draws a
+        // path it cannot take — and it crosses squares it never visits, which is exactly what makes a
+        // diagram misleading rather than merely stylised. It moves two along a rank or file and then
+        // one across, so that is what gets drawn.
+        //
+        // Detected from the GEOMETRY, not the piece: a (1, 2) delta is a knight's and nothing else's
+        // — a king reaches one square, and everything else travels a rank, a file or a diagonal — and
+        // neither LastMoveFull nor ExplicitArrows carries a piece type to ask. Which also means the
+        // chess-mcp puzzle diagrams, which come through ExplicitArrows, get it for free.
+        var files = Math.Abs((int)to.File - (int)from.File);
+        var ranks = Math.Abs((int)to.Rank - (int)from.Rank);
+        if ((files, ranks) is (1, 2) or (2, 1))
+        {
+            DrawKnightElbow<TRenderer, TSurface>(renderer, x0, y0, x1, y1, color, thickness);
+            return;
+        }
+
         renderer.DrawLine(x0, y0, x1, y1, color, thickness);
+    }
+
+    /// <summary>
+    /// The knight's L: the LONG leg first — two squares along a rank or file — then the short
+    /// perpendicular one.
+    ///
+    /// <para>The corner is filled as its own rectangle instead of letting the two legs overlap there.
+    /// Every arrow colour in this file is translucent (<c>0xCC</c>), so an overlap blends twice and
+    /// leaves a visibly darker blob at precisely the point a reader looks to see which way the piece
+    /// turned. Each leg therefore stops half a thickness short of the corner and the square between
+    /// them is drawn once.</para>
+    ///
+    /// <para>Long-versus-short is decided in SCREEN space, which is what keeps it right under
+    /// <see cref="FlipBoard"/>: a 180° rotation negates both deltas and preserves their magnitudes.</para>
+    /// </summary>
+    private static void DrawKnightElbow<TRenderer, TSurface>(TRenderer renderer,
+        float x0, float y0, float x1, float y1, RGBAColor32 color, int thickness)
+        where TRenderer : Renderer<TSurface>
+    {
+        var half = thickness / 2f;
+        var (cornerX, cornerY) = MathF.Abs(x1 - x0) > MathF.Abs(y1 - y0) ? (x1, y0) : (x0, y1);
+
+        // One component of each direction is zero — both legs are axis-aligned — so this shortens each
+        // one along its own axis and leaves the other end untouched.
+        var (in1X, in1Y) = (MathF.Sign(cornerX - x0) * half, MathF.Sign(cornerY - y0) * half);
+        var (out2X, out2Y) = (MathF.Sign(x1 - cornerX) * half, MathF.Sign(y1 - cornerY) * half);
+
+        renderer.DrawLine(x0, y0, cornerX - in1X, cornerY - in1Y, color, thickness);
+        renderer.DrawLine(cornerX + out2X, cornerY + out2Y, x1, y1, color, thickness);
+        renderer.FillRectangle(
+            new RectInt(
+                ((int)MathF.Round(cornerX + half), (int)MathF.Round(cornerY + half)),
+                ((int)MathF.Round(cornerX - half), (int)MathF.Round(cornerY - half))),
+            color);
     }
 
     private void DrawCheckRing<TRenderer, TSurface>(TRenderer renderer, Position kingPosition)
