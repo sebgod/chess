@@ -6,9 +6,9 @@
     <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Console.Lib" Version="4.27.*" />
+    <PackageVersion Include="Console.Lib" Version="4.29.*" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
-    <PackageVersion Include="DIR.Lib" Version="8.8.*" />
+    <PackageVersion Include="DIR.Lib" Version="8.9.*" />
     <!-- Chess.Web's Blazor WebAssembly deps. They used to ride inline in Chess.Web.csproj, which
          opted out of CPM entirely; that also hid the WebGl.Renderer pin below from every
          solution-wide sweep, which is how it twice ended up two minors behind DIR.Lib. -->
@@ -40,12 +40,14 @@
     <PackageVersion Include="SDL3-CS.Native" Version="3.5.0-preview.20260205-174353" />
     <PackageVersion Include="Vortice.Vulkan" Version="3.2.3" />
     <PackageVersion Include="Vortice.VulkanMemoryAllocator" Version="1.7.0" />
-    <!-- WebGL2 backend for Chess.Web. Floats within its minor like the other siblings. The lockstep the
-         7.17 round had to abandon is BACK for two of the three: Console.Lib 4.27 and SdlVulkan 7.25 both
-         pin DIR.Lib 8.8.2571 exactly. WebGl 1.26 is the one still behind, at 8.3.2491, so chess's own
-         higher direct pin unifies it upward — safe because 8.4-8.8 are additive (LayoutDamage, the emoji
-         font role, the script-font chain) and DIR.Lib's only 8.x MIGRATION entry is 8.0's TabBar-becomes-
-         a-widget, which chess does not use. Restore the three-way lockstep when WebGl follows 8.8. -->
+    <!-- WebGL2 backend for Chess.Web. Floats within its minor like the other siblings. The two-of-three
+         lockstep noted here last round is broken again, and deliberately: Console.Lib 4.29 (the inspector
+         drag verbs) follows DIR.Lib 8.9 for TextTrim.Middle, while SdlVulkan 7.25 still pins 8.8.2571 and
+         WebGl 1.26 is further back at 8.3.2491. Chess's own direct pin is the highest of the four, so NuGet
+         unifies every project — including the ones reaching DIR.Lib only THROUGH a backend — up to it.
+         Safe because 8.4-8.9 are additive (LayoutDamage, the emoji font role, the script-font chain,
+         TextTrim.Middle) and DIR.Lib's only 8.x MIGRATION entry is 8.0's TabBar-becomes-a-widget, which
+         chess does not use. Restore the lockstep when SdlVulkan and WebGl follow 8.9. -->
     <PackageVersion Include="WebGl.Renderer" Version="1.26.*" />
     <!-- Vortice.ShaderCompiler pin removed: SdlVulkan.Renderer 6.29+ embeds pre-baked SPIR-V and no
          longer compiles GLSL at runtime, and no chess project ever referenced the package directly. -->
