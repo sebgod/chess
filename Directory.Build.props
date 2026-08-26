@@ -22,7 +22,7 @@
     identity was the `build-<run_number>` tag the release job invented.
   -->
   <PropertyGroup>
-    <VersionMajorMinor>1.0</VersionMajorMinor>
+    <VersionMajorMinor>1.1</VersionMajorMinor>
     <VersionPrefix Condition="'$(VersionPrefix)' == ''">$(VersionMajorMinor).0</VersionPrefix>
     <AssemblyVersion>$(VersionMajorMinor).0.0</AssemblyVersion>
   </PropertyGroup>
