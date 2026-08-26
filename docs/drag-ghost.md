@@ -1,7 +1,8 @@
 # Design: the dragged piece follows the cursor (setup-mode drag ghost)
 
-**Status:** Phase 1 done — `GameUI` carries the ghost, states its damage and renders it; no host is
-wired yet, so nothing has changed on screen. Phases 2–4 pending (see [Phasing](#phasing)).
+**Status:** Phases 1 and 2 done — `GameUI` carries the ghost, states its damage and renders it, and
+Chess.Console feeds it motion. It is live in the terminal; the GPU hosts still drop motion. Phases 3–4
+pending (see [Phasing](#phasing)).
 **Repo scope:** **chess only** — no sibling change, no package repin. Every capability this needs
 already ships: all three renderers already alpha-blend, every host already delivers pointer motion in
 content space, and `DrawPiece` already draws a piece into an arbitrary rect.
@@ -199,7 +200,7 @@ be tested end-to-end at all before now.
 
 | Host | Motion source | Route | Work |
 |---|---|---|---|
-| **Chess.Console** (sixel) | `InputEvent.MouseMove`, already mapped | Player path, clip rects honoured | One arm on `HumanPlayer`'s switch |
+| **Chess.Console** (sixel) | `InputEvent.MouseMove`, already mapped | Player path, clip rects honoured | One arm on `HumanPlayer`'s switch — plus a `Coalesce` step, which turned out to be the real work |
 | **Chess.GUI** | `OnPointerInput`, already content-mapped | Event thread, rects ignored | Serve beside `HandleHistoryPointer`; leave `HumanPlayer` dropping it |
 | **Chess.Droid** | `loop.OnMouseMove`, already `ContentTransform`-inverted | Event thread, rects ignored | Set the drag point beside `_pointerLast`; return `true` for the frame |
 | **Chess.Web** | `WebGlCanvas.OnPointerMove` | Event thread, rects ignored | Subscribe and render directly — **not** via `_input`/`AdvanceAsync`, which would tick a session per mouse move |
@@ -239,8 +240,24 @@ The damage rects are worth asserting directly too, since they are the whole of t
 model: a ghost moved by one cell should return two rects whose union is at most a 3×3 square block,
 and a ghost that has not crossed a square boundary should not widen it.
 
-Live verification has a route on both ends: the TUI inspector can `click`-drag and read the screen,
-and the GUI's renderer inspector can `drag` and screenshot.
+### Live verification: only one of the two routes exists (corrected 2026-08-26)
+
+This section used to claim "the TUI inspector can `click`-drag and read the screen, and the GUI's
+renderer inspector can `drag` and screenshot". Half of that is wrong, and it is the half phase 2
+needed.
+
+**Console.Lib's inspector has exactly one pointer verb, `click`**, and it injects a press and a
+release *at the same cell* (`ConsoleDebugInspector.cs:324-325`) with no motion in between. There is no
+`move` and no `drag`. So the terminal — the host that benefits most from a ghost, and the only one
+that reads the damage rects — **cannot have a drag synthesized at all**, and phase 2 rests on unit
+tests plus reading the code rather than on a screen read.
+
+The GPU side is the opposite: SdlVulkan.Renderer 7.25 added a `move` verb precisely because
+press-based verbs could not drive hover behaviour, so phase 3 *will* have a live route.
+
+Closing this needs a motion verb in Console.Lib's inspector — a **sibling change**, deliberately out
+of scope here since this plan is chess-only. Until it lands, a terminal ghost is only ever seen by a
+person dragging a real mouse over a real terminal.
 
 ## Reuse: this is most of a move animation
 
@@ -297,7 +314,7 @@ today and is the whole difference between animation reusing this and reimplement
 | Phase | Scope | Where | Status |
 |---|---|---|---|
 | 1 | `GameUI` ghost state (`DragPoint`, `GrabOffset`), `HandlePointerMove` returning old ∪ new damage, the render branch (translucent ghost + dimmed origin) **taking `(piece, rect, suppressedSquare)` so a move animation can reuse it**, `Resize` preservation, clearing on every exit, and pixel-level tests | chess | **Done** |
-| 2 | Chess.Console wiring — one arm on `HumanPlayer`'s switch plus motion coalescing; the only host that exercises the clip rects, so it validates phase 1's damage model | chess | Not started |
+| 2 | Chess.Console wiring — one arm on `HumanPlayer`'s switch plus motion coalescing; the only host that exercises the clip rects, so it validates phase 1's damage model | chess | **Done** (not live-verifiable — see [Live verification](#live-verification-only-one-of-the-two-routes-exists-corrected-2026-08-26)) |
 | 3 | Chess.GUI + Chess.Droid — both already deliver a content-mapped motion event on their event thread | chess | Not started |
 | 4 | Chess.Web via `WebGlCanvas.OnPointerMove` | chess | Not started |
 
@@ -318,6 +335,15 @@ decorative. The GPU hosts would happily accept wrong rects for ever, because the
   no-op that leaves the piece in hand. The cost, accepted, is that the piece appears to vanish rather
   than be carried. Reversing it means changing one line in `HandlePointerMove` and re-reading the
   bound, since a ghost over the chrome is no longer bounded by squares at all.
-- **Does the terminal's partial-render path stay partial here?** `RenderFrame` falls back to a full
-  frame when the captured tray is stale; a ghost never changes the tray, but this has not been
-  checked against a real drag.
+- ~~**Does the terminal's partial-render path stay partial here?**~~ **Answered from the code in phase
+  2: yes.** `RenderFrame` falls back to a full frame when `TrayIsStale`, and that is a comparison of
+  `(ply index, Mode)` (`ConsoleGameDisplayBase.cs:405-411`). A setup drag changes neither — no ply is
+  committed and the mode stays `Setup` — so the tray is stale at most once, on entry. Still worth a
+  glance at `paintMs` in `app_state` when a motion verb makes a real drag drivable.
+- **New, from phase 2: how big can deferred damage get?** Coalescing unions the rects it defers rather
+  than listing them, so the accumulation is bounded and `RenderFrame` (which unions everything anyway)
+  is handed the same region either way. But a *slow* drag that always has input queued behind it grows
+  the union across the whole path travelled, and the union of two distant footprints is their bounding
+  box. Not a correctness problem — it repaints a superset — but it is the one shape that could make a
+  coalesced drag cost more than an uncoalesced one, and only a measured drag will say whether it
+  happens in practice.
