@@ -39,6 +39,51 @@ public class GameFrameLayoutTests
         public float ToSurface(float designUnits) => designUnits;
     }
 
+    /// <summary>
+    /// The frame tree must stay PAINTABLE-EMPTY: no Background, no Hit, and no leaf content beyond the
+    /// slot Fills and the Spacer.
+    /// </summary>
+    /// <remarks>
+    /// <para>This is not a style rule, it is the premise <c>PixelGameDisplay.ArrangeFrame</c> relies on.
+    /// It publishes the frame to the layout capture buffer -- what the debug inspector's
+    /// <c>describe_layout</c> reads -- by calling <c>PaintLayout</c> with a null <c>drawFill</c>, which
+    /// draws nothing and registers nothing PRECISELY BECAUSE there is nothing here to draw. That call is
+    /// a capture spelled as a paint.</para>
+    /// <para>So the day someone tints a gutter with a <c>Background</c>, or hangs a <c>Hit</c> on a slot,
+    /// that line stops being a capture and silently becomes a real paint -- chrome drawn twice, or a
+    /// region registered across the board that eats the clicks GameUI hit-tests by geometry. Neither
+    /// failure announces itself. This test is what turns that into a red build instead, and if it ever
+    /// fails the answer is NOT to relax it: it is to route the Fills through a real <c>drawFill</c>, so
+    /// that painting the frame is what the call actually means.</para>
+    /// </remarks>
+    [Theory]
+    [InlineData(1920, 1080)]    // flanked
+    [InlineData(1280, 800)]     // flanked, the window this is usually driven at
+    [InlineData(1080, 2400)]    // stacked
+    [InlineData(800, 1280)]     // stacked
+    public void Frame_HasNothingToPaint_WhichIsWhatMakesCapturingItSafe(float w, float h)
+    {
+        var arranged = Layout.Engine.Arrange(
+            Pixels(w, h).Build(), new Rect<float>(0, 0, w, h), new UnitPixels());
+
+        foreach (var node in arranged)
+        {
+            var where = $"{w}x{h} {node.Node.GetType().Name} at ({node.Bounds.X}, {node.Bounds.Y})";
+
+            node.Node.Background.ShouldBeNull($"{where}: a Background would be PAINTED by the capture");
+            node.Node.Hit.ShouldBeNull($"{where}: a Hit would REGISTER a region over the board");
+            node.Node.OnClick.ShouldBeNull($"{where}: an OnClick would register a region too");
+
+            if (node.Node is not Layout.Node.Leaf leaf) continue;
+
+            // Fill is the slot escape hatch (drawn by the painter that owns the key, not by the capture)
+            // and Box is the Spacer. Text/Icon/TextInput would all put ink on the surface.
+            leaf.Content.ShouldSatisfyAllConditions(
+                () => (leaf.Content is Layout.Content.Fill or Layout.Content.Box).ShouldBeTrue(
+                    $"{where}: leaf content {leaf.Content.GetType().Name} would be painted by the capture"));
+        }
+    }
+
     [Theory]
     // Desktop windows and tablets are wide enough for two gutters, and height binds, so moving the piles
     // out of the board is worth more than the width the second gutter costs.
