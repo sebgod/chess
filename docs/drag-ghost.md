@@ -1,8 +1,10 @@
 # Design: the dragged piece follows the cursor (setup-mode drag ghost)
 
-**Status:** Phases 1 and 2 done — `GameUI` carries the ghost, states its damage and renders it, and
-Chess.Console feeds it motion. It is live in the terminal; the GPU hosts still drop motion. Phases 3–4
-pending (see [Phasing](#phasing)).
+**Status:** Phases 1–3 done — `GameUI` carries the ghost, states its damage and renders it;
+Chess.Console, Chess.GUI and Chess.Droid all feed it motion. **Live-verified in the GUI** (see
+[Live verification](#live-verification-only-one-of-the-two-routes-exists-corrected-2026-08-26));
+Chess.Droid compiles but has not been run on a device. Phase 4 (the browser) pending — see
+[Phasing](#phasing).
 **Repo scope:** **chess only** — no sibling change, no package repin. Every capability this needs
 already ships: all three renderers already alpha-blend, every host already delivers pointer motion in
 content space, and `DrawPiece` already draws a piece into an arbitrary rect.
@@ -259,6 +261,21 @@ Closing this needs a motion verb in Console.Lib's inspector — a **sibling chan
 of scope here since this plan is chess-only. Until it lands, a terminal ghost is only ever seen by a
 person dragging a real mouse over a real terminal.
 
+**Phase 3 used the GPU route, and it worked** (2026-08-26). Chess.GUI built `-c Debug
+-p:UseLocalSiblings=true`, driven over the inspector's TCP protocol: `click` on b1 near its
+bottom-right corner to take the knight in hand, then `move {x1,y1,x2,y2}` — note the four-parameter
+path form, not a single point — then `screenshot`. Three things were confirmed on the real surface,
+none of which a unit test can show:
+
+1. the ghost is drawn **off-grid**, straddling squares, held at the offset it was grabbed by rather
+   than snapped to a centre;
+2. the origin square keeps a **dimmed** knight under the picked-up tint — lifted, not deleted;
+3. moving the pointer off the board **hides the ghost and restores b1 to full strength**, with the
+   status line still reading "moving White Knight from b1" — the piece is still in hand.
+
+Chess.Droid takes the same route in the same commit but has **not** been run on a device; it is
+compiled only.
+
 ## Reuse: this is most of a move animation
 
 A move animation — the piece sliding from its origin to its destination instead of teleporting, which
@@ -315,7 +332,7 @@ today and is the whole difference between animation reusing this and reimplement
 |---|---|---|---|
 | 1 | `GameUI` ghost state (`DragPoint`, `GrabOffset`), `HandlePointerMove` returning old ∪ new damage, the render branch (translucent ghost + dimmed origin) **taking `(piece, rect, suppressedSquare)` so a move animation can reuse it**, `Resize` preservation, clearing on every exit, and pixel-level tests | chess | **Done** |
 | 2 | Chess.Console wiring — one arm on `HumanPlayer`'s switch plus motion coalescing; the only host that exercises the clip rects, so it validates phase 1's damage model | chess | **Done** (not live-verifiable — see [Live verification](#live-verification-only-one-of-the-two-routes-exists-corrected-2026-08-26)) |
-| 3 | Chess.GUI + Chess.Droid — both already deliver a content-mapped motion event on their event thread | chess | Not started |
+| 3 | Chess.GUI + Chess.Droid — both already deliver a content-mapped motion event on their event thread | chess | **Done** — GUI live-verified through the inspector's `move`; **Droid compiles but has NOT been run on a device** |
 | 4 | Chess.Web via `WebGlCanvas.OnPointerMove` | chess | Not started |
 
 Phase 1 is testable and reviewable with no host wired at all, which is what makes it the whole of the
