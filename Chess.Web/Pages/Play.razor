@@ -91,6 +91,7 @@
                      OnReady="OnCanvasReadyAsync"
                      OnResized="OnCanvasResizedAsync"
                      OnPointerDown="OnPointerDownAsync"
+                     OnPointerMove="OnPointerMoveAsync"
                      OnPointerUp="OnPointerUpAsync"
                      OnKeyDown="OnKeyDownAsync" />
 
@@ -783,6 +784,26 @@
         // applies the tap and everything that follows — the reply, the link handoff, the repaints.
         _input.PressPointer(e.X, e.Y);
         await AdvanceAsync();
+    }
+
+    /// <summary>
+    /// Carries the setup drag ghost under the pointer. Deliberately NOT through
+    /// <c>_input</c>/<c>AdvanceAsync</c> like the press and the release either side of it: a session
+    /// tick per pointer position is the wrong shape for a stream that arrives once per pixel of
+    /// travel, and there is no turn to advance — the ghost is a render hint, and the model still has
+    /// the piece on its origin square until the release lands it.
+    ///
+    /// <para><c>HandleDragPointer</c> answers false whenever nothing is in hand, so a plain hover
+    /// costs one call and no frame. When it does claim the event, the frame has to be asked for
+    /// right here: Chess.Web is the one host with no idle hook — it renders on demand from Blazor
+    /// handlers, where the SDL hosts would just return true and let their redraw poll notice.</para>
+    /// </summary>
+    async Task OnPointerMoveAsync(CanvasPointerEventArgs e)
+    {
+        if (!_ready || _busy || _screen != Screen.Setup) return;
+        if (!_display.HandleDragPointer(new InputEvent.MouseMove(e.X, e.Y))) return;
+
+        await RenderBoardAsync();
     }
 
     /// <summary>
