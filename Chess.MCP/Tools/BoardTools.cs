@@ -186,7 +186,12 @@ public class BoardTools
         if (hasAnnotation)
         {
             var fontSize = size * 0.04f;
-            var annotationRect = new RectInt(((int)size, (int)annotationHeight), new PointInt(0, (int)size));
+            // RectInt is (LowerRight, UpperLeft) -- NOT (size, origin). Passing the strip's HEIGHT as
+            // the lower-right Y built an inverted rect: Width/Height are absolute differences, so it
+            // reported a plausible 640x596 and never tripped a check, but the centred baseline was
+            // derived from UpperLeft.Y=size plus half of that bogus height and landed off the bottom
+            // of the surface. Every annotation was silently clipped away.
+            var annotationRect = new RectInt(((int)size, (int)totalHeight), new PointInt(0, (int)size));
             renderer.DrawText(annotation!, FontPaths.DejaVuSans, fontSize, GameUI.PlainFontColor, annotationRect, vertAlignment: TextAlign.Center);
         }
 
