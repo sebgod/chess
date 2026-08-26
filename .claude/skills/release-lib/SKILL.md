@@ -306,6 +306,53 @@ Two verification traps specific to chess:
   Build each explicitly. Chess.Droid's 4 SDL3-CS.Android warnings (16 KB page size,
   duplicate `libSDL3.so`) are pre-existing and unrelated to any pin move.
 
+## Building a backend against an UNPUBLISHED DIR.Lib: tianwen is the proxy
+
+`SdlVulkan.Renderer`, `Console.Lib` and `WebGl.Renderer` have **no `UseLocalSiblings` wiring** — they
+consume DIR.Lib only as a NuGet package. So a DIR.Lib change that a backend must follow cannot be
+compiled in that backend until DIR.Lib is published, and the naive order ships a backend edit that has
+never been built.
+
+**`tianwen` fills that gap for SdlVulkan.Renderer.** It DOES auto-detect local siblings and
+project-references both DIR.Lib and SdlVulkan.Renderer, so building tianwen compiles the renderer
+against the unpublished DIR.Lib, and its ~5250 tests exercise both:
+
+```bash
+cd ../../sharpastro/tianwen/src && dotnet build TianWen.slnx -c Debug   # compiles the local renderer
+cd ../../sharpastro/tianwen/src && dotnet test  TianWen.slnx -c Debug   # ~11 min, do not pipe to tail
+```
+
+This is the ONLY pre-release check available for a renderer change, and it is worth the eleven minutes:
+it is what caught that a VkRenderer edit compiled at all before 8.13 went out.
+
+**WebGl.Renderer has no equivalent proxy** — nothing local builds it against an unpublished DIR.Lib. Say
+so plainly rather than implying it was verified; it gets its first build after the DIR.Lib publish, when
+you repin it.
+
+## A behaviour change in DIR.Lib text/layout: check for INVERTED copies first
+
+Before changing anything `DrawText` computes, grep for consumers that **re-derive** it. `MathLayout.GlyphBox`
+solves for the rect that puts a glyph's baseline where math layout wants it, by restating DrawText's
+formula from a comment. Change the source and that compensation double-counts — every math glyph moves,
+all 32 `MathLayoutBaselineTests` fail, and it reads exactly like "the baselines legitimately changed, run
+`BLESS=1`". It is not. Blessing there ships a regression.
+
+```bash
+grep -rn "1\.3f\|maxAscent\|baseline" src/DIR.Lib/MathLayout/ <backend>/src --include=*.cs
+```
+
+Two rules that came out of it:
+
+- **Never bless a snapshot you have not looked at.** Read the committed PNG and `obj/test-output/*.actual.png`,
+  and measure the shift (ink bbox per image) rather than eyeballing. The distinction that matters is
+  "everything moved by ≤1px from integer quantisation" (fine) versus "glyphs moved relative to each other"
+  (a real regression).
+- **Clear `obj/test-output` before measuring.** Stale `.actual.png` files from an earlier run belong to
+  scenes that now PASS, and reading them turned a true "≤1px" into a false "16px".
+
+The tell that a fix is right: baselines that go back to matching **byte-for-byte**. 17 of 32 did once the
+inversion was corrected, which is far stronger evidence than any of them merely "looking fine".
+
 ## Polling for NuGet availability
 
 ```bash
