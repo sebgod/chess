@@ -1,10 +1,11 @@
 # Design: the dragged piece follows the cursor (setup-mode drag ghost)
 
-**Status:** Phases 1–3 done — `GameUI` carries the ghost, states its damage and renders it;
-Chess.Console, Chess.GUI and Chess.Droid all feed it motion. **Live-verified in the GUI** (see
-[Live verification](#live-verification-only-one-of-the-two-routes-exists-corrected-2026-08-26));
-Chess.Droid compiles but has not been run on a device. Phase 4 (the browser) pending — see
-[Phasing](#phasing).
+**Status:** **Complete** — all four phases done. `GameUI` carries the ghost, states its damage and
+renders it, and every front-end feeds it motion. **Live-verified in the GUI and in a real browser**
+(see [Live verification](#live-verification-only-one-of-the-two-routes-exists-corrected-2026-08-26)).
+Two things are deliberately NOT claimed: **Chess.Droid compiles but has never been run on a device**,
+and **the terminal has no live route at all** because Console.Lib's inspector cannot synthesize
+motion. See [Phasing](#phasing).
 **Repo scope:** **chess only** — no sibling change, no package repin. Every capability this needs
 already ships: all three renderers already alpha-blend, every host already delivers pointer motion in
 content space, and `DrawPiece` already draws a piece into an arbitrary rect.
@@ -276,6 +277,36 @@ none of which a unit test can show:
 Chess.Droid takes the same route in the same commit but has **not** been run on a device; it is
 compiled only.
 
+### The browser has the best route of the three, and it needed one rule broken
+
+Phase 4 is covered by **`Chess.Web.E2E.Tests/SetupDragGhostTests`** — real `pointermove` events from
+`page.Mouse.MoveAsync` through the actual browser plumbing `WebGlCanvas.OnPointerMove` listens to, so
+unlike the SDL inspector nothing is synthesized at all.
+
+**These are the only pixel-reading tests in that suite, and the rule they break was the right one to
+break.** Every other test there asserts on the DOM surface, on purpose. A ghost has no DOM
+consequence: the status line already reads "moving White Knight from b1" from the *press*, before any
+motion, so no DOM assertion can distinguish a drawn ghost from an undrawn one. Pixels are not a
+shortcut past the rule here — they are the only thing that tests the feature.
+
+Three details that make it work, each of which would have cost a round trip to rediscover:
+
+- **Playwright captures a WebGL canvas through the compositor, not the drawing buffer.** That matters
+  because `webgl-renderer.js:117` creates the context as `{ antialias: true, premultipliedAlpha: false }`
+  with **no `preserveDrawingBuffer`** — so `canvas.toDataURL()` / `gl.readPixels()` come back blank,
+  while `ScreenshotAsync` does not. This was proved with a throwaway probe *before* the tests were
+  written, rather than assumed.
+- **Whole PNGs are compared, not decoded pixels.** No decoder needed, and it states a stronger claim:
+  the frame with the pointer over the board must differ from the frame without it, *and* moving off
+  the board must return the canvas to **byte-identically** its earlier frame. Noise cannot do that.
+- **The square coordinates are measured constants, made self-checking.** The press asserts the status
+  line says "moving White Knight from b1", so a layout that moved fails loudly instead of quietly
+  clicking bare board. Recomputing them from `GameFrameLayout` would be the layout logic written
+  twice, free to agree with itself while both were wrong.
+
+Both tests were mutation-checked: with `OnPointerMove` unwired from the canvas they fail, with the
+messages "the canvas is byte-identical" and "the frame did not change when the pointer left the board".
+
 ## Reuse: this is most of a move animation
 
 A move animation — the piece sliding from its origin to its destination instead of teleporting, which
@@ -333,7 +364,7 @@ today and is the whole difference between animation reusing this and reimplement
 | 1 | `GameUI` ghost state (`DragPoint`, `GrabOffset`), `HandlePointerMove` returning old ∪ new damage, the render branch (translucent ghost + dimmed origin) **taking `(piece, rect, suppressedSquare)` so a move animation can reuse it**, `Resize` preservation, clearing on every exit, and pixel-level tests | chess | **Done** |
 | 2 | Chess.Console wiring — one arm on `HumanPlayer`'s switch plus motion coalescing; the only host that exercises the clip rects, so it validates phase 1's damage model | chess | **Done** (not live-verifiable — see [Live verification](#live-verification-only-one-of-the-two-routes-exists-corrected-2026-08-26)) |
 | 3 | Chess.GUI + Chess.Droid — both already deliver a content-mapped motion event on their event thread | chess | **Done** — GUI live-verified through the inspector's `move`; **Droid compiles but has NOT been run on a device** |
-| 4 | Chess.Web via `WebGlCanvas.OnPointerMove` | chess | Not started |
+| 4 | Chess.Web via `WebGlCanvas.OnPointerMove` | chess | **Done** — and the only phase with a browser E2E test |
 
 Phase 1 is testable and reviewable with no host wired at all, which is what makes it the whole of the
 risk. **Phase 2 comes before the GPU hosts on purpose**: the terminal is the only backend that reads
