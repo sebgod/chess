@@ -1,4 +1,4 @@
-using System.Collections.Immutable;
+﻿using System.Collections.Immutable;
 using DIR.Lib;
 
 namespace Chess.Lib.UI;
@@ -58,6 +58,20 @@ public class GameUI
 
     private const float LegalDotRadiusFraction = 0.22f;
     private const float OverlayStrokeWidth = 3f;
+
+    /// <summary>Opacity of the piece being dragged, and of what is left of it on the square it was
+    /// lifted from. Both are mask alphas for <see cref="RGBAColor32.WithAlpha"/>, which PREMULTIPLIES
+    /// rather than replaces, so a glyph colour that is already translucent stays proportionally so —
+    /// and 0xff is exactly a no-op, which is why the undragged path can go through the same call.
+    /// The origin is dimmed rather than emptied on purpose: an empty square under the picked-up tint
+    /// reads as DELETED rather than lifted, and in setup mode Del genuinely does delete.</summary>
+    private const byte GhostAlpha = 0xD9;
+
+    /// <inheritdoc cref="GhostAlpha"/>
+    private const byte LiftedOriginAlpha = 0x59;
+
+    /// <summary>The mask that changes nothing: <c>WithAlpha(0xff)</c> is exact, not approximate.</summary>
+    private const byte OpaqueAlpha = 0xff;
 
     /// <summary>White-on-black palette for chrome-less board rendering (terminal displays, MCP
     /// board snapshots) — pass as mainFontColor/backgroundColor. The ctor defaults are the
@@ -358,6 +372,57 @@ public class GameUI
     /// </summary>
     public Position? PickedUp => IsSetupMode && PendingPlacement is null ? Selected : null;
 
+    private PointInt? _dragPoint;
+
+    /// <summary>
+    /// Where the pointer is during a setup drag, in CONTENT space — the space every host has already
+    /// mapped its pointer into, so the ghost cannot drift away from the finger under the Android
+    /// across-the-table rotation while every other hit-test stays right. Null means no ghost.
+    ///
+    /// <para>Derived through <see cref="PickedUp"/> rather than cleared at each exit: a drop, a
+    /// palette opening, a cancel and leaving setup mode are four different code paths that all end
+    /// the drag, and a fifth will be added one day. Gating the read is the whole of that rule; the
+    /// backing field is reset when a piece is picked up so a stale point can never resurface as a
+    /// ghost that appears before the pointer has moved.</para>
+    ///
+    /// <para>This is a pure RENDER HINT. The model still has the piece on <see cref="PickedUp"/> and
+    /// the drop is decided by <see cref="HandlePointerUp"/> alone, so losing it loses the ghost and
+    /// nothing else.</para>
+    /// </summary>
+    public PointInt? DragPoint => PickedUp is null ? null : _dragPoint;
+
+    /// <summary>
+    /// Pointer minus square origin, captured at pick-up. Preserving it is what stops the piece
+    /// JUMPING under the cursor on the first motion event: grab a knight near its bottom-right
+    /// corner and it stays held there rather than snapping its centre to the pointer.
+    /// </summary>
+    public PointInt GrabOffset { get; private set; }
+
+    /// <summary>
+    /// The square-sized rect the dragged piece is drawn into, or null when no ghost is showing.
+    ///
+    /// <para>It is EXACTLY one square, and that is a constraint to preserve rather than an
+    /// observation: a one-square rect at an arbitrary sub-square offset straddles at most a 2x2
+    /// block, which is what bounds a drag's repaint to four squares (eight for a moving ghost, old
+    /// plus new). Scaling the dragged piece up — the obvious touch-UI embellishment — silently makes
+    /// that 3x3 = nine, so it is a change to the damage model, not to a draw call.</para>
+    /// </summary>
+    public RectInt? GhostRect
+    {
+        get
+        {
+            if (DragPoint is not { } point)
+                return null;
+
+            var x = point.X - GrabOffset.X;
+            var y = point.Y - GrabOffset.Y;
+            // (LowerRight, UpperLeft) — the same order SquareRect builds, and the opposite of the one
+            // that reads naturally. Reversing it yields an INVERTED rect whose Width/Height are
+            // absolute differences, so it reports a plausible size and trips no guard anywhere.
+            return new RectInt((x + _squareSize, y + _squareSize), (x, y));
+        }
+    }
+
     /// <summary>
     /// The board square the last press landed on, so <see cref="HandlePointerUp"/> can tell a drag
     /// from a click. Not a drag state machine: the press has already run the full grammar by the
@@ -504,6 +569,17 @@ public class GameUI
         // A window resize must not silently snap the board back to White-at-bottom (the web host
         // rebuilds GameUI via Resize on every canvas metrics change).
         resized.FlipBoard = FlipBoard;
+        // Both halves of a drag in flight. Selected — and so PickedUp — is carried through the
+        // constructor above, so dropping the drag point alone would leave a piece in hand with no
+        // ghost: an INVISIBLE drag, which is worse than no ghost at all. The offset is rescaled
+        // because a resize can change the square size, and an offset in old pixels would hold the
+        // piece off-centre until the next motion event.
+        resized._dragPoint = _dragPoint;
+        resized.GrabOffset = _squareSize == resized._squareSize
+            ? GrabOffset
+            : new PointInt(
+                GrabOffset.X * resized._squareSize / _squareSize,
+                GrabOffset.Y * resized._squareSize / _squareSize);
         return resized;
     }
 
@@ -781,6 +857,8 @@ public class GameUI
         var squareCount = 0;
         var pieceCount = 0;
 
+        var detached = DetachedPiece();
+
         for (byte fileIdx = 0; fileIdx < 8; fileIdx++)
         {
             for (byte rankIdx = 0; rankIdx < 8; rankIdx++)
@@ -849,7 +927,10 @@ public class GameUI
         for (var i = 0; i < pieceCount; i++)
         {
             var (position, piece, rect) = piecesToDraw[i];
-            DrawPiece<TRenderer, TSurface>(renderer, piece, rect, _pieceFontSize);
+            var alpha = detached is { Suppressed: { } suppressed } && suppressed == position
+                ? detached.Value.SuppressedAlpha
+                : OpaqueAlpha;
+            DrawPiece<TRenderer, TSurface>(renderer, piece, rect, _pieceFontSize, alpha);
         }
 
         // Legal move dots (on top of pieces so dots and capture rings are visible)
@@ -879,7 +960,40 @@ public class GameUI
                 DrawCheckRing<TRenderer, TSurface>(renderer, kingPos);
             }
         }
+
+        // The detached piece goes LAST, so it sits over every square, arrow, dot and ring it crosses.
+        // There is no z-order conflict with the placement palette, and that is not luck: a piece can
+        // never be in hand while the palette is open, because PickedUp is null whenever
+        // PendingPlacement is set.
+        if (detached is { } inFlight && inFlight.Rect.OverlapsWith(clip))
+        {
+            DrawPiece<TRenderer, TSurface>(renderer, inFlight.Piece, inFlight.Rect, _pieceFontSize, inFlight.Alpha);
+        }
     }
+
+    /// <summary>
+    /// The one piece drawn detached from any square this frame: what to draw, where, and which square
+    /// must be toned down behind it — stated as VALUES rather than read from
+    /// <see cref="DragPoint"/> at the draw call.
+    ///
+    /// <para>That indirection is the whole difference between a move animation reusing this and
+    /// reimplementing it, because a slide is the same rendering problem with different inputs: the
+    /// piece that moved, drawn at <c>lerp(from, to, t)</c>, with a square suppressed behind it. Note
+    /// the INVERSION, which is what would bite an implementation assuming the two were identical —
+    /// during a drag the model still has the piece on its ORIGIN, so the origin is what is toned down;
+    /// during an animation the ply is already committed, so the DESTINATION is what must be hidden
+    /// until the slide lands. Hence a suppressed square and its alpha rather than a hard-coded
+    /// "dim the origin".</para>
+    /// </summary>
+    private readonly record struct DetachedPieceDraw(
+        Piece Piece, RectInt Rect, byte Alpha, Position? Suppressed, byte SuppressedAlpha);
+
+    private DetachedPieceDraw? DetachedPiece() =>
+        PickedUp is { } inHand
+        && GhostRect is { } rect
+        && DisplayBoard[inHand] is { PieceType: not PieceType.None } piece
+            ? new DetachedPieceDraw(piece, rect, GhostAlpha, inHand, LiftedOriginAlpha)
+            : null;
 
     private void DrawLastMoveBorder<TRenderer, TSurface>(TRenderer renderer, Position position, RGBAColor32 color)
         where TRenderer : Renderer<TSurface>
@@ -951,14 +1065,23 @@ public class GameUI
         renderer.DrawEllipse(ringRect, SelectionRingColor, OverlayStrokeWidth);
     }
 
-    private void DrawPiece<TRenderer, TSurface>(TRenderer renderer, Piece piece, RectInt rect, float fontSize)
+    /// <summary>
+    /// Draws a piece into an arbitrary rect. <paramref name="alpha"/> is a mask premultiplied into
+    /// both glyph colours; <see cref="OpaqueAlpha"/> is exactly a no-op, so the translucent and the
+    /// normal path are one call rather than two.
+    /// </summary>
+    private void DrawPiece<TRenderer, TSurface>(TRenderer renderer, Piece piece, RectInt rect, float fontSize,
+        byte alpha = OpaqueAlpha)
         where TRenderer : Renderer<TSurface>
     {
         var whiteText = char.ToString(piece.PieceType.ToUnicode(Side.White));
         var blackText = char.ToString(piece.PieceType.ToUnicode(Side.Black));
 
-        renderer.DrawText(blackText, _pieceFont, fontSize, piece.Side is Side.White ? FontColorWhite : FontColorBlack, rect, vertAlignment: TextAlign.Center);
-        renderer.DrawText(whiteText, _pieceFont, fontSize, piece.Side is Side.White ? FontColorBlack : FontColorGrey,  rect, vertAlignment: TextAlign.Center);
+        var fill = (piece.Side is Side.White ? FontColorWhite : FontColorBlack).WithAlpha(alpha);
+        var outline = (piece.Side is Side.White ? FontColorBlack : FontColorGrey).WithAlpha(alpha);
+
+        renderer.DrawText(blackText, _pieceFont, fontSize, fill, rect, vertAlignment: TextAlign.Center);
+        renderer.DrawText(whiteText, _pieceFont, fontSize, outline, rect, vertAlignment: TextAlign.Center);
     }
 
     public Position? FindSelected(int x, int y)
@@ -1906,6 +2029,18 @@ public class GameUI
         _pressedSquare = IsSetupMode ? FindSelected(x, y) : null;
         var (response, clips) = TryPerformAction(x, y);
         if (hadPendingFile) response |= UIResponse.IsUpdate;
+
+        if (PickedUp is { } inHand)
+        {
+            // Where within the square it was grabbed, so the ghost holds the piece there instead of
+            // centring it on the pointer. The drag point itself stays null: a ghost appears only once
+            // the pointer MOVES, so a plain click never flashes one, and a stale point from an earlier
+            // drag can never resurface under a fresh grab.
+            var origin = SquareRect(inHand).UpperLeft;
+            GrabOffset = new PointInt(x - origin.X, y - origin.Y);
+            _dragPoint = null;
+        }
+
         return (response, clips);
     }
 
@@ -1935,6 +2070,58 @@ public class GameUI
             return (UIResponse.None, []);
 
         return TrySetupAction(to);
+    }
+
+    /// <summary>
+    /// Moves the drag ghost to a new pointer position and reports the damage: the footprint it left
+    /// and the one it now occupies. The rects come from here because this is the only code that knows
+    /// where the ghost WAS — a repaint needs old union new, and by the time a display renders, the old
+    /// position is gone.
+    ///
+    /// <para>Motion is gated on a piece being in hand before any state is touched. The GPU hosts
+    /// deliver pointer motion whether or not a button is down; the terminal is exempt by construction
+    /// (<c>\e[?1002h</c> is button-motion tracking, not any-event tracking), but the gate belongs here
+    /// where all four hosts get it rather than in one host's input mapping.</para>
+    ///
+    /// <para>A move that changes nothing returns <see cref="UIResponse.None"/> and no rects, which is
+    /// what makes this safe to call from a raw motion stream: on the terminal every frame is a partial
+    /// sixel encode, and a pointer that has not left its pixel must not cost one.</para>
+    /// </summary>
+    public (UIResponse Response, ImmutableArray<RectInt> ClipRects) HandlePointerMove(int x, int y)
+    {
+        var oldRect = GhostRect;
+
+        if (PickedUp is not { } inHand)
+        {
+            if (oldRect is null)
+                return (UIResponse.None, []);
+
+            _dragPoint = null;
+            return (UIResponse.NeedsRefresh, [oldRect.Value]);
+        }
+
+        // Off the board the ghost hides rather than being carried over the history panel and the
+        // captured piles. That keeps the four-square bound absolute, and it is the truthful signal
+        // besides: a release off the board is already a no-op that leaves the piece in hand.
+        var point = FindSelected(x, y) is null ? (PointInt?)null : new PointInt(x, y);
+
+        if (point == _dragPoint)
+            return (UIResponse.None, []);
+
+        _dragPoint = point;
+        var newRect = GhostRect;
+
+        var damage = ImmutableArray.CreateBuilder<RectInt>(3);
+        if (oldRect is { } previous) damage.Add(previous);
+        if (newRect is { } current) damage.Add(current);
+
+        // The origin square is dimmed only while a ghost is showing, so it repaints when that flips —
+        // and, load-bearingly, NOT on the motion events in between, which is what keeps a moving ghost
+        // at two footprints rather than three.
+        if ((oldRect is null) != (newRect is null))
+            damage.Add(SquareRect(inHand));
+
+        return (UIResponse.NeedsRefresh, damage.ToImmutable());
     }
 
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) HandleMouseWheel(int delta)

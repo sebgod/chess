@@ -973,6 +973,309 @@ public class GameUITests
         game.PlyCount.ShouldBe(0);
     }
 
+    // ── Setup mode: the drag ghost ─────────────────────────────────
+
+    /// <summary>Renders a UI to an offline surface, so a ghost is assertable without a window.</summary>
+    private static RgbaImage RenderUI(GameUI ui)
+    {
+        const int size = 800;
+        var renderer = new RgbaImageRenderer(size, size);
+        ui.Render<RgbaImage, Renderer<RgbaImage>>(renderer,
+            new RectInt(new PointInt(size, size), PointInt.Origin));
+        return renderer.Surface;
+    }
+
+    /// <summary>Pixels inside <paramref name="region"/> where two renders disagree.</summary>
+    private static int DifferingPixels(RgbaImage a, RgbaImage b, RectInt region)
+    {
+        var (x0, y0, x1, y1) = Clamp(a, region);
+
+        var differing = 0;
+        for (var y = y0; y < y1; y++)
+        {
+            for (var x = x0; x < x1; x++)
+            {
+                var i = (y * a.Width + x) * 4;
+                if (a.Pixels[i] != b.Pixels[i] || a.Pixels[i + 1] != b.Pixels[i + 1]
+                    || a.Pixels[i + 2] != b.Pixels[i + 2] || a.Pixels[i + 3] != b.Pixels[i + 3])
+                {
+                    differing++;
+                }
+            }
+        }
+
+        return differing;
+    }
+
+    /// <summary>Opaque pixels inside <paramref name="region"/>. The ALPHA channel is the only way to
+    /// tell "never written" from "written in a colour that happens to match".</summary>
+    private static int OpaquePixels(RgbaImage image, RectInt region)
+    {
+        var (x0, y0, x1, y1) = Clamp(image, region);
+
+        var opaque = 0;
+        for (var y = y0; y < y1; y++)
+        {
+            for (var x = x0; x < x1; x++)
+            {
+                if (image.Pixels[(y * image.Width + x) * 4 + 3] == 0xff) opaque++;
+            }
+        }
+
+        return opaque;
+    }
+
+    private static (int X0, int Y0, int X1, int Y1) Clamp(RgbaImage image, RectInt region) => (
+        Math.Max(0, Math.Min(region.UpperLeft.X, region.LowerRight.X)),
+        Math.Max(0, Math.Min(region.UpperLeft.Y, region.LowerRight.Y)),
+        Math.Min(image.Width, Math.Max(region.UpperLeft.X, region.LowerRight.X)),
+        Math.Min(image.Height, Math.Max(region.UpperLeft.Y, region.LowerRight.Y)));
+
+    /// <summary>Picks the piece on <paramref name="square"/> up by pressing near its BOTTOM-RIGHT
+    /// CORNER rather than its centre. Only an off-centre grab can catch a ghost that centres itself on
+    /// the pointer, which is the jump the grab offset exists to prevent.</summary>
+    private static (int X, int Y) PickUpOffCentre(GameUI ui, Position square)
+    {
+        var rect = ui.SquareRect(square);
+        var x = rect.LowerRight.X - 4;
+        var y = rect.LowerRight.Y - 4;
+        ui.HandleMouseDown(x, y);
+        return (x, y);
+    }
+
+    /// <summary>Motion with nothing in hand must not touch state. The GPU hosts deliver pointer motion
+    /// whether or not a button is down, so this is the arm that stops a plain hover painting a ghost;
+    /// the terminal is exempt by construction, but the gate lives here so all four hosts get it.</summary>
+    [Fact]
+    public void HandlePointerMove_WithNothingInHand_DoesNothing()
+    {
+        var ui = SetupUI(new Game());
+
+        var (x, y) = Centre(ui, D4);
+        var (response, clips) = ui.HandlePointerMove(x, y);
+
+        response.ShouldBe(UIResponse.None);
+        clips.ShouldBeEmpty();
+        ui.DragPoint.ShouldBeNull();
+        ui.GhostRect.ShouldBeNull();
+    }
+
+    /// <summary>A press picks the piece up but shows NO ghost: one appears only once the pointer moves,
+    /// so a plain click never flashes one.</summary>
+    [Fact]
+    public void HandleMouseDown_PicksThePieceUpWithoutShowingAGhost()
+    {
+        var ui = SetupUI(new Game());
+
+        PickUpOffCentre(ui, D2);
+
+        ui.PickedUp.ShouldBe(D2);
+        ui.DragPoint.ShouldBeNull();
+        ui.GhostRect.ShouldBeNull();
+    }
+
+    [Fact]
+    public void HandlePointerMove_HoldsThePieceAtTheOffsetItWasGrabbedBy()
+    {
+        var ui = SetupUI(new Game());
+        var origin = ui.SquareRect(D2);
+        var (grabX, grabY) = PickUpOffCentre(ui, D2);
+
+        var (dx, dy) = Centre(ui, D5);
+        var (response, clips) = ui.HandlePointerMove(dx, dy);
+
+        response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
+        ui.GhostRect.ShouldNotBeNull();
+        var ghost = ui.GhostRect!.Value;
+
+        ghost.UpperLeft.X.ShouldBe(dx - (grabX - origin.UpperLeft.X));
+        ghost.UpperLeft.Y.ShouldBe(dy - (grabY - origin.UpperLeft.Y));
+        ghost.Width.ShouldBe(origin.Width);
+        ghost.Height.ShouldBe(origin.Height);
+
+        // First appearance damages the new footprint AND the origin square, just dimmed.
+        clips.ShouldContain(ghost);
+        clips.ShouldContain(origin);
+    }
+
+    /// <summary>A pointer that has not left its pixel must not cost a repaint — on the terminal every
+    /// one of those is a partial sixel encode.</summary>
+    [Fact]
+    public void HandlePointerMove_ToTheSamePointAgain_ReportsNoDamage()
+    {
+        var ui = SetupUI(new Game());
+        PickUpOffCentre(ui, D2);
+        var (dx, dy) = Centre(ui, D5);
+        ui.HandlePointerMove(dx, dy);
+
+        var (response, clips) = ui.HandlePointerMove(dx, dy);
+
+        response.ShouldBe(UIResponse.None);
+        clips.ShouldBeEmpty();
+        ui.GhostRect.ShouldNotBeNull();
+    }
+
+    /// <summary>Off the board the ghost hides rather than being carried over the history panel and the
+    /// captured piles. The piece stays in hand, which is what a release out there already means.</summary>
+    [Fact]
+    public void HandlePointerMove_OffTheBoard_HidesTheGhostButKeepsThePieceInHand()
+    {
+        var ui = SetupUI(new Game());
+        PickUpOffCentre(ui, D2);
+        var (dx, dy) = Centre(ui, D5);
+        ui.HandlePointerMove(dx, dy);
+        var lastGhost = ui.GhostRect!.Value;
+
+        var (response, clips) = ui.HandlePointerMove(0, 0);
+
+        response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
+        ui.GhostRect.ShouldBeNull();
+        ui.PickedUp.ShouldBe(D2);
+        // The footprint it vacated, and the origin square whose dimming has just been undone.
+        clips.ShouldContain(lastGhost);
+        clips.ShouldContain(ui.SquareRect(D2));
+    }
+
+    /// <summary>
+    /// The damage bound the whole cost model rests on: a one-square rect at an arbitrary offset
+    /// straddles at most a 2x2 block, so a ghost that moved within one square dirties at most a 3x3
+    /// one. It is a constraint to preserve rather than an observation — scaling the dragged piece up,
+    /// the obvious touch-UI embellishment, silently makes it 4x4.
+    /// </summary>
+    [Fact]
+    public void HandlePointerMove_ByOneStep_DamagesAtMostAThreeByThreeBlock()
+    {
+        var ui = SetupUI(new Game());
+        PickUpOffCentre(ui, D2);
+        var square = ui.SquareRect(D2);
+        var (dx, dy) = Centre(ui, D5);
+        ui.HandlePointerMove(dx, dy);
+
+        var (_, clips) = ui.HandlePointerMove(dx + 3, dy + 3);
+
+        // Old and new footprint; the origin's dimming did not change, so it is not damaged again.
+        clips.Length.ShouldBe(2);
+
+        var left = clips.Min(r => Math.Min(r.UpperLeft.X, r.LowerRight.X));
+        var top = clips.Min(r => Math.Min(r.UpperLeft.Y, r.LowerRight.Y));
+        var right = clips.Max(r => Math.Max(r.UpperLeft.X, r.LowerRight.X));
+        var bottom = clips.Max(r => Math.Max(r.UpperLeft.Y, r.LowerRight.Y));
+
+        (right - left).ShouldBeLessThanOrEqualTo((int)square.Width * 3);
+        (bottom - top).ShouldBeLessThanOrEqualTo((int)square.Height * 3);
+    }
+
+    /// <summary>
+    /// The ghost is drawn where the cursor is, and the square it came from keeps a DIMMED copy rather
+    /// than being emptied — an empty square under the picked-up tint reads as deleted rather than
+    /// lifted, which matters here because Del genuinely does delete.
+    /// </summary>
+    [Fact]
+    public void Render_WithAGhost_DrawsThePieceUnderTheCursorAndDimsItsOrigin()
+    {
+        var ui = SetupUI(new Game());
+        PickUpOffCentre(ui, D2);
+        var origin = ui.SquareRect(D2);
+        var beforeMotion = RenderUI(ui);
+
+        var (dx, dy) = Centre(ui, D5);
+        ui.HandlePointerMove(dx, dy);
+        var ghost = ui.GhostRect!.Value;
+        var withGhost = RenderUI(ui);
+
+        // Something was drawn under the cursor, and it landed ON the surface rather than off it.
+        DifferingPixels(beforeMotion, withGhost, ghost).ShouldBeGreaterThan(0);
+        OpaquePixels(withGhost, ghost).ShouldBe((int)ghost.Width * (int)ghost.Height);
+
+        // The origin changed — it no longer carries the full-strength piece ...
+        DifferingPixels(beforeMotion, withGhost, origin).ShouldBeGreaterThan(0);
+
+        // ... but it is not an empty square either: same tint, same everything, piece genuinely gone.
+        var emptied = new Game();
+        emptied.ClearPiece(D2);
+        var withoutPiece = SetupUI(emptied);
+        withoutPiece.SetupPickUp(D2);
+        DifferingPixels(RenderUI(withoutPiece), withGhost, origin).ShouldBeGreaterThan(0);
+    }
+
+    /// <summary>
+    /// A resize mid-drag must carry BOTH halves. Selected — and so PickedUp — survives through the
+    /// constructor, so dropping the drag point alone would leave a piece in hand with no ghost: an
+    /// invisible drag, which is worse than no ghost at all. The offset rescales with the square.
+    /// </summary>
+    [Fact]
+    public void Resize_PreservesADragInFlight()
+    {
+        var ui = SetupUI(new Game());
+        PickUpOffCentre(ui, D2);
+        var (dx, dy) = Centre(ui, D5);
+        ui.HandlePointerMove(dx, dy);
+        var grabbedBy = ui.GrabOffset;
+        var squareBefore = ui.SquareRect(D2).Width;
+
+        var resized = ui.Resize(1600, 1600);
+
+        resized.PickedUp.ShouldBe(D2);
+        resized.DragPoint.ShouldBe(ui.DragPoint);
+        resized.GhostRect.ShouldNotBeNull();
+
+        var squareAfter = resized.SquareRect(D2).Width;
+        resized.GrabOffset.X.ShouldBe((int)(grabbedBy.X * squareAfter / squareBefore));
+        resized.GrabOffset.Y.ShouldBe((int)(grabbedBy.Y * squareAfter / squareBefore));
+    }
+
+    /// <summary>The drag ends with the drop, without any exit having to remember to clear it: the ghost
+    /// is read through PickedUp, so all four exits close it at once.</summary>
+    [Fact]
+    public void DragGhost_EndsWithTheDrop()
+    {
+        var game = new Game();
+        var ui = SetupUI(game);
+        PickUpOffCentre(ui, D2);
+        var (dx, dy) = Centre(ui, D5);
+        ui.HandlePointerMove(dx, dy);
+        ui.GhostRect.ShouldNotBeNull();
+
+        ui.HandlePointerUp(dx, dy);
+
+        ui.PickedUp.ShouldBeNull();
+        ui.DragPoint.ShouldBeNull();
+        ui.GhostRect.ShouldBeNull();
+        game.Board[D5].ShouldBe(new Piece(PieceType.Pawn, Side.White));
+    }
+
+    [Fact]
+    public void DragGhost_EndsWhenSetupModeIsLeft()
+    {
+        var ui = SetupUI(new Game());
+        PickUpOffCentre(ui, D2);
+        var (dx, dy) = Centre(ui, D5);
+        ui.HandlePointerMove(dx, dy);
+
+        ui.IsSetupMode = false;
+
+        ui.DragPoint.ShouldBeNull();
+        ui.GhostRect.ShouldBeNull();
+    }
+
+    /// <summary>A fresh grab must not inherit the last drag's pointer position, which would paint a
+    /// ghost across the board before the pointer had moved at all.</summary>
+    [Fact]
+    public void HandleMouseDown_AfterAnEarlierDrag_ShowsNoGhostUntilThePointerMovesAgain()
+    {
+        var ui = SetupUI(new Game());
+        PickUpOffCentre(ui, D2);
+        var (dx, dy) = Centre(ui, D5);
+        ui.HandlePointerMove(dx, dy);
+        ui.HandlePointerUp(dx, dy);
+
+        PickUpOffCentre(ui, E2);
+
+        ui.PickedUp.ShouldBe(E2);
+        ui.DragPoint.ShouldBeNull();
+        ui.GhostRect.ShouldBeNull();
+    }
+
     /// <summary>
     /// Setup mode is the one place the board can hold more pieces than a legal army, and RenderBoard's
     /// piece buffer was sized 32 — so a custom game started from the STANDARD board (already 32 pieces)
