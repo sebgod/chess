@@ -9,6 +9,11 @@
       "type": "stdio",
       "command": "dnx",
       "args": ["Console.Lib.Inspector", "--yes"]
+    },
+    "gui-inspector": {
+      "type": "stdio",
+      "command": "dnx",
+      "args": ["SdlVulkan.Renderer.Inspector", "--yes"]
     }
   }
 }

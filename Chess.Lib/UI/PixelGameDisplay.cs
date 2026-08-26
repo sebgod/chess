@@ -236,7 +236,7 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         // The paint pass: with the board's drawn width known, the frame's two gutter Stars resolve to
         // the real space beside it — so the chrome always meets the board's actual edge.
         var content = _gameUI.ContentRect;
-        var frame = ArrangeFrame(content.Width);
+        var frame = ArrangeFrame(content.Width, capture: true);
 
         // GameUI owns its own shift inside the area it was handed (draw and hit-test alike), so what it
         // drew IS the clip. Bigger than the 8×8 grid (it includes the label margins), which is what
@@ -292,7 +292,7 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
     /// two. <see cref="GameFrameLayout.AllowOffCentreBoard"/> is false here because any of these hosts
     /// can turn its frame for across-the-table play, and only a centred board survives that.</para>
     /// </summary>
-    private Frame ArrangeFrame(float boardContentWidth = 0f)
+    private Frame ArrangeFrame(float boardContentWidth = 0f, bool capture = false)
     {
         var frame = new GameFrameLayout(
             Renderer.Width, Renderer.Height, ChromeMetrics,
@@ -304,6 +304,24 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
             // Chess sizes its chrome from the surface height already (see ChromeFontSize), so the
             // tree's design units ARE device pixels — same as the history rows' RenderLayout call.
             dpiScale: 1f);
+
+        // Publish the frame to the layout capture buffer -- what the DEBUG inspector's describe_layout
+        // reads, and what damage-based repaint diffs against.
+        //
+        // This is a CAPTURE, spelled as the paint it technically is. Every node in the frame is a Fill
+        // leaf (or a Spacer) with no Background and no Hit, so a null drawFill draws nothing and
+        // registers nothing; the only effect PaintLayout has on this tree is recording it. The
+        // alternative -- a capture-only entry point -- is a DIR.Lib change, and this tree does not need
+        // one to be honest about what it is.
+        //
+        // Why it was missing: the board is arranged here and painted by hand, so it never went through
+        // the capture-aware path the history rows use. The game screen therefore described itself to a
+        // driver as ONE node (the history panel's title) with no board, no gutters and no status bar --
+        // even though the tree naming all four has existed all along.
+        //
+        // Paint pass only. ArrangeFrame also runs twice for sizing, and capturing those would file
+        // three frames in a buffer meant to describe one.
+        if (capture) PaintLayout(arranged, dpiScale: 1f);
 
         static RectF32 Slot(ImmutableArray<Layout.ArrangedNode<float>> arranged, string key)
         {
