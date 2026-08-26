@@ -108,6 +108,8 @@ Protocol: newline-delimited JSON over TCP, `{"id":1,"method":"m","params":{}}` �
 | `inputLog` | last 64 events **with the state each changed** |
 | `key` `{key}` `{mods}` | a keystroke; `mods` for a chord (`"Ctrl"`, `"Ctrl+Shift"`) |
 | `click` `{column,row}` | press+release at that cell's centre |
+| `press` `{column,row}` / `move` `{column,row}` / `release` | a drag ONE event at a time, so you can read `appState` **between** them |
+| `drag` `{column1,row1,column2,row2,steps}` | the whole gesture at once — proves the gesture, **cannot** show you anything mid-drag |
 | `batch` `{steps}` | run `[{method,params}, …]` one per pump, results as an array |
 | `wait` `{frames}` | idle N frames — only meaningful as a batch step |
 
@@ -139,7 +141,9 @@ window title `start "Chess TUI"` set, whoever owns it. Then confirm through the 
 **MCP (preferred).** `.mcp.json` registers `tui-inspector` via
 `dnx Console.Lib.Inspector --yes`, which finds the running app by UDP discovery — no port
 to copy. Tools: `list_instances`, `screen`, `row`, `cell`, `app_state`, `input_log`,
-`key`, `keys`, `click`, `size`, `ping`.
+`key`, `keys`, `click`, `size`, `ping` — plus `press`, `move`, `release` and `drag` once a
+Console.Lib carrying them is published (the MCP server is the *released* package, so a local
+sibling's new verbs are reachable only over the raw socket until then).
 
 **Script.** `proof_inspector.py <port>` in this skill directory is a worked driver and a
 regression check: it pings, reads the screen, plays `e2e4` by injected keys, and asserts
@@ -169,5 +173,19 @@ the move reaches both `app_state` and the history panel.
   not move at all — don't read that as a dropped frame.
 - `input_log` is the fastest route to any input bug: it shows the raw event and what state
   it changed. That is how the mouse-motion-as-click bug was found.
+- **To verify anything that follows the pointer — a drag ghost, a rubber band, a pan — use
+  `press`/`move`/`release`, never `drag`.** An atomic `drag` lands in the input queue all at once, and
+  `HumanPlayer.Coalesce` then correctly drops the render for every motion event with another event
+  queued behind it. The gesture completes and every report arrives, but **no intermediate position is
+  ever painted**, so there is nothing mid-drag to observe. The stepped verbs put one event in flight at
+  a time, which is what a human drag looks like. Confirmed live: the same e2→e4 drag shows every
+  motion as `-> None` when sent atomically, and `-> NeedsRefresh` with a moving ghost when stepped.
+- **`move` is refused unless a button is held**, and that is deliberate, not a missing feature: mode
+  1002 is button-motion tracking, so a terminal never sends a hover report. If you want to drive hover,
+  you are on the wrong host — the SDL inspector has a bare `move` because a GPU host really does get
+  hover.
+- **The `tui-inspector` MCP runs the PUBLISHED `Console.Lib.Inspector`** (`dnx … --yes`), so verbs added
+  to a local sibling checkout do not appear as MCP tools until Console.Lib is released. The raw socket
+  has them immediately — that is the workaround, not a bug to chase.
 
 $ARGUMENTS

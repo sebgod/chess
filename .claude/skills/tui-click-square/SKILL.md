@@ -57,6 +57,33 @@ y 140-1100. Divide by the cell size for the cell. `DisplayCell` is `flip ? (7-fi
 Verified live: e2 -> (106,46), e4 -> (106,34), e1 -> (106,52); clicking (106,46) then (106,34) played
 `e2e4` and the history panel read `1. e2e4`.
 
+## Dragging between squares, not just clicking
+
+The same cell arithmetic addresses a drag. Setup mode moves a piece by press-drag-release, and the
+piece follows the cursor while it is in hand — so a drag has something to *look at* mid-gesture,
+unlike a click.
+
+**Use `press`/`move`/`release`, not `drag`.** An atomic `drag` arrives in the input queue all at once
+and `HumanPlayer.Coalesce` drops the render for every motion event that has another behind it, which
+is correct behaviour and which means **no intermediate position is ever painted**. Stepping puts one
+event in flight at a time. `move` is refused unless a button is held — a terminal only reports motion
+during a drag (mode 1002), so there is no hover to synthesize.
+
+Assert on `app_state`, which reports `pickedUp` and the ghost rect (`ghostX/Y/W/H`) precisely because
+the board is one Sixel blit and every cell under it reads back blank. Verified live, e2 → e4 in
+setup mode at square size 120:
+
+- after `press` on e2's cell (106,46): `pickedUp=e2`, and **no ghost yet** — the drag point is reset
+  at pick-up so nothing paints before the pointer actually moves.
+- each `move`: `ghostY` walks 800 → 760 → 680 → 620 while `ghostW`/`ghostH` stay **120, one square**.
+- the last rect, (1000, 620), is exactly e4's square: the grab offset captured at pick-up (65, 70) is
+  preserved the whole way, so the piece stays held where it was grabbed.
+- `partialRenders` advances while `fullRenders` does not — the terminal pays for a region, not a frame.
+- after `release`: `pickedUp` is null and the ghost is gone.
+
+If `ghostW`/`ghostH` ever come back as something other than the square size, stop: the four-square
+damage bound assumes a one-square ghost, and a scaled one silently makes it nine.
+
 ## Chords, and the flipped board
 
 `key` carries modifiers (Console.Lib **4.7**): `mods` is substring-matched and case-insensitive, so

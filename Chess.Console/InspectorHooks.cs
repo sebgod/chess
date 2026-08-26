@@ -68,8 +68,22 @@ internal static class InspectorHooks
                 $",\"paintMs\":{s.PaintMs:F1},\"sixelMs\":{s.SixelMs:F1},\"flushMs\":{s.FlushMs:F1},\"fullRenders\":{s.FullRenders},\"partialRenders\":{s.PartialRenders}");
         }
 
+        // The drag ghost, which is otherwise UNOBSERVABLE from a terminal driver: the board is a sixel
+        // image, so every cell under it reads back blank. Without these fields a synthesized drag can be
+        // sent but its only visible effect is the partial-render counters ticking, which says something
+        // repainted, not that the piece followed the cursor.
+        var ghost = "";
+        if (ui.DragPoint is { } drag)
+        {
+            var rect = ui.GhostRect!.Value.Normalized();
+            ghost = $",\"dragX\":{drag.X},\"dragY\":{drag.Y}" +
+                $",\"ghostX\":{rect.UpperLeft.X},\"ghostY\":{rect.UpperLeft.Y}" +
+                $",\"ghostW\":{rect.Width},\"ghostH\":{rect.Height}";
+        }
+
         return "{" +
             $"\"selected\":{Q(ui.Selected?.ToString())}," +
+            $"\"pickedUp\":{Q(ui.PickedUp?.ToString())}," +
             $"\"pendingFile\":{Q(ui.PendingFile?.ToString())}," +
             $"\"sideToMove\":{Q(ui.Game.CurrentSide.ToString())}," +
             $"\"plies\":{ui.Game.PlyCount}," +
@@ -78,6 +92,7 @@ internal static class InspectorHooks
             $"\"flipBoard\":{(ui.FlipBoard ? "true" : "false")}," +
             $"\"squareSize\":{ui.SquareSize}," +
             $"\"playbackPly\":{(ui.Mode == GameUIMode.Playback ? ui.PlaybackPlyIndex : -1)}" +
+            ghost +
             renderStats +
             "}";
     }

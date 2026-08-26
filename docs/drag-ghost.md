@@ -1,14 +1,15 @@
 # Design: the dragged piece follows the cursor (setup-mode drag ghost)
 
 **Status:** **Complete** — all four phases done. `GameUI` carries the ghost, states its damage and
-renders it, and every front-end feeds it motion. **Live-verified in the GUI and in a real browser**
-(see [Live verification](#live-verification-only-one-of-the-two-routes-exists-corrected-2026-08-26)).
-Two things are deliberately NOT claimed: **Chess.Droid compiles but has never been run on a device**,
-and **the terminal has no live route at all** because Console.Lib's inspector cannot synthesize
-motion. See [Phasing](#phasing).
-**Repo scope:** **chess only** — no sibling change, no package repin. Every capability this needs
-already ships: all three renderers already alpha-blend, every host already delivers pointer motion in
-content space, and `DrawPiece` already draws a piece into an arbitrary rect.
+renders it, and every front-end feeds it motion. **Live-verified in the terminal, in the GUI and in a
+real browser** (see [Live verification](#live-verification-both-routes-now-exist-corrected-2026-08-26)).
+One thing is deliberately NOT claimed: **Chess.Droid compiles but has never been run on a device**.
+See [Phasing](#phasing).
+**Repo scope:** **chess, plus one follow-up sibling change to Console.Lib's inspector** — no package
+repin for the feature itself. Every capability the ghost needs already shipped: all three renderers
+already alpha-blend, every host already delivers pointer motion in content space, and `DrawPiece`
+already draws a piece into an arbitrary rect. What did *not* exist was a way to **drive** a terminal
+drag, which is a driver-harness gap rather than a feature gap.
 
 ## Why
 
@@ -243,20 +244,66 @@ The damage rects are worth asserting directly too, since they are the whole of t
 model: a ghost moved by one cell should return two rects whose union is at most a 3×3 square block,
 and a ghost that has not crossed a square boundary should not widen it.
 
-### Live verification: only one of the two routes exists (corrected 2026-08-26)
+### Live verification: both routes now exist (corrected 2026-08-26)
 
-This section used to claim "the TUI inspector can `click`-drag and read the screen, and the GUI's
-renderer inspector can `drag` and screenshot". Half of that is wrong, and it is the half phase 2
-needed.
+This section twice said something wrong about the terminal, and the second correction is the
+interesting one.
 
-**Console.Lib's inspector has exactly one pointer verb, `click`**, and it injects a press and a
-release *at the same cell* (`ConsoleDebugInspector.cs:324-325`) with no motion in between. There is no
-`move` and no `drag`. So the terminal — the host that benefits most from a ghost, and the only one
-that reads the damage rects — **cannot have a drag synthesized at all**, and phase 2 rests on unit
-tests plus reading the code rather than on a screen read.
+It first claimed "the TUI inspector can `click`-drag and read the screen". It could not:
+**Console.Lib's inspector had exactly one pointer verb, `click`**, injecting a press and a release
+*at the same cell* with no motion in between. So the terminal — the host that benefits most from a
+ghost, and the only one that reads the damage rects — could not have a drag synthesized at all.
 
-The GPU side is the opposite: SdlVulkan.Renderer 7.25 added a `move` verb precisely because
-press-based verbs could not drive hover behaviour, so phase 3 *will* have a live route.
+It then claimed that this made phase 2 permanently un-live-verifiable, and left the fix out of scope
+on the grounds that a sibling change "never belonged in a chess-only plan". That is the wrong test
+for scope. A driver harness is developed *as part of* the driver work that needs it, and the gap was
+one small verb set in the sibling, not a feature.
+
+**Console.Lib's inspector now has `press` / `move` / `release`, plus an atomic `drag`.** Two design
+points are worth keeping, because both are about staying faithful to what a terminal can actually do:
+
+- **`move` is refused when no button is held**, rather than injected anyway. Mode 1002 is
+  BUTTON-motion tracking, so a terminal never emits a hover report; synthesizing one would let
+  hover-driven behaviour pass a test through a door that is nailed shut in production. The failure
+  that refusal prevents is a **green** test, not a red one. (This is the one place the terminal
+  inspector deliberately diverges from SdlVulkan.Renderer's, which does have a bare `move` — on a GPU
+  host hover is real.)
+- **Motion is reported once per cell CROSSED**, not once per interpolation step, because that is what
+  a terminal does: it reports a position when it changes, at cell resolution. Asking for more steps
+  than the path has cells yields the cells, not repeats.
+
+**Why the atomic `drag` is not enough, and this is the finding worth remembering.** A whole injected
+drag lands in the input queue at once, so `HumanPlayer.Coalesce` — correctly — drops the render for
+every motion event that has another event queued behind it. The gesture completes, all twelve motion
+reports arrive, and **not one intermediate position is ever painted**. An atomic drag can prove the
+gesture; it can never prove the thing that follows the cursor. Only `press` / `move` / `release`, one
+event in flight at a time, reproduces a human drag closely enough to observe it. The same trap waits
+for any consumer that coalesces input, which is every well-behaved one.
+
+**Verified live in the terminal** (setup mode, e2 → e4, reading `appState` between events):
+
+| Step | `pickedUp` | ghost rect |
+|---|---|---|
+| after `press` at e2 | `e2` | none yet — the point is reset at pick-up, so no ghost paints before the pointer moves |
+| `move` → row 44 | `e2` | (1000, 800) 120×120 |
+| `move` → row 40 | `e2` | (1000, 760) 120×120 |
+| `move` → row 37 | `e2` | (1000, 680) 120×120 |
+| `move` → row 34 (e4) | `e2` | (1000, 620) 120×120 |
+| after `release` | none | gone |
+
+That last rect is exactly e4's square, which is the arithmetic checking out end to end: the grab
+offset (65, 70) captured at pick-up is preserved the whole way, so the piece stays held where it was
+grabbed rather than snapping its centre to the pointer. The rect stays **120×120 — one square** at
+every step, which is the four-square damage bound holding in practice. `partialRenders` advanced
+while `fullRenders` did not, confirming the terminal pays for a region and not a frame.
+
+Observing this needed one small chess-side addition too: `appState` now reports `pickedUp` and the
+ghost rect. The board is a Sixel blit, so every cell under it reads back blank — without those fields
+a synthesized drag's only visible effect is a render counter ticking, which says *something*
+repainted, not that the piece followed the cursor.
+
+The GPU side was already the opposite: SdlVulkan.Renderer 7.25 added a `move` verb precisely because
+press-based verbs could not drive hover behaviour, so phase 3 had a live route from the start.
 
 Closing this needs a motion verb in Console.Lib's inspector — a **sibling change**, deliberately out
 of scope here since this plan is chess-only. Until it lands, a terminal ghost is only ever seen by a
@@ -362,9 +409,10 @@ today and is the whole difference between animation reusing this and reimplement
 | Phase | Scope | Where | Status |
 |---|---|---|---|
 | 1 | `GameUI` ghost state (`DragPoint`, `GrabOffset`), `HandlePointerMove` returning old ∪ new damage, the render branch (translucent ghost + dimmed origin) **taking `(piece, rect, suppressedSquare)` so a move animation can reuse it**, `Resize` preservation, clearing on every exit, and pixel-level tests | chess | **Done** |
-| 2 | Chess.Console wiring — one arm on `HumanPlayer`'s switch plus motion coalescing; the only host that exercises the clip rects, so it validates phase 1's damage model | chess | **Done** (not live-verifiable — see [Live verification](#live-verification-only-one-of-the-two-routes-exists-corrected-2026-08-26)) |
+| 2 | Chess.Console wiring — one arm on `HumanPlayer`'s switch plus motion coalescing; the only host that exercises the clip rects, so it validates phase 1's damage model | chess | **Done** — live-verified, once the inspector could drive a stepped drag (see [Live verification](#live-verification-both-routes-now-exist-corrected-2026-08-26)) |
 | 3 | Chess.GUI + Chess.Droid — both already deliver a content-mapped motion event on their event thread | chess | **Done** — GUI live-verified through the inspector's `move`; **Droid compiles but has NOT been run on a device** |
 | 4 | Chess.Web via `WebGlCanvas.OnPointerMove` | chess | **Done** — and the only phase with a browser E2E test |
+| 5 | Console.Lib inspector `press`/`move`/`release`/`drag`, and `appState` reporting the ghost — the harness phase 2 needed to be verifiable at all | **Console.Lib** + chess | **Done** — the MCP tool surface only picks the new verbs up once Console.Lib is released; the raw socket has them now |
 
 Phase 1 is testable and reviewable with no host wired at all, which is what makes it the whole of the
 risk. **Phase 2 comes before the GPU hosts on purpose**: the terminal is the only backend that reads
