@@ -57,7 +57,20 @@ Tools: `list_instances`, `ping`, `describe_ui`, `describe_layout`, `screenshot`,
   returns the actual reason (`{"error": "InvalidOperationException: ..."}`), which is how the latch
   above was identified. When a tool fails opaquely, re-send it over the socket before theorising.
 - **`move` is NOT an MCP tool**, though it has been a raw verb since SdlVulkan.Renderer 7.25
-  (added because press-based verbs could not drive hover). To drive hover, use the raw socket.
+  (added because press-based verbs could not drive hover). To drive hover, use the raw socket — and
+  note two things the name does not warn you about. It takes a PATH, `{"x1","y1","x2","y2","steps"}`,
+  not a point (a bare `x`/`y` is rejected). And **it presses at the start point**: sending a `move`
+  whose `x1,y1` sits on a live control fires that control. Driving a piece off the setup bin with
+  `move` silently BINNED it, which read as an app bug for a while. Start the path somewhere inert.
+- **There is no raw `press`/`release` pair** — only `pressHold` (`x`, `y`, `seconds`), which presses
+  and releases at the SAME point, so it cannot hold a drag while you move. Worse, it occupies the
+  per-frame command pump for its whole duration: a `screenshot` sent during a hold does not queue, it
+  fails with the usual bare wrapper error, and a long `seconds` blocks you for that long.
+  **You rarely need any of this**: setup mode is click-to-pick-up, so a plain `click` leaves the piece
+  in hand with no button held, and `move` then drags it. That is the way to capture a mid-drag frame.
+- **`instance=0` means "the ONLY instance", not "the first one".** TianWen is built on the same
+  renderer and answers the same discovery, so the moment one is running every tool fails with the bare
+  `An error occurred invoking 'x'`. `list_instances` first, then pass `instance=<chess pid>`.
 - `describe_layout` shows the whole frame — `board`, `captured`, `history` and `status` by their slot
   `fillKey`, from `GameFrameLayout`'s tree. The board's own 8×8 is NOT in there: it is arranged and
   painted by hand, so only its bounding slot appears. `describe_ui` regions cover the history rows
