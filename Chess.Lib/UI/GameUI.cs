@@ -137,6 +137,13 @@ public class GameUI
     private readonly RGBAColor32 _backgroundColor;
     private readonly RGBAColor32 _capturedAreaColor;
 
+    /// <summary>
+    /// The captured gutter's rect as the host last handed it to
+    /// <see cref="RenderCapturedColumn{TSurface, TRenderer}"/>; empty until the first frame, and unused
+    /// by <see cref="CapturedPiecesLayout.Strips"/>, whose bands the board layout owns.
+    /// </summary>
+    private RectInt _capturedColumn;
+
     public static readonly string KeymapText =
         "Keyboard Controls\n" +
         "\n" +
@@ -169,6 +176,14 @@ public class GameUI
         "F11      Toggle fullscreen";
 
     private const int PieceTypeStride = 7;
+
+    /// <summary>How faint the bin's cross sits while nothing is in hand to drop in it.</summary>
+    private const byte BinIdleAlpha = 0x66;
+
+    /// <summary>The wash over the whole bin area while a release would take the piece — see
+    /// <see cref="BinIsHot"/>. Red because the action is destructive, translucent because the pile it
+    /// covers stays worth reading.</summary>
+    private static readonly RGBAColor32 BinHotFill = new RGBAColor32(0xDD, 0x00, 0x00, 0x59);
     private const int LastMoveBorderWidth = 3;
     // Horizontal: margin(0.5) + 8 board squares + margin(0.5) = 9, plus padding
     private const float SquaresNeededX = 9.5f;
@@ -296,11 +311,26 @@ public class GameUI
 
     public GameUIMode Mode { get; set; } = GameUIMode.Playing;
 
+    /// <summary>
+    /// The board as setup mode found it. The removed-pieces pile is this minus the live board, so
+    /// this snapshot is the whole of that feature's stored state — see <see cref="CountRemoved"/>.
+    /// </summary>
+    private Board _setupStartBoard;
+
     public bool IsSetupMode
     {
         get => Mode == GameUIMode.Setup;
         set
         {
+            // Taken on the way IN, because the pile is measured against the board setup started from
+            // rather than against a full army: a custom game begun on the EMPTY board has nothing to
+            // be missing, and its pile stays blank however much is placed and cleared. Resize copies
+            // the field, since it assigns Mode directly and never runs this setter.
+            if (value && Mode != GameUIMode.Setup)
+            {
+                _setupStartBoard = Game.Board;
+            }
+
             // Leaving setup drops any half-finished placement. The palette's render branch is keyed
             // on PendingPlacement ALONE (not on the mode), so a pending square used to survive the
             // transition as a ghost popup floating over the live game — reachable by pressing s with
@@ -551,6 +581,7 @@ public class GameUI
         resized.PlaybackPlyIndex = PlaybackPlyIndex;
         resized.PlacementSide = PlacementSide;
         resized.PendingPlacement = PendingPlacement;
+        resized._setupStartBoard = _setupStartBoard;
         resized.ShowingKeymap = ShowingKeymap;
         resized.HistoryViewportRows = HistoryViewportRows;
         resized.HistoryScrollStart = HistoryScrollStart;
@@ -615,28 +646,47 @@ public class GameUI
 
         var currentSide = Game.CurrentSide;
 
-        // captured pieces (skip during setup mode, and when the host draws them itself)
-        if (Mode != GameUIMode.Setup && _capturedLayout == CapturedPiecesLayout.Strips)
+        // The off-board piles: captures while playing, and the pieces setup has taken OFF while
+        // setting up. The bands used to be skipped outright in setup mode, which left the one region
+        // reserved for pieces that are not on the board blank exactly when the user is making some —
+        // and left the bin with nowhere to live. Skipped only when the host draws the piles itself
+        // (CapturedPiecesLayout.External; see RenderCapturedColumn, which does all of this again for
+        // a gutter).
+        if (_capturedLayout == CapturedPiecesLayout.Strips)
         {
 #if DEBUG
-            Span<byte> capturedPieceCounts = new byte[2 * PieceTypeStride];
+            Span<byte> pileCounts = new byte[2 * PieceTypeStride];
 #else
-            Span<byte> capturedPieceCounts = stackalloc byte[2 * PieceTypeStride];
+            Span<byte> pileCounts = stackalloc byte[2 * PieceTypeStride];
 #endif
-            CountCaptured(capturedPieceCounts);
+            var setup = Mode == GameUIMode.Setup;
+            if (setup)
+            {
+                CountRemoved(pileCounts);
+            }
+            else
+            {
+                CountCaptured(pileCounts);
+            }
 
             var (topStripSide, bottomStripSide) = CapturedStripSides();
 
             var bottomStrip = _layout.CapturedTray(bottom: true);
             if (clip.Contains(bottomStrip.UpperLeft.X, bottomStrip.UpperLeft.Y))
             {
-                DrawCapturedText<TRenderer, TSurface>(renderer, capturedPieceCounts, bottomStripSide, bottomStrip);
+                var bottomUsed = DrawPileBand<TRenderer, TSurface>(renderer, PileOf(pileCounts, bottomStripSide),
+                    PilePieceSide(bottomStripSide), bottomStrip);
+                if (setup) DrawBin<TRenderer, TSurface>(renderer,
+                    BinArea(bottomStrip, bottomUsed, default, horizontal: true));
             }
 
             var topStrip = _layout.CapturedTray(bottom: false);
             if (clip.Contains(topStrip.UpperLeft.X, topStrip.UpperLeft.Y))
             {
-                DrawCapturedText<TRenderer, TSurface>(renderer, capturedPieceCounts, topStripSide, topStrip);
+                var topUsed = DrawPileBand<TRenderer, TSurface>(renderer, PileOf(pileCounts, topStripSide),
+                    PilePieceSide(topStripSide), topStrip);
+                if (setup) DrawBin<TRenderer, TSurface>(renderer,
+                    BinArea(topStrip, topUsed, default, horizontal: true));
             }
         }
 
@@ -736,6 +786,143 @@ public class GameUI
     }
 
     /// <summary>
+    /// Tallies the pieces setup has taken OFF the board, indexed by the piece's OWN side — unlike
+    /// <see cref="CountCaptured"/>, which indexes by the side that did the taking (a pile of trophies
+    /// belongs to its captor; a pile of removals belongs to the army it was removed from).
+    /// <see cref="PileOf"/> and <see cref="PilePieceSide"/> are what reconcile the two conventions,
+    /// so the drawing is shared and neither caller has to invert anything.
+    ///
+    /// <para><b>Derived, not recorded.</b> It is the setup-start board's census minus the live one,
+    /// per side and type, floored at zero — so it survives a resize, a flip and a re-place for free,
+    /// and it needs no event to be routed through. Comparing COUNTS rather than squares is what stops
+    /// a relocation reading as a removal: the same rook on a different square is not missing.</para>
+    /// </summary>
+    internal void CountRemoved(Span<byte> removedPieceCounts)
+    {
+        // Two censuses, because subtracting as we went would underflow a byte on any square whose
+        // live piece outnumbers the start's before the rest of the board has been counted.
+#if DEBUG
+        Span<byte> onBoard = new byte[2 * PieceTypeStride];
+#else
+        Span<byte> onBoard = stackalloc byte[2 * PieceTypeStride];
+#endif
+        var live = Game.Board;
+
+        foreach (var position in Position.AllPositions())
+        {
+            Tally(removedPieceCounts, _setupStartBoard[position]);
+            Tally(onBoard, live[position]);
+        }
+
+        for (var i = 0; i < removedPieceCounts.Length; i++)
+        {
+            // Floored, not wrapped: setup may legitimately place MORE of a type than the board
+            // started with (a second queen), and a byte would otherwise come back as 255.
+            removedPieceCounts[i] = (byte)Math.Max(0, removedPieceCounts[i] - onBoard[i]);
+        }
+
+        static void Tally(Span<byte> counts, Piece piece)
+        {
+            if (piece.PieceType is not PieceType.None)
+            {
+                counts[((int)piece.Side - 1) * PieceTypeStride + (int)piece.PieceType]++;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The bin's glyph plate: one captured cell, centred in <paramref name="area"/>. The plate is the
+    /// AFFORDANCE only — <see cref="IsOverBin"/> takes the whole area, because a piece you want gone is
+    /// aimed at the region it will end up in and a pixel-accurate hit is the last thing a touch host or
+    /// a terminal can offer.
+    /// </summary>
+    private RectInt BinPlate(in RectInt area)
+    {
+        var size = Math.Min(_capturedCellHeight, (int)Math.Min(area.Width, area.Height));
+        var x = area.UpperLeft.X + ((int)area.Width - size) / 2;
+        var y = area.UpperLeft.Y + ((int)area.Height - size) / 2;
+        return new RectInt((x + size, y + size), (x, y));
+    }
+
+    /// <summary>
+    /// Draws the bin at the centre of a captured band or gutter. The same red cross the placement
+    /// palette puts over a piece it would clear, deliberately: one glyph for one meaning, so the two
+    /// ways to remove a piece do not have to be learned separately. It fills its plate and goes fully
+    /// opaque only while a piece is in hand — the rest of the time the pile it shares the area with is
+    /// the more useful thing to read, and a permanently lit target reads as a button that does nothing.
+    /// </summary>
+    private void DrawBin<TRenderer, TSurface>(TRenderer renderer, in RectInt area)
+        where TRenderer : Renderer<TSurface>
+    {
+        var plate = BinPlate(area);
+        var armed = PickedUp is not null;
+
+        if (BinIsHot)
+        {
+            // A REGION lights, not the glyph plate — and that is forced, not stylistic: the plate is one
+            // captured cell and the ghost hovering it is a full square, so a lit plate would be entirely
+            // hidden beneath the very piece it is answering.
+            //
+            // The region is the captured area MINUS the piles (see BinArea), not the whole of it. The
+            // pile is the other thing that area is for, and washing it red made the removed pieces hard
+            // to read at exactly the moment they are changing. Note this is deliberately WIDER than what
+            // is lit: IsOverBin still accepts anywhere in the captured area, because a generous target
+            // is worth more than the tidiness of the two matching — the lit band says "there", not
+            // "only there".
+            renderer.DrawScrim(area, BinHotFill);
+        }
+        else if (armed)
+        {
+            renderer.FillRectangle(plate, _capturedAreaColor);
+        }
+
+        renderer.DrawText("✕", _labelFont, _capturedFontSize,
+            armed ? RedCrossFill : RedCrossFill.WithAlpha(BinIdleAlpha), plate,
+            TextAlign.Center, vertAlignment: TextAlign.Center);
+    }
+
+    /// <summary>
+    /// Whether releasing right now would bin the piece in hand — the bin's lit state, and deliberately
+    /// the SAME predicate the release itself runs, so what lights up is what will happen rather than an
+    /// approximation of it. Keyed on the pointer rather than on the ghost's own rect because that is
+    /// what <see cref="HandlePointerUp"/> is handed.
+    /// </summary>
+    private bool BinIsHot => DragPoint is { } point && IsOverBin(point.X, point.Y);
+
+    /// <summary>
+    /// Whether a point is over the bin — the WHOLE captured area, not just the glyph plate. False
+    /// outside setup mode, where the same region is real capture history and must stay inert.
+    /// </summary>
+    public bool IsOverBin(int x, int y)
+    {
+        if (Mode != GameUIMode.Setup)
+            return false;
+
+        if (_capturedLayout == CapturedPiecesLayout.Strips)
+        {
+            var (top, bottom) = CapturedTextRects();
+            return top.Contains(x, y) || bottom.Contains(x, y);
+        }
+
+        // External: the gutter is the host's rect, learned at render time (see RenderCapturedColumn),
+        // so this reads false until the first frame has been drawn — which is also the first moment a
+        // pointer could be dragging anything.
+        return _capturedColumn.Width > 0 && _capturedColumn.Contains(x, y);
+    }
+
+    /// <summary>One pile's seven counts out of the two-side buffer.</summary>
+    private static ReadOnlySpan<byte> PileOf(ReadOnlySpan<byte> counts, Side pileEnd) =>
+        counts.Slice(((int)pileEnd - 1) * PieceTypeStride, PieceTypeStride);
+
+    /// <summary>
+    /// Which colour the pile at a given end of the board is drawn in. A capture pile holds the pieces
+    /// its owner TOOK, so it is the opposite colour; a removal pile holds pieces lifted off that end's
+    /// own army, so it is that side's own.
+    /// </summary>
+    private Side PilePieceSide(Side pileEnd) =>
+        Mode == GameUIMode.Setup ? pileEnd : pileEnd.ToOpposite();
+
+    /// <summary>
     /// Which side's pile belongs at the display's top and bottom ends. A player's captures stand at
     /// THEIR end of the board (the pieces you took, beside your own back rank), so this tracks
     /// <see cref="FlipBoard"/> just like the board itself does — which is what keeps each player's
@@ -754,14 +941,27 @@ public class GameUI
     public void RenderCapturedColumn<TSurface, TRenderer>(TRenderer renderer, in RectInt rect)
         where TRenderer : Renderer<TSurface>
     {
-        if (Mode == GameUIMode.Setup) return;
+        // Stashed for the hit test. The gutter belongs to the HOST's frame, not to the board's content
+        // box, so this call is the only place GameUI ever learns where it is — and taking the rect it
+        // was actually handed is what keeps the bin's drawn target and IsOverBin the same rect by
+        // construction rather than by two formulas agreeing.
+        _capturedColumn = rect;
+        if (rect.Width <= 0 || rect.Height <= 0) return;
 
 #if DEBUG
-        Span<byte> capturedPieceCounts = new byte[2 * PieceTypeStride];
+        Span<byte> pileCounts = new byte[2 * PieceTypeStride];
 #else
-        Span<byte> capturedPieceCounts = stackalloc byte[2 * PieceTypeStride];
+        Span<byte> pileCounts = stackalloc byte[2 * PieceTypeStride];
 #endif
-        CountCaptured(capturedPieceCounts);
+        var setup = Mode == GameUIMode.Setup;
+        if (setup)
+        {
+            CountRemoved(pileCounts);
+        }
+        else
+        {
+            CountCaptured(pileCounts);
+        }
 
         // A tray row is [count][piece] — two captured-font cells wide, centred in the gutter, and
         // never wider than the gutter the host handed over.
@@ -769,49 +969,64 @@ public class GameUI
         var x = rect.UpperLeft.X + ((int)rect.Width - trayWidth) / 2;
         var (topSide, bottomSide) = CapturedStripSides();
 
-        DrawCapturedTray<TRenderer, TSurface>(renderer, capturedPieceCounts, topSide, x, trayWidth,
-            rect.UpperLeft.Y, step: 1);
-        DrawCapturedTray<TRenderer, TSurface>(renderer, capturedPieceCounts, bottomSide, x, trayWidth,
-            (int)rect.LowerRight.Y - _capturedCellHeight, step: -1);
+        var topUsed = DrawPileTray<TRenderer, TSurface>(renderer, PileOf(pileCounts, topSide), PilePieceSide(topSide),
+            x, trayWidth, rect.UpperLeft.Y, step: 1);
+        var bottomUsed = DrawPileTray<TRenderer, TSurface>(renderer, PileOf(pileCounts, bottomSide), PilePieceSide(bottomSide),
+            x, trayWidth, (int)rect.LowerRight.Y - _capturedCellHeight, step: -1);
+
+        // The gutter's MIDDLE is free by construction — the two trays hug its ends — which is what
+        // makes it the bin's natural home in this shape.
+        if (setup) DrawBin<TRenderer, TSurface>(renderer,
+            BinArea(rect, topUsed, bottomUsed, horizontal: false));
     }
 
     /// <summary>
-    /// Draws one side's pile as a vertical tray of [count][piece] rows starting at
-    /// <paramref name="y0"/> and growing in <paramref name="step"/> (+1 = downwards from the gutter's
-    /// top edge, -1 = upwards from its bottom edge).
+    /// Draws one pile as a vertical tray of [count][piece] rows starting at <paramref name="y0"/> and
+    /// growing in <paramref name="step"/> (+1 = downwards from the gutter's top edge, -1 = upwards from
+    /// its bottom edge). <paramref name="pile"/> is already that pile's seven counts and
+    /// <paramref name="pieceSide"/> the colour to draw them in, so this is the same painter for
+    /// captures and for setup removals — see <see cref="PilePieceSide"/>.
     /// </summary>
-    private void DrawCapturedTray<TRenderer, TSurface>(TRenderer renderer, ReadOnlySpan<byte> capturedPieceCounts,
-        Side side, int x, int width, int y0, int step)
+    private RectInt DrawPileTray<TRenderer, TSurface>(TRenderer renderer, ReadOnlySpan<byte> pile,
+        Side pieceSide, int x, int width, int y0, int step)
         where TRenderer : Renderer<TSurface>
     {
         var cell = _capturedCellHeight;
         var half = width / 2;
-        var capturedSide = side.ToOpposite();
         var y = y0;
+        var rows = 0;
 
         for (var pieceIdx = 1; pieceIdx < PieceTypeStride; pieceIdx++)
         {
-            var count = capturedPieceCounts[((int)side - 1) * PieceTypeStride + pieceIdx];
+            var count = pile[pieceIdx];
             if (count == 0) continue;
+            rows++;
 
             // Backing fill per row, so the stacked rows read as one tray (the strips fill their band
             // the same way).
             renderer.FillRectangle(new RectInt((x + width, y + cell), (x, y)), _capturedAreaColor);
             renderer.DrawText(Convert.ToString(count), _labelFont, _capturedFontSize, _mainFontColor,
                 new RectInt((x + half, y + cell), (x, y)), TextAlign.Center, vertAlignment: TextAlign.Center);
-            DrawPiece<TRenderer, TSurface>(renderer, new Piece((PieceType)pieceIdx, capturedSide),
+            DrawPiece<TRenderer, TSurface>(renderer, new Piece((PieceType)pieceIdx, pieceSide),
                 new RectInt((x + width, y + cell), (x + half, y)), _capturedFontSize);
 
             y += step * cell;
         }
+
+        if (rows == 0) return default;
+
+        // Growing UPWARDS puts y0 at the LAST row's top, so the extent has to be reconstructed rather
+        // than read off y — the two directions do not share an origin.
+        var top = step > 0 ? y0 : y0 - (rows - 1) * cell;
+        return new RectInt((x + width, top + rows * cell), (x, top));
     }
 
     /// <summary>
-    /// Draws one side's pile along <paramref name="band"/> — the layout's captured band, which spans
-    /// exactly the eight board columns. Clearing the whole band first is what stops a shrinking pile
-    /// leaving its own last frame behind.
+    /// Draws one pile along <paramref name="band"/> — the layout's captured band, which spans exactly
+    /// the eight board columns. Clearing the whole band first is what stops a shrinking pile leaving
+    /// its own last frame behind. Slice and colour are the caller's, as in <see cref="DrawPileTray"/>.
     /// </summary>
-    private void DrawCapturedText<TRenderer, TSurface>(TRenderer renderer, ReadOnlySpan<byte> capturedPieceCounts, Side side, in RectInt band)
+    private RectInt DrawPileBand<TRenderer, TSurface>(TRenderer renderer, ReadOnlySpan<byte> pile, Side pieceSide, in RectInt band)
         where TRenderer : Renderer<TSurface>
     {
         var cellSize = (int)MathF.Round(_capturedFontSize * 1.4f);
@@ -820,10 +1035,9 @@ public class GameUI
         renderer.FillRectangle(band, _capturedAreaColor);
 
         var pieceX = x;
-        var capturedSide = side.ToOpposite();
         for (var pieceIdx = 1; pieceIdx < PieceTypeStride; pieceIdx++)
         {
-            var count = capturedPieceCounts[((int)side - 1) * PieceTypeStride + pieceIdx];
+            var count = pile[pieceIdx];
             if (count > 0)
             {
                 var layoutCount = new RectInt((pieceX + cellSize, y + cellSize), (pieceX, y));
@@ -831,10 +1045,40 @@ public class GameUI
                 pieceX += count <= 9 ? cellSize : 2 * cellSize;
 
                 var layoutPiece = new RectInt((pieceX + cellSize, y + cellSize), (pieceX, y));
-                DrawPiece<TRenderer, TSurface>(renderer, new Piece((PieceType)pieceIdx, capturedSide), layoutPiece, _capturedFontSize);
+                DrawPiece<TRenderer, TSurface>(renderer, new Piece((PieceType)pieceIdx, pieceSide), layoutPiece, _capturedFontSize);
                 pieceX += (int)(1.5 * cellSize);
             }
         }
+
+        return pieceX == x ? default : new RectInt((pieceX, (int)band.LowerRight.Y), (x, band.UpperLeft.Y));
+    }
+
+    /// <summary>
+    /// The slice of a captured band or gutter the pile is NOT using — where the bin shows itself.
+    /// Derived from the rect the painter reports rather than recomputed, so the two can never disagree
+    /// about how much room a pile takes; that advance is a fiddly little formula (a count cell that
+    /// doubles past nine, then a piece cell, then a gap) and a second copy of it would drift.
+    ///
+    /// <para><paramref name="used"/> rects are subtracted from the ends: a band's pile grows from its
+    /// left edge, a gutter's two piles from its top and bottom. Falls back to the whole
+    /// <paramref name="area"/> when the piles have eaten all of it, so a full board's bin still shows
+    /// itself somewhere rather than silently collapsing to nothing.</para>
+    /// </summary>
+    private static RectInt BinArea(in RectInt area, in RectInt usedNear, in RectInt usedFar, bool horizontal)
+    {
+        if (horizontal)
+        {
+            var left = usedNear.Width > 0 ? (int)usedNear.LowerRight.X : area.UpperLeft.X;
+            return left < (int)area.LowerRight.X
+                ? new RectInt(((int)area.LowerRight.X, (int)area.LowerRight.Y), (left, area.UpperLeft.Y))
+                : area;
+        }
+
+        var top = usedNear.Height > 0 ? (int)usedNear.LowerRight.Y : area.UpperLeft.Y;
+        var bottom = usedFar.Height > 0 ? usedFar.UpperLeft.Y : (int)area.LowerRight.Y;
+        return bottom > top
+            ? new RectInt(((int)area.LowerRight.X, bottom), (area.UpperLeft.X, top))
+            : area;
     }
 
     private void RenderBoard<TRenderer, TSurface>(TRenderer renderer, in RectInt clip)
@@ -956,7 +1200,15 @@ public class GameUI
         // There is no z-order conflict with the placement palette, and that is not luck: a piece can
         // never be in hand while the palette is open, because PickedUp is null whenever
         // PendingPlacement is set.
-        if (detached is { } inFlight && inFlight.Rect.OverlapsWith(clip))
+        //
+        // Drawn WITHOUT a clip test, unlike everything else here, because it is the one thing this
+        // method draws that lives in SURFACE space rather than board space. Culling it against the clip
+        // made a piece dragged towards the bin evaporate the moment its square cleared the content box
+        // — about halfway across the gutter, since the hosts pass the board's own rect as the clip, so
+        // the vanishing point was a rendering artifact that looked exactly like a deliberate boundary.
+        // Costs nothing to keep: HandlePointerMove reports a ghost that has left the box as a FULL
+        // repaint, so the ghost is always inside the damage actually being painted.
+        if (detached is { } inFlight)
         {
             DrawPiece<TRenderer, TSurface>(renderer, inFlight.Piece, inFlight.Rect, _pieceFontSize, inFlight.Alpha);
         }
@@ -1344,6 +1596,12 @@ public class GameUI
             {
                 return TrySetupAction(selected);
             }
+            else if (PickedUp is { } inHand && IsOverBin(x, y))
+            {
+                // Clicked into the bin rather than dragged into it — the same gesture reduced to two
+                // taps, for the hosts where a drag is awkward (touch) or barely exists (the terminal).
+                return ClearSquare(inHand);
+            }
 
             // Off the board: fall through to the chrome, so a touch-only host's "start the game" chip
             // is reachable while setting up (the desktop presses s). Swallowing the tap here is what
@@ -1569,9 +1827,28 @@ public class GameUI
     /// </summary>
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) SetupSelect(Position position)
     {
+        AdoptPlacementSide(position);
         PendingPlacement = position;
         Selected = position;
         return (UIResponse.NeedsRefresh | UIResponse.NeedsPiecePlacement, []);
+    }
+
+    /// <summary>
+    /// Adopts the colour of whatever stands on <paramref name="position"/> as the
+    /// <see cref="PlacementSide"/>, so designating a black piece switches to Black without a Tab.
+    /// The board already knows the answer the toggle was asking for: both palette affordances for
+    /// an occupied square — the red cross that clears it, and swapping its type — are keyed on
+    /// <see cref="PlacementSide"/> MATCHING the occupant, so touching a black piece while set to
+    /// White offered neither, and the palette drew the wrong army over it. An empty square keeps
+    /// the current side: there is nothing to adopt, and that is where the toggle still earns its
+    /// place.
+    /// </summary>
+    private void AdoptPlacementSide(Position position)
+    {
+        if (Game[position] is { PieceType: not PieceType.None } piece)
+        {
+            PlacementSide = piece.Side;
+        }
     }
 
     /// <summary>
@@ -1611,6 +1888,7 @@ public class GameUI
     /// </summary>
     public (UIResponse Response, ImmutableArray<RectInt> ClipRects) SetupPickUp(Position position)
     {
+        AdoptPlacementSide(position);
         Selected = position;
         PendingPlacement = default;
         // IsUpdate, not just NeedsRefresh: the status line names the piece in hand, and console
@@ -2102,6 +2380,12 @@ public class GameUI
         if (pressed is not { } from || PickedUp is not { } inHand || inHand != from)
             return (UIResponse.None, []);
 
+        // Released in the bin: the piece is gone. Tested BEFORE the board precisely because the bin is
+        // off it — the off-board no-op below is what a release anywhere else still means, and the bin is
+        // now the one place off the board that means something.
+        if (IsOverBin(x, y))
+            return ClearSquare(inHand);
+
         if (FindSelected(x, y) is not { } to || to == from)
             return (UIResponse.None, []);
 
@@ -2136,15 +2420,27 @@ public class GameUI
             return (UIResponse.NeedsRefresh, [oldRect.Value]);
         }
 
-        // Off the board the ghost hides rather than being carried over the history panel and the
-        // captured piles. That keeps the four-square bound absolute, and it is the truthful signal
-        // besides: a release off the board is already a no-op that leaves the piece in hand.
-        var point = FindSelected(x, y) is null ? (PointInt?)null : new PointInt(x, y);
+        // The ghost ALWAYS follows the pointer, wherever it goes. Hiding it off the board was made to
+        // carry a meaning — "a release here does nothing" — and a piece that blinks out is a bad way to
+        // say that: it reads as having dropped the thing you are still holding, and it is silent about
+        // the one off-board place that DOES accept a release. The bin says that instead, by lighting up
+        // (see BinIsHot), so the feedback is on the target rather than on the piece.
+        var point = new PointInt(x, y);
 
         if (point == _dragPoint)
             return (UIResponse.None, []);
 
+        // Crossing the bin's edge repaints the whole frame: the bin's lit state is a property of the
+        // POINTER, not of the ghost, so the rects below do not describe it — and the in-board captured
+        // bands are redrawn only when the clip contains their upper-left corner, which a ghost hovering
+        // the middle of one does not.
+        var wasHot = _dragPoint is { } previousPoint && IsOverBin(previousPoint.X, previousPoint.Y);
+        var nowHot = IsOverBin(x, y);
+
         _dragPoint = point;
+
+        if (wasHot != nowHot)
+            return (UIResponse.NeedsRefresh, []);
         var newRect = GhostRect;
 
         var damage = ImmutableArray.CreateBuilder<RectInt>(3);
@@ -2156,6 +2452,19 @@ public class GameUI
         // at two footprints rather than three.
         if ((oldRect is null) != (newRect is null))
             damage.Add(SquareRect(inHand));
+
+        // A ghost hovering the bin has left the board, and ContentRect is the only space this class can
+        // describe damage in. Reporting NO rects is the protocol's "repaint the frame", which is what
+        // the GPU hosts do regardless — but the terminal honours clip rects, and a rect over the gutter
+        // would have it blit a band of the BOARD to repair a smudge that is not on it.
+        foreach (var rect in damage)
+        {
+            if (!ContentRect.Contains(rect.UpperLeft.X, rect.UpperLeft.Y)
+                || !ContentRect.Contains((int)rect.LowerRight.X, (int)rect.LowerRight.Y))
+            {
+                return (UIResponse.NeedsRefresh, []);
+            }
+        }
 
         return (UIResponse.NeedsRefresh, damage.ToImmutable());
     }

@@ -238,11 +238,13 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         var content = _gameUI.ContentRect;
         var frame = ArrangeFrame(content.Width, capture: true);
 
-        // GameUI owns its own shift inside the area it was handed (draw and hit-test alike), so what it
-        // drew IS the clip. Bigger than the 8×8 grid (it includes the label margins), which is what
-        // tells GameUI to render the chrome around the board too.
-        _gameUI.Render<TSurface, Renderer<TSurface>>(Renderer, content);
-
+        // The GUTTERS FIRST, then the board. The order is load-bearing, not incidental: a piece being
+        // dragged is drawn by GameUI at the pointer, which in setup mode reaches over the captured
+        // gutter — that being the whole point of a bin living there. Painted the other way round the
+        // drop target lands ON TOP of the piece being dropped into it, which is exactly backwards: the
+        // thing in your hand is the one thing that must never be occluded. Safe because the surface is
+        // cleared to the background every frame, so nothing of the gutter's own last frame survives to
+        // be drawn over.
         if (frame.UseSideHistory)
         {
             RenderHistoryPanel(PinInGutter(frame.History, HistoryPanelWidth, toInnerEdge: false));
@@ -254,6 +256,11 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
             // Anything shallower isn't a useful history and stays background.
             RenderHistoryPanel(frame.History);
         }
+
+        // GameUI owns its own shift inside the area it was handed (draw and hit-test alike), so what it
+        // drew IS the clip. Bigger than the 8×8 grid (it includes the label margins), which is what
+        // tells GameUI to render the chrome around the board too.
+        _gameUI.Render<TSurface, Renderer<TSurface>>(Renderer, content);
 
         RenderStatusBar(frame.Status);
         if (_safeAreaInsets.Top > 0)
