@@ -6,7 +6,7 @@
     <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Console.Lib" Version="4.29.*" />
+    <PackageVersion Include="Console.Lib" Version="4.30.*" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="DIR.Lib" Version="8.13.*" />
     <!-- Chess.Web's Blazor WebAssembly deps. They used to ride inline in Chess.Web.csproj, which
@@ -36,14 +36,14 @@
     <PackageVersion Include="Microsoft.Playwright" Version="1.61.0" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
     <PackageVersion Include="SDL3-CS" Version="3.5.0-preview.20260213-150035" />
-    <PackageVersion Include="SdlVulkan.Renderer" Version="7.26.*" />
+    <PackageVersion Include="SdlVulkan.Renderer" Version="7.30.*" />
     <PackageVersion Include="SDL3-CS.Native" Version="3.5.0-preview.20260205-174353" />
     <PackageVersion Include="Vortice.Vulkan" Version="3.2.3" />
     <PackageVersion Include="Vortice.VulkanMemoryAllocator" Version="1.7.0" />
     <!-- WebGL2 backend for Chess.Web. Floats within its minor like the other siblings. The laggard has
          swapped: WebGl sat at DIR.Lib 8.3 for several rounds and is now ON 8.13, because the baseline fix
-         had to land in all three renderers at once — so SdlVulkan 7.26 and WebGl 1.27 both pin 8.13, and
-         Console.Lib 4.29 is now the one behind at 8.9. Chess's own direct pin stays the highest of the
+         had to land in all three renderers at once — so SdlVulkan 7.30 and WebGl 1.27 both pin 8.13, and
+         Console.Lib 4.30 is still the one behind at 8.9. Chess's own direct pin stays the highest of the
          four, so NuGet unifies every project — including those reaching DIR.Lib only THROUGH a backend —
          up to it. Safe because everything crossed is additive and DIR.Lib's only 8.x MIGRATION entry is
          still 8.0's TabBar-becomes-a-widget, which chess does not use. Console.Lib needs no move: nothing
