@@ -56,12 +56,15 @@ Tools: `list_instances`, `ping`, `describe_ui`, `describe_layout`, `screenshot`,
 - **The MCP wrapper reports failures as a bare `An error occurred invoking 'x'`.** The raw socket
   returns the actual reason (`{"error": "InvalidOperationException: ..."}`), which is how the latch
   above was identified. When a tool fails opaquely, re-send it over the socket before theorising.
-- **`move` is NOT an MCP tool**, though it has been a raw verb since SdlVulkan.Renderer 7.25
-  (added because press-based verbs could not drive hover). To drive hover, use the raw socket — and
-  note two things the name does not warn you about. It takes a PATH, `{"x1","y1","x2","y2","steps"}`,
-  not a point (a bare `x`/`y` is rejected). And **it presses at the start point**: sending a `move`
-  whose `x1,y1` sits on a live control fires that control. Driving a piece off the setup bin with
-  `move` silently BINNED it, which read as an app bug for a while. Start the path somewhere inert.
+- **`move` IS an MCP tool since SdlVulkan.Renderer 7.27** (a raw verb since 7.25). It is the only verb
+  that can drive hover — `click`, `drag` and `press_hold` all arrive with a button DOWN. It takes a
+  PATH, `{"x1","y1","x2","y2","steps"}`, not a point; a bare `x`/`y` is rejected. Chess pins 7.30, but
+  the sidecar resolves its own version through `dnx`, so on an older one it is raw-socket only.
+- **A `move` whose path starts on a live control has been seen to fire that control**, once: a piece in
+  hand, a path starting over the setup bin, and the piece came back BINNED. The tool documents itself as
+  holding no button, so the mechanism is unexplained rather than established — treat this as "start the
+  path somewhere inert and re-check the state afterwards", not as a known behaviour. It read as an app
+  bug for a while before being pinned on the harness, which is the part worth remembering.
 - **There is no raw `press`/`release` pair** — only `pressHold` (`x`, `y`, `seconds`), which presses
   and releases at the SAME point, so it cannot hold a drag while you move. Worse, it occupies the
   per-frame command pump for its whole duration: a `screenshot` sent during a hold does not queue, it
