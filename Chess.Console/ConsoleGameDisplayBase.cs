@@ -82,7 +82,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
     private GameUI? _gameUI;
 
     /// <summary>The tray inputs the Sixel surface was last drawn against; see <see cref="TrayIsStale"/>.</summary>
-    private (int Plies, GameUIMode Mode)? _trayState;
+    private (int Plies, GameUIMode Mode, Board SetupBoard, bool PieceInHand)? _trayState;
 
 #if DEBUG
     private readonly Stopwatch _stopwatch = new();
@@ -389,10 +389,17 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
     ///
     /// <para>Only the external tray needs asking: the in-board strips sit inside the area
     /// <see cref="GameUI.Render{TSurface, TRenderer}"/> already clips against, whereas a gutter tray is
-    /// outside it and this display owns keeping it current. The tray is a pure function of the plies walked
-    /// so far (GameUI counts captures by replaying them), so it goes stale on exactly the frames where that
-    /// count moves — every ply, and every playback step — and stays valid across the ones that repeat
-    /// most, selection and hover highlights.</para>
+    /// outside it and this display owns keeping it current. While PLAYING the tray is a pure function of
+    /// the plies walked so far (GameUI counts captures by replaying them), so it goes stale on exactly the
+    /// frames where that count moves — every ply, and every playback step — and stays valid across the ones
+    /// that repeat most, selection and hover highlights.</para>
+    ///
+    /// <para>In SETUP the same gutter holds the removed-pieces pile and the bin, and neither is a function
+    /// of the plies: the ply count is frozen at whatever the custom board started with, so keying on it
+    /// alone would leave the pile frozen too — every piece binned for the whole of setup, and the tray
+    /// never repainted once. The board itself is the honest key there (a record struct, so this is value
+    /// equality over eight uints), plus whether a piece is in hand, which is what arms the bin's glyph.
+    /// Neither moves on pointer MOTION, so a drag still gets its partial renders.</para>
     ///
     /// <para>A stale tray forces a FULL blit rather than a wider clip because
     /// <see cref="Canvas.Render(RectInt)"/> crops vertically only: the tray spans the board's whole height,
@@ -403,7 +410,8 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
     {
         if (!_placement.HasCapturedGutter) return false;
 
-        var state = (ui.Mode == GameUIMode.Playback ? ui.PlaybackPlyIndex + 1 : ui.Game.PlyCount, ui.Mode);
+        var state = (ui.Mode == GameUIMode.Playback ? ui.PlaybackPlyIndex + 1 : ui.Game.PlyCount, ui.Mode,
+            ui.Game.Board, ui.PickedUp is not null);
         if (_trayState == state) return false;
 
         _trayState = state;
@@ -436,12 +444,15 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
         _stopwatch.Restart();
 #endif
 
-        ui.Render<TSurface, Renderer<TSurface>>(renderer, clip);
-
+        // Tray first, board second — the dragged piece has to end up on top of the bin it is being
+        // aimed at, and here the tray's own background fill is what clears the ghost's last frame out
+        // of the gutter (this surface is not cleared between frames).
         if (_placement.HasCapturedGutter)
         {
             RenderCapturedTray(ui);
         }
+
+        ui.Render<TSurface, Renderer<TSurface>>(renderer, clip);
 
 #if DEBUG
         _stopwatch.Stop();

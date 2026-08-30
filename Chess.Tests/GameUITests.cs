@@ -655,6 +655,72 @@ public class GameUITests
         ui.PlacementSide.ShouldBe(Side.White);
     }
 
+    /// <summary>
+    /// Designating an occupied square adopts its occupant's colour, so editing the black half of
+    /// the board never needs a Tab first. Both palette affordances for an occupied square are
+    /// keyed on the placement side matching the occupant, so before this a black rook opened a
+    /// palette of white pieces with no clear cross on it.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TrySetupAction_OccupiedSquare_AdoptsTheOccupantsColour(bool openThePalette)
+    {
+        var ui = CreateStandardUI();
+        ui.IsSetupMode = true;
+        ui.PlacementSide.ShouldBe(Side.White);
+
+        ui.TrySetupAction(A8); // black rook — picked up
+        if (openThePalette)
+        {
+            ui.TrySetupAction(A8); // same square again — palette, still black
+            ui.PendingPlacement.ShouldBe(A8);
+        }
+
+        ui.PlacementSide.ShouldBe(Side.Black);
+        ui.StatusLine(keyHints: false).ShouldContain("Black");
+
+        // ...and back again, so the adoption is not a one-way latch.
+        ui.CancelPlacement();
+        ui.TrySetupAction(A1); // white rook
+        ui.PlacementSide.ShouldBe(Side.White);
+    }
+
+    /// <summary>
+    /// An empty square has no colour to adopt, so it keeps the current one — that is where the
+    /// Tab toggle still earns its place (placing a black piece on an empty square).
+    /// </summary>
+    [Fact]
+    public void TrySetupAction_EmptySquare_KeepsThePlacementSide()
+    {
+        var ui = CreateStandardUI();
+        ui.IsSetupMode = true;
+        ui.TogglePlacementSide();
+        ui.PlacementSide.ShouldBe(Side.Black);
+
+        ui.TrySetupAction(E4); // empty
+
+        ui.PendingPlacement.ShouldBe(E4);
+        ui.PlacementSide.ShouldBe(Side.Black);
+    }
+
+    /// <summary>
+    /// A drop takes the piece's own colour with it, and the side adopted at pick-up survives the
+    /// drop — the next square designated is what changes it, not the relocation.
+    /// </summary>
+    [Fact]
+    public void SetupRelocate_KeepsTheColourAdoptedAtPickUp()
+    {
+        var ui = CreateStandardUI();
+        ui.IsSetupMode = true;
+
+        ui.TrySetupAction(E7); // black pawn
+        ui.TrySetupAction(E5);
+
+        ui.Game[E5].ShouldBe(new Piece(PieceType.Pawn, Side.Black));
+        ui.PlacementSide.ShouldBe(Side.Black);
+    }
+
     // ── Setup mode: pick up and drop ───────────────────────────────
 
     /// <summary>
@@ -942,6 +1008,287 @@ public class GameUITests
         game.Board[D2].ShouldBe(new Piece(PieceType.Pawn, Side.White));
     }
 
+    // -- Setup mode: the removed-pieces pile and the bin ------------
+
+    /// <summary>Scans for a point the bin claims. The bin's rects belong to the board layout, so a
+    /// probe is both simpler than re-deriving them and a check that SOME region is live at all.</summary>
+    private static (int X, int Y) BinPoint(GameUI ui)
+    {
+        for (var y = 0; y < 800; y++)
+            for (var x = 0; x < 800; x++)
+                if (ui.IsOverBin(x, y)) return (x, y);
+
+        throw new ShouldAssertException("no region of the surface reported itself as the bin");
+    }
+
+    private static byte Removed(GameUI ui, Side side, PieceType pieceType)
+    {
+        var counts = new byte[2 * 7]; // 2 sides x GameUI.PieceTypeStride
+        ui.CountRemoved(counts);
+        return counts[((int)side - 1) * 7 + (int)pieceType];
+    }
+
+    private static int TotalRemoved(GameUI ui)
+    {
+        var counts = new byte[2 * 7];
+        ui.CountRemoved(counts);
+        var total = 0;
+        foreach (var count in counts) total += count;
+        return total;
+    }
+
+    [Fact]
+    public void CountRemoved_ReportsWhatSetupTookOffTheStandardBoard()
+    {
+        var game = new Game();
+        var ui = SetupUI(game);
+
+        ui.ClearSquare(A8);
+        ui.ClearSquare(A7);
+        ui.ClearSquare(B7);
+
+        Removed(ui, Side.Black, PieceType.Rook).ShouldBe((byte)1);
+        Removed(ui, Side.Black, PieceType.Pawn).ShouldBe((byte)2);
+        TotalRemoved(ui).ShouldBe(3, "nothing else left the board");
+    }
+
+    /// <summary>
+    /// The pile is measured against the board setup STARTED from, not against a full army - so a
+    /// custom game begun on the empty board has nothing to be missing, however much is placed and
+    /// cleared on it. Showing it a full set there would be inventing pieces nobody removed.
+    /// </summary>
+    [Fact]
+    public void CountRemoved_EmptyStartingBoard_StaysBlank()
+    {
+        var game = new Game(new Board(), Side.White, []);
+        var ui = SetupUI(game);
+
+        TotalRemoved(ui).ShouldBe(0, "an empty board is missing nothing");
+
+        ui.TryPlacePiece(E4, PieceType.Queen, Side.White);
+        ui.ClearSquare(E4);
+
+        TotalRemoved(ui).ShouldBe(0, "a piece placed and cleared is back where it started: nowhere");
+    }
+
+    /// <summary>Counts, not squares - otherwise every relocation would read as a removal plus an
+    /// addition, and moving a rook one file would put a rook in the pile.</summary>
+    [Fact]
+    public void CountRemoved_ARelocationIsNotARemoval()
+    {
+        var game = new Game();
+        var ui = SetupUI(game);
+
+        ui.TrySetupAction(B1); // knight, into hand
+        ui.TrySetupAction(H6); // dropped somewhere else entirely
+
+        TotalRemoved(ui).ShouldBe(0, "the knight is still on the board");
+    }
+
+    /// <summary>A setup board may hold MORE of a type than it started with; the shortfall floors at
+    /// zero rather than wrapping a byte round to 255 and painting a nonsense pile.</summary>
+    [Fact]
+    public void CountRemoved_MorePiecesThanTheStartHad_FloorsAtZero()
+    {
+        var game = new Game();
+        var ui = SetupUI(game);
+
+        ui.TryPlacePiece(E4, PieceType.Queen, Side.White);
+        ui.TryPlacePiece(E5, PieceType.Queen, Side.White);
+
+        Removed(ui, Side.White, PieceType.Queen).ShouldBe((byte)0);
+    }
+
+    [Fact]
+    public void IsOverBin_OutsideSetupMode_IsFalse()
+    {
+        var setup = SetupUI(new Game());
+        var (x, y) = BinPoint(setup);
+
+        var playing = CreateStandardUI();
+
+        playing.IsOverBin(x, y).ShouldBeFalse("the same region is real capture history while playing");
+        setup.IsOverBin(x, y).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void HandlePointerUp_ReleaseInTheBin_RemovesThePiece()
+    {
+        var game = new Game();
+        var ui = SetupUI(game);
+
+        var (dx, dy) = Centre(ui, D2);
+        ui.HandleMouseDown(dx, dy);
+        ui.PickedUp.ShouldBe(D2);
+
+        var (bx, by) = BinPoint(ui);
+        var (response, _) = ui.HandlePointerUp(bx, by);
+
+        response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
+        game.Board[D2].PieceType.ShouldBe(PieceType.None);
+        ui.PickedUp.ShouldBeNull("the ghost goes with the piece");
+        Removed(ui, Side.White, PieceType.Pawn).ShouldBe((byte)1);
+    }
+
+    /// <summary>The two-tap form of the same gesture, for hosts where a drag is awkward or absent.</summary>
+    [Fact]
+    public void HandleMouseDown_ClickIntoTheBinWithAPieceInHand_RemovesIt()
+    {
+        var game = new Game();
+        var ui = SetupUI(game);
+
+        ui.TrySetupAction(G8); // black knight, into hand
+        var (bx, by) = BinPoint(ui);
+
+        var (response, _) = ui.HandleMouseDown(bx, by);
+
+        response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
+        game.Board[G8].PieceType.ShouldBe(PieceType.None);
+        Removed(ui, Side.Black, PieceType.Knight).ShouldBe((byte)1);
+    }
+
+    /// <summary>With nothing in hand the bin is inert - a stray click on the pile must not reach
+    /// through to whatever was last selected.</summary>
+    [Fact]
+    public void HandleMouseDown_ClickIntoTheBinWithEmptyHands_DoesNothing()
+    {
+        var game = new Game();
+        var ui = SetupUI(game);
+        var (bx, by) = BinPoint(ui);
+
+        ui.HandleMouseDown(bx, by);
+
+        game.Board.ShouldBe(Board.StandardBoard);
+    }
+
+    /// <summary>
+    /// The ghost survives the trip to the bin: everywhere else off the board it hides, but you cannot
+    /// aim a piece at a target you stop being able to see on the way to it.
+    /// </summary>
+    [Fact]
+    public void HandlePointerMove_OverTheBin_KeepsTheGhostShowing()
+    {
+        var ui = SetupUI(new Game());
+
+        var (dx, dy) = Centre(ui, D2);
+        ui.HandleMouseDown(dx, dy);
+
+        var (bx, by) = BinPoint(ui);
+        ui.HandlePointerMove(bx, by);
+        ui.DragPoint.ShouldBe(new PointInt(bx, by));
+
+        ui.HandlePointerMove(799, 799); // off the board and off the bin
+        ui.DragPoint.ShouldBe(new PointInt(799, 799), "the ghost never hides while a piece is in hand");
+    }
+
+    /// <summary>
+    /// What lights up is what will happen: the bin's lit state runs the SAME predicate the release
+    /// does, so it can never promise a drop the release then declines (or stay dark through one it
+    /// accepts).
+    /// </summary>
+    [Fact]
+    public void BinLitState_TracksExactlyWhatAReleaseWouldDo()
+    {
+        var ui = SetupUI(new Game());
+
+        var (dx, dy) = Centre(ui, D2);
+        ui.HandleMouseDown(dx, dy);
+
+        var (bx, by) = BinPoint(ui);
+        ui.HandlePointerMove(bx, by);
+        ui.IsOverBin(bx, by).ShouldBeTrue();
+
+        var (ox, oy) = Centre(ui, D5);
+        ui.HandlePointerMove(ox, oy);
+        ui.IsOverBin(ox, oy).ShouldBeFalse("a playing square is not the bin");
+    }
+
+    /// <summary>Crossing the bin's edge repaints the frame: the lit state is a property of the POINTER,
+    /// so the ghost's own footprints do not describe the region that has to change.</summary>
+    [Fact]
+    public void HandlePointerMove_CrossingTheBinEdge_ReportsAFullRepaint()
+    {
+        var ui = SetupUI(new Game());
+
+        var (dx, dy) = Centre(ui, D2);
+        ui.HandleMouseDown(dx, dy);
+        ui.HandlePointerMove(dx, dy);
+
+        var (bx, by) = BinPoint(ui);
+        var (response, clips) = ui.HandlePointerMove(bx, by);
+
+        response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
+        clips.ShouldBeEmpty();
+    }
+
+    /// <summary>A point inside the board's content box that is NOT a playing square and NOT the bin —
+    /// i.e. one of the coordinate-label margins.</summary>
+    private static (int X, int Y) LabelPoint(GameUI ui)
+    {
+        var content = ui.ContentRect;
+        for (var y = (int)content.UpperLeft.Y; y < (int)content.LowerRight.Y; y++)
+            for (var x = (int)content.UpperLeft.X; x < (int)content.LowerRight.X; x++)
+                if (ui.FindSelected(x, y) is null && !ui.IsOverBin(x, y))
+                    return (x, y);
+
+        throw new ShouldAssertException("no coordinate-label margin found inside the content box");
+    }
+
+    /// <summary>
+    /// The corridor between the board's edge and the bin is rank digits, not squares — and gating the
+    /// ghost on a playing SQUARE made it blink out right across the path every drag to the bin has to
+    /// take. The content box, which includes the label margins, is the honest test.
+    /// </summary>
+    [Fact]
+    public void HandlePointerMove_OverACoordinateLabel_KeepsTheGhostShowing()
+    {
+        var ui = SetupUI(new Game());
+
+        var (dx, dy) = Centre(ui, D2);
+        ui.HandleMouseDown(dx, dy);
+
+        var (lx, ly) = LabelPoint(ui);
+        ui.FindSelected(lx, ly).ShouldBeNull("the probe must not have landed on a playing square");
+
+        ui.HandlePointerMove(lx, ly);
+
+        ui.DragPoint.ShouldBe(new PointInt(lx, ly));
+    }
+
+    /// <summary>
+    /// A ghost over the bin has left the board, and the board's content rect is the only space GameUI
+    /// can describe damage in - so it reports no rects, which every host reads as "repaint the frame".
+    /// The terminal is the one that honours them, and a rect over the gutter would have it blit a band
+    /// of the BOARD to repair a smudge that is not on it.
+    /// </summary>
+    [Fact]
+    public void HandlePointerMove_OverTheBin_ReportsNoClipRectsSoTheHostRepaintsInFull()
+    {
+        var ui = SetupUI(new Game());
+
+        var (dx, dy) = Centre(ui, D2);
+        ui.HandleMouseDown(dx, dy);
+
+        var (bx, by) = BinPoint(ui);
+        var (response, clips) = ui.HandlePointerMove(bx, by);
+
+        response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
+        clips.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public void Resize_CarriesTheSetupStartBoardSoThePileSurvivesIt()
+    {
+        var game = new Game();
+        var ui = SetupUI(game);
+        ui.ClearSquare(A8);
+
+        var resized = ui.Resize(600, 900);
+
+        Removed(resized, Side.Black, PieceType.Rook).ShouldBe((byte)1,
+            "the snapshot the pile is measured against must cross a resize");
+    }
+
     [Fact]
     public void HandlePointerUp_WithNoPressBeforeIt_DoesNothing()
     {
@@ -1115,25 +1462,28 @@ public class GameUITests
         ui.GhostRect.ShouldNotBeNull();
     }
 
-    /// <summary>Off the board the ghost hides rather than being carried over the history panel and the
-    /// captured piles. The piece stays in hand, which is what a release out there already means.</summary>
+    /// <summary>
+    /// Off the board the ghost KEEPS following the pointer, and the piece stays in hand — which is
+    /// still what a release out there means. Hiding it was made to carry that meaning, and a piece that
+    /// blinks out is a bad way to say it: it reads as having dropped the thing you are still holding,
+    /// and it says nothing about the bin, the one off-board place a release DOES land. The bin lights
+    /// up instead, so the feedback sits on the target rather than on the piece.
+    /// </summary>
     [Fact]
-    public void HandlePointerMove_OffTheBoard_HidesTheGhostButKeepsThePieceInHand()
+    public void HandlePointerMove_OffTheBoard_KeepsTheGhostAndThePieceInHand()
     {
         var ui = SetupUI(new Game());
         PickUpOffCentre(ui, D2);
         var (dx, dy) = Centre(ui, D5);
         ui.HandlePointerMove(dx, dy);
-        var lastGhost = ui.GhostRect!.Value;
 
         var (response, clips) = ui.HandlePointerMove(0, 0);
 
         response.HasFlag(UIResponse.NeedsRefresh).ShouldBeTrue();
-        ui.GhostRect.ShouldBeNull();
+        ui.GhostRect.ShouldNotBeNull("the ghost follows the pointer wherever it goes");
+        ui.DragPoint.ShouldBe(new PointInt(0, 0));
         ui.PickedUp.ShouldBe(D2);
-        // The footprint it vacated, and the origin square whose dimming has just been undone.
-        clips.ShouldContain(lastGhost);
-        clips.ShouldContain(ui.SquareRect(D2));
+        clips.ShouldBeEmpty("damage outside the content box is reported as a full repaint");
     }
 
     /// <summary>
