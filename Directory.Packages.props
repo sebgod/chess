@@ -16,8 +16,12 @@
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.10" />
     <!-- LAN.Lib: the LAN peer discovery (UDP announce beacon + self-expiring peer table) that was
          extracted OUT of this repo's Chess.Net — chess is now a consumer, keeping only the
-         chess-specific TCP session layer on top. Same pin as tianwen's. -->
-    <PackageVersion Include="LAN.Lib" Version="1.2.*" />
+         chess-specific TCP session layer on top. Same pin as tianwen's — and here the MAJOR is
+         load-bearing, not just a number: 2.0 moved the discovery port off 52821 (it sat inside the
+         Windows dynamic range, where Hyper-V/WSL carve their exclusions, so bind failed WSAEACCES),
+         which means a 1.x node and a 2.0 node never see each other. Both ends of a LAN game must be
+         on the same major, so this pin and tianwen's move together or not at all. -->
+    <PackageVersion Include="LAN.Lib" Version="2.0.*" />
     <!-- SharpAstro.Png is a DIRECT reference (Chess.MCP renders board snapshots, Chess.Tests asserts on
          them) that ALSO arrives transitively under DIR.Lib via SharpAstro.Fonts, so its pin has to keep
          up with that transitive floor: a direct pin BELOW it is NU1605 "package downgrade", which this
