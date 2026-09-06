@@ -127,3 +127,24 @@ Steps:
    | # | Side | Mate in | Key Move | Sequence |
    |---|------|---------|----------|----------|
    Include UCI and algebraic notation, plus a brief explanation. Present all solutions together at the end.
+
+10. **If the `chess` MCP server is listed as failed at session start** (`CONNECTION_CLOSED`), it is almost
+    always a *build break*, not a flaky pipe — the server is `dotnet run --project Chess.MCP`, so a
+    compile/restore error surfaces only as a dead MCP server. Build it first: `dotnet build Chess.MCP -c Release`.
+    The recurring culprit is NU1605 on `SharpAstro.Png`, a DIRECT pin that must keep up with the
+    transitive floor under `DIR.Lib -> SharpAstro.Fonts` (see the comment on that pin in
+    `Directory.Packages.props`).
+
+    The harness cannot re-attach an MCP server mid-session, so after fixing the build **drive the
+    server yourself over stdio** rather than asking the user to restart. A ~50-line JSON-RPC client is
+    enough: spawn `Chess.MCP/bin/Release/net10.0/chess-mcp.exe`, send `initialize`, then the
+    `notifications/initialized` notification, then `tools/call` with `{"name": ..., "arguments": {...}}`;
+    each response is one JSON object per line on stdout. Tool names are the snake_case method names
+    (`solve_mate_in`, `render_board_png`, `render_sequence`, `play_moves`).
+
+11. **Pass `sideToMove` to `render_board_png`.** A placement-only FEN does not carry it, and the
+    parameter decides check/checkmate detection *and* the game-over banner. It matters most on the
+    closing "mate executed" frame: get it wrong and the frame either draws no banner at all (the
+    mated side never gets evaluated) or captions the wrong winner. `play_moves` reports the final
+    position's side on a `Side to move: <White|Black>` line — read it back from there instead of
+    inferring it from the ply count.
