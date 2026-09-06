@@ -28,8 +28,11 @@
          repo treats as an error. It was 3.8.* and the local-sibling chain had moved to
          SharpAstro.Png >= 3.11, so `dotnet build` failed to restore Chess.MCP and Chess.Tests while
          `-p:UseLocalSiblings=false` stayed green — the mirror image of the usual masking, siblings AHEAD
-         of the pins rather than behind them. Second-order pins are part of a repin, not an afterthought. -->
-    <PackageVersion Include="SharpAstro.Png" Version="3.11.*" />
+         of the pins rather than behind them. Second-order pins are part of a repin, not an afterthought.
+         It recurred verbatim on the DIR.Lib 8.13 repin: SharpAstro.Fonts moved its floor to 3.14, the pin
+         stayed at 3.11, and NU1605 took out Chess.MCP — which is the chess MCP server, so the failure
+         surfaced as "MCP server chess: Connection closed" rather than as a build error. 3.11.* -> 3.14.*. -->
+    <PackageVersion Include="SharpAstro.Png" Version="3.14.*" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.8.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <!-- Browser automation for Chess.Web.E2E.Tests. That project stays OUT of Chess.sln on purpose
