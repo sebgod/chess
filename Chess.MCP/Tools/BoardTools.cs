@@ -43,7 +43,8 @@ public class BoardTools
         [Description("Optional UCI move arrow overlay (e.g. 'e2e4'). For multiple arrows, use 'moves' instead.")] string? move = null,
         [Description("Optional comma-separated UCI move list to overlay multiple arrows on a single board (e.g. 'e2e4,e7e5,g1f3'). Mutually exclusive with 'move'; if both are given, 'moves' wins.")] string? moves = null,
         [Description("Optional file path to save the PNG to disk")] string? savePath = null,
-        [Description("Optional annotation text. When omitted and a move is given, defaults to SAN (e.g. 'Bd5#').")] string? annotation = null)
+        [Description("Optional annotation text. When omitted and a move is given, defaults to SAN (e.g. 'Bd5#').")] string? annotation = null,
+        [Description("Side to move in this position: 'white' or 'black' (default 'white'). Decides check/checkmate detection and the game-over banner.")] string sideToMove = "white")
     {
         var board = ParseBoard(fen);
         var moveList = ParseUciList(moves) ?? (string.IsNullOrWhiteSpace(move) ? [] : [UciMove.Parse(move)]);
@@ -54,7 +55,7 @@ public class BoardTools
             resolvedAnnotation = BuildSequenceAnnotation(board, moveList);
         }
 
-        var png = RenderToPng(board, size, moveList, resolvedAnnotation);
+        var png = RenderToPng(board, size, moveList, resolvedAnnotation, ParseSide(sideToMove));
 
         if (!string.IsNullOrWhiteSpace(savePath))
         {
@@ -108,7 +109,7 @@ public class BoardTools
                 ? moveLabel
                 : $"{annotationPrefix} - {moveLabel}";
 
-            var png = RenderToPng(current, size, [action], fullAnnotation);
+            var png = RenderToPng(current, size, [action], fullAnnotation, currentSide);
             System.IO.File.WriteAllBytes(filePath, png);
 
             entries.Add(new SequenceEntry(i + 1, filePath, san, fenBefore));
@@ -156,9 +157,12 @@ public class BoardTools
         return sb.ToString();
     }
 
-    private static byte[] RenderToPng(Board board, uint size, IReadOnlyList<Action> moveList, string? annotation)
+    private static byte[] RenderToPng(Board board, uint size, IReadOnlyList<Action> moveList, string? annotation, Side sideToMove)
     {
-        var game = new Game(board, Side.White, []);
+        // The side to move is not recoverable from a placement-only FEN, so it has to be passed in:
+        // hardcoding White meant a position where BLACK stood mated was evaluated for White, found
+        // no mate, and drew no game-over banner at all.
+        var game = new Game(board, sideToMove, []);
 
         var hasAnnotation = !string.IsNullOrWhiteSpace(annotation);
         var annotationHeight = hasAnnotation ? (uint)(size * 0.07f) : 0u;

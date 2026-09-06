@@ -21,8 +21,15 @@ public class Game
     {
         _plies = plies;
         _board = board;
-        _currentSide = side;
         _gameStatus = board.DetermineGameResult(plies, side);
+        // `side` is the side TO MOVE, but TryMove deliberately leaves _currentSide on the MOVER
+        // when a move mates, which is the convention Winner reads. Without normalising here, a Game
+        // built straight from a terminal position -- a FEN, not a replay -- reported the MATED side
+        // as the winner, so a rendered mate frame captioned "Checkmate. White wins." over a board
+        // where White had just been mated. Only Checkmate is flipped: TryMove maps stalemate to
+        // Side.None, but a half-placed Setup board legitimately evaluates as stalemate too, and
+        // blanking its current side would break setup mode (see OnSetupBoardChanged).
+        _currentSide = _gameStatus is GameStatus.Checkmate ? side.ToOpposite() : side;
         _boardHistory.Add(_board);
     }
 
