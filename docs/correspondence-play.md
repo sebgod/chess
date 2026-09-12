@@ -570,7 +570,7 @@ that no one later reaches for a server-side "anti-cheat" that this architecture 
 
 | Phase | Scope | Where | Status |
 |---|---|---|---|
-| 1 | **Link play in the GUI**, end to end and with no new plumbing: `args` on `Program.cs`, `StartupWizardOptions.LinkPlay` on `VkStartupMenu`, paste-a-link (Ctrl+V, `SDL.GetClipboardText`), the turn semantics above, and "copy reply link" (Ctrl+L, `SDL.SetClipboardText`) | chess | **Code complete, awaiting live verification** — see below |
+| 1 | **Link play in the GUI**, end to end and with no new plumbing: `args` on `Program.cs`, `StartupWizardOptions.LinkPlay` on `VkStartupMenu`, paste-a-link (Ctrl+V, `SDL.GetClipboardText`), the turn semantics above, and "copy reply link" (Ctrl+L, `SDL.SetClipboardText`) | chess | **Done** — live-verified, see below |
 | 2 | **The spine:** multi-slot `GameStore` (inbox) + a "your move" list + the per-iteration drain in `CheckNeedsRedraw` with a `RequestRedraw()` poke | chess | Not started |
 | 3 | **Cloud courier, desktop:** RTDB over REST + SSE (no new package), anonymous auth, the schema and rules above, `ILobby` extraction + `CloudLobby`/`CloudPlayStack`, `ILanConnection` rename | chess | Not started |
 | 4 | **Cloud courier, browser:** the same client if REST + SSE works under WASM, otherwise the Firebase JS SDK via `[JSImport]`; lobby UI in `Play.razor`; the README wording | chess | Not started |
@@ -586,13 +586,19 @@ wizard entry; a link on argv skipping the wizard; and Ctrl+L / Ctrl+V. No engine
 a link game, and `Continue` resumes one for free because `GameStore` already persists the mode and the
 correspondent's colour.
 
-**What is NOT verified: any of it on screen.** The GUI launches clean on every path, and the session
-behaviour is unit-tested, but the board orientation, the lock and the two clipboard keys have not been
-watched in a running window. The SDL debug inspector needs a **Debug** build against **local siblings**,
-and the local `SdlVulkan.Renderer` working copy is at an unreleased 7.33 whose `SdlEventLoop.OnKeyDown`
-has collapsed to a single `InputEvent.KeyDown` — so local builds fail while CI, pinned to `7.30.*`,
-stays green. Releasing 7.33, repinning, and migrating the call site is what unblocks the verification;
-it cannot be done in the other order, because migrating first breaks CI against the old pin.
+**Verified in a running window**, driven through the SDL debug inspector: a link on argv opens straight
+into the game with no wizard (`screen=game`, `plyCount=3`), the board is flipped to the local player's
+side, the one local move commits (ply 4), a move for the *other* colour is refused with the ply count
+unmoved — the correspondence gate doing its whole job — Ctrl+L puts
+`https://sebgod.github.io/chess/#g=e2e4.e7e5.g1f3.b8c6` on the clipboard (the web URL, so a recipient
+with nothing installed can still play it), and Ctrl+V takes the correspondent's reply and continues the
+game at ply 5 with the gate re-armed.
+
+That verification was blocked for most of its development: the SDL inspector needs a **Debug** build
+against **local siblings**, and the sibling renderer's unreleased `OnKeyDown` change broke exactly that
+build while CI, pinned lower, stayed green. Releasing the sibling set onto DIR.Lib 8.19 is what
+unblocked it — which is a fair warning that "CI is green" and "the thing can be looked at" are
+different claims.
 
 **Everything after phase 1 is reach.** That ordering is deliberate and worth
 defending: a link pasted into the app is already the whole of correspondence play, and it needs no
