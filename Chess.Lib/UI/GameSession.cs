@@ -85,6 +85,7 @@ public sealed class GameSession
     private Board _initialBoard;
     private string? _initialFen;
     private bool _flipForLocalSide;
+    private Side _localSide;
 
     private GameSession(
         IGameDisplay display,
@@ -106,6 +107,27 @@ public sealed class GameSession
 
     /// <summary>The live game. Replaced by the setup transition and by <see cref="ResetAsync"/>.</summary>
     public Game Game => _game;
+
+    /// <summary>
+    /// The colour played at THIS device. Only meaningful for <see cref="GameMode.PlayByLink"/>, where
+    /// there is no opponent object to infer it from and the host needs it to caption the game and to
+    /// decide when the reply link is ready; <see cref="Side.None"/> for every other mode, whose local
+    /// side is already implied by the opponent's colour.
+    /// </summary>
+    public Side LocalSide => _localSide;
+
+    /// <summary>
+    /// The correspondent's colour for a game that just arrived in a link — the value to pass as
+    /// <c>computerSide</c> when building the session for it.
+    ///
+    /// <para>This is half of the one rule link play has: <b>receiving a link means it is your
+    /// turn</b>, so the local player is whoever is to move in the decoded position and the
+    /// correspondent is the other colour. It lives here, rather than in each host, because three
+    /// front-ends consume links and a rule re-typed per front-end is a rule that drifts — the same
+    /// reason <see cref="StartupWizard"/> owns the menu order.</para>
+    /// </summary>
+    public static Side CorrespondentSideFor(Game received) =>
+        received.CurrentSide == Side.White ? Side.Black : Side.White;
 
     /// <summary>
     /// The current UI. Always read through the display and never cached — a resize rebuilds
@@ -260,6 +282,19 @@ public sealed class GameSession
         // computerSide is the opponent's colour, so the local human is the opposite — flip exactly
         // when the opponent plays White. Ctrl+F still overrides at runtime.
         _flipForLocalSide = _opponent is not null && _computerSide is Side.White;
+
+        // Play by Link has no opponent object at all — the correspondent's reply arrives as a new
+        // link, which the host decodes into a NEW session rather than feeding to a player here. So the
+        // two things an opponent would otherwise have settled have to be settled explicitly: which
+        // colour is local (ComputerSide carries the correspondent's, from the wizard's PlayAs step),
+        // and the one-local-move gate that stops this device from playing both sides.
+        if (_gameMode is GameMode.PlayByLink)
+        {
+            _localSide = _computerSide is Side.White ? Side.Black : Side.White;
+            _flipForLocalSide = _localSide is Side.Black;
+            ArmLinkTurnGate();
+        }
+
         UI.FlipBoard = _flipForLocalSide;
 
         _phase = Phase.Playing;
@@ -365,6 +400,23 @@ public sealed class GameSession
     }
 
     /// <summary>
+    /// Locks the board to the local colour for link play — the turn gate that makes a correspondence
+    /// game a correspondence game: one local move, then nothing until the correspondent's link comes
+    /// back. A no-op in every other mode, where turns are gated by there being another player.
+    ///
+    /// <para>Deliberately NOT the LAN turn gate: a live peer is an <c>IGamePlayer</c> that simply
+    /// declines to move off-turn, so LAN needs no lock. Generalising the two would let a LAN game
+    /// refuse input whenever a packet was in flight.</para>
+    /// </summary>
+    private void ArmLinkTurnGate()
+    {
+        if (_gameMode is GameMode.PlayByLink)
+        {
+            UI.MoveLockSide = _localSide;
+        }
+    }
+
+    /// <summary>
     /// Starts the game over from the baseline this session began at, and tells the opponent. The
     /// driver renders afterwards.
     /// </summary>
@@ -372,7 +424,8 @@ public sealed class GameSession
     {
         _game = _initialFen is null ? new Game() : new Game(_initialBoard, _sideToMove, []);
         _display.ResetGame(_game);
-        UI.FlipBoard = _flipForLocalSide; // ResetGame builds a fresh GameUI
+        UI.FlipBoard = _flipForLocalSide; // ResetGame builds a fresh GameUI — and so does the gate below
+        ArmLinkTurnGate();
 
         if (_opponent is IEngineBasedPlayer engineBased)
         {

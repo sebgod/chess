@@ -361,4 +361,122 @@ public sealed class GameSessionTests
 
         await Should.ThrowAsync<InvalidOperationException>(() => session.StartAsync(TimeProvider.System));
     }
+
+    // ── Play by Link ───────────────────────────────────
+
+    private static GameSession StartLinkSession(FakeDisplay display, Side correspondentSide, Game? resume = null)
+    {
+        var session = GameSession.Create(
+            display, GameMode.PlayByLink, correspondentSide, Side.White,
+            () => new ScriptedPlayer(), resumeGame: resume);
+        session.Start(TimeProvider.System);
+        return session;
+    }
+
+    [Theory]
+    [InlineData(Side.Black, Side.White)] // correspondent plays Black -> we are White
+    [InlineData(Side.White, Side.Black)]
+    public void LinkPlay_LocksTheBoardToTheLocalColour(Side correspondentSide, Side expectedLocal)
+    {
+        var display = new FakeDisplay();
+
+        var session = StartLinkSession(display, correspondentSide);
+
+        session.LocalSide.ShouldBe(expectedLocal);
+        session.UI.MoveLockSide.ShouldBe(expectedLocal);
+    }
+
+    [Theory]
+    [InlineData(Side.Black, false)] // we are White -> White at the bottom, no flip
+    [InlineData(Side.White, true)]
+    public void LinkPlay_OrientsTheBoardToTheLocalPlayer(Side correspondentSide, bool expectFlipped)
+    {
+        var display = new FakeDisplay();
+
+        var session = StartLinkSession(display, correspondentSide);
+
+        session.UI.FlipBoard.ShouldBe(expectFlipped);
+    }
+
+    [Fact]
+    public void LinkPlay_HasNoOpponentToWaitFor()
+    {
+        // The correspondent is not a player object — their reply arrives as a new link. If this ever
+        // reported true a driver would paint "thinking…" forever.
+        var display = new FakeDisplay();
+
+        StartLinkSession(display, Side.Black).IsEngineTurn.ShouldBeFalse();
+    }
+
+    [Fact]
+    public void LinkPlay_AfterTheLocalMove_TheBoardIsLockedAgainstPlayingBothSides()
+    {
+        // The whole of correspondence play: one local ply, then nothing until the reply link. The
+        // lock is what stops a hot-seat game breaking out.
+        var display = new FakeDisplay();
+        var session = StartLinkSession(display, Side.Black); // we are White
+
+        session.UI.TryPerformAction(DoMove(E2, E4)).Response.HasFlag(UIResponse.IsUpdate).ShouldBeTrue();
+
+        session.Game.PlyCount.ShouldBe(1);
+        session.Game.CurrentSide.ShouldBe(Side.Black);   // the correspondent's turn now
+        session.UI.MoveLockSide.ShouldBe(Side.White);    // … and we are still locked to White
+        session.UI.TryPerformAction(DoMove(E7, E5)).Response.HasFlag(UIResponse.IsUpdate).ShouldBeFalse();
+        session.Game.PlyCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public void CorrespondentSideFor_ReceivingALinkMeansItIsYourTurn()
+    {
+        // The rule stated once: the receiver plays whoever is to move in the decoded position.
+        var afterWhiteOpened = new Game();
+        afterWhiteOpened.TryMove(DoMove(E2, E4)).IsMoveOrCapture().ShouldBeTrue();
+
+        GameSession.CorrespondentSideFor(new Game()).ShouldBe(Side.Black);       // fresh: we are White
+        GameSession.CorrespondentSideFor(afterWhiteOpened).ShouldBe(Side.White); // 1 ply: we are Black
+    }
+
+    [Fact]
+    public void LinkPlay_ResumedFromAReceivedLink_LocksToTheSideToMove()
+    {
+        // The host's real path: decode a link, ask who the correspondent is, build the session.
+        var received = new Game();
+        received.TryMove(DoMove(E2, E4)).IsMoveOrCapture().ShouldBeTrue();
+        var display = new FakeDisplay();
+
+        var session = StartLinkSession(display, GameSession.CorrespondentSideFor(received), received);
+
+        session.LocalSide.ShouldBe(Side.Black);
+        session.UI.MoveLockSide.ShouldBe(Side.Black);
+        session.UI.FlipBoard.ShouldBeTrue();
+        session.Game.PlyCount.ShouldBe(1);
+    }
+
+    [Fact]
+    public async Task LinkPlay_Reset_ReArmsTheLockOnTheFreshGameUI()
+    {
+        // ResetGame builds a NEW GameUI, so a gate armed on the old one would be silently lost and
+        // the game would quietly become hot-seat.
+        var display = new FakeDisplay();
+        var session = StartLinkSession(display, Side.White); // we are Black
+
+        await session.ResetAsync(TestContext.Current.CancellationToken);
+
+        session.UI.MoveLockSide.ShouldBe(Side.Black);
+        session.UI.FlipBoard.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void NonLinkModes_LeaveTheBoardUnlocked()
+    {
+        // The gate is link-only: a LAN peer declines to move off-turn by itself, and locking a
+        // hot-seat game would make it unplayable.
+        var display = new FakeDisplay();
+        var session = GameSession.Create(
+            display, GameMode.PlayerVsPlayer, Side.None, Side.White, () => new ScriptedPlayer());
+        session.Start(TimeProvider.System);
+
+        session.UI.MoveLockSide.ShouldBeNull();
+        session.LocalSide.ShouldBe(Side.None);
+    }
 }

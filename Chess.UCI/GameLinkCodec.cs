@@ -51,17 +51,81 @@ public static class GameLinkCodec
     }
 
     /// <summary>
+    /// Reduces whatever shape a link arrived in to the body <see cref="TryDecode"/> parses. A game
+    /// can reach a desktop app as a page URL (<c>https://…/chess/#g=e2e4</c>), as a custom-scheme URL
+    /// (<c>chess://play?g=e2e4</c>), or as a bare body somebody pasted out of the middle of one —
+    /// and all three are the same grammar, because the fragment body is already '&amp;'-separated
+    /// <c>key=value</c> pairs with the leading '#' optional. A query string is that same grammar
+    /// after a different delimiter, so the whole difference between the three is where the body
+    /// starts.
+    ///
+    /// <para>Fragment wins over query, as in any URL: <c>chess://play?x=1#g=e2e4</c> is a link to the
+    /// game in its fragment. Surrounding whitespace goes, because a link pasted from a chat client or
+    /// handed over on a command line routinely carries a newline or a stray space.</para>
+    ///
+    /// <para>This exists so no front-end grows its own parser. <see cref="TryDecode"/> calls it, so
+    /// every caller may hand it a whole URL; it is public because a host also needs to ask
+    /// "<em>is</em> this argument a link?" before deciding to skip its startup wizard.</para>
+    /// </summary>
+    public static string ExtractBody(string? received)
+    {
+        if (string.IsNullOrWhiteSpace(received)) return "";
+
+        var text = received.Trim();
+
+        var hash = text.IndexOf('#');
+        if (hash >= 0) return text[(hash + 1)..];
+
+        var query = text.IndexOf('?');
+        if (query >= 0) return text[(query + 1)..];
+
+        return text;
+    }
+
+    /// <summary>
     /// Parses a URL fragment (leading '#' optional) and replays it into a fresh standard-start
     /// <see cref="Game"/>, validating every move: <see cref="UciMove.Parse"/> then
     /// <see cref="Game.TryMove"/>, aborting on the first token that doesn't parse or isn't legal
     /// in the position reached so far.
     /// </summary>
+    /// <summary>
+    /// True when <paramref name="candidate"/> <em>continues</em> <paramref name="current"/> rather
+    /// than being some other game: every ply already played matches, and the candidate is at least as
+    /// long. This is how a host tells "my opponent's reply" from "a different game someone sent me",
+    /// which is the difference between quietly updating the board and throwing away a game in
+    /// progress.
+    ///
+    /// <para>Comparing decoded move lists rather than the encoded strings is deliberate. A string
+    /// prefix test looks equivalent, but it compares an <em>encoding</em>: it is sensitive to the
+    /// variable-length promotion token (<c>"e7e8"</c> is a string prefix of <c>"e7e8q"</c>) and to
+    /// the <c>'&amp;'</c>-separated params the format reserves for forward compatibility, neither of
+    /// which is the game. Comparing plies cannot be broken by a change to how links are written.</para>
+    ///
+    /// <para>This is the local half of the same rule the cloud courier enforces server-side as an
+    /// append-only history — one policy, two couriers.</para>
+    /// </summary>
+    public static bool IsContinuationOf(Game current, Game candidate)
+    {
+        if (candidate.PlyCount < current.PlyCount) return false;
+
+        string[] played = UciMove.FormatMoves(current), incoming = UciMove.FormatMoves(candidate);
+
+        for (var i = 0; i < played.Length; i++)
+        {
+            if (played[i] != incoming[i]) return false;
+        }
+
+        return true;
+    }
+
     public static GameLinkResult TryDecode(string fragment, out Game? game, out string? error)
     {
         game = null;
         error = null;
 
-        var body = fragment.StartsWith('#') ? fragment[1..] : fragment;
+        // One reduction for every shape a link can arrive in (see ExtractBody) — a plain
+        // '#g=…' fragment is simply the case where there is nothing to strip.
+        var body = ExtractBody(fragment);
         string? movesPart = null;
 
         foreach (var pair in body.Split(ParamSeparator, StringSplitOptions.RemoveEmptyEntries))

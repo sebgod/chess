@@ -204,4 +204,155 @@ public class GameLinkCodecTests
         error.ShouldNotBeNull();
         error.ShouldContain("too many");
     }
+
+    // ── Payload reduction (ExtractBody) ────────────────────────
+
+    [Theory]
+    [InlineData("https://sebgod.github.io/chess/#g=e2e4.e7e5")] // shared page URL
+    [InlineData("chess://play?g=e2e4.e7e5")]                    // custom scheme
+    [InlineData("#g=e2e4.e7e5")]                                // bare fragment
+    [InlineData("g=e2e4.e7e5")]                                 // bare body
+    public void ExtractBody_EveryShapeAGameCanArriveIn_ReducesToTheSameBody(string received)
+    {
+        GameLinkCodec.ExtractBody(received).ShouldBe("g=e2e4.e7e5");
+    }
+
+    [Theory]
+    [InlineData("https://sebgod.github.io/chess/#g=e2e4.e7e5")]
+    [InlineData("chess://play?g=e2e4.e7e5")]
+    [InlineData("#g=e2e4.e7e5")]
+    [InlineData("g=e2e4.e7e5")]
+    public void TryDecode_AcceptsEveryShapeDirectly_AndReplaysTheSameGame(string received)
+    {
+        // The point of the reduction living inside TryDecode: a host hands over whatever it was
+        // given — argv, a clipboard paste, a URL scheme payload — and never writes a parser.
+        var result = GameLinkCodec.TryDecode(received, out var game, out var error);
+
+        result.ShouldBe(GameLinkResult.Ok, error);
+        game.ShouldNotBeNull();
+        game.PlyCount.ShouldBe(2);
+        GameLinkCodec.EncodeFragment(game).ShouldBe("#g=e2e4.e7e5");
+    }
+
+    [Fact]
+    public void ExtractBody_FragmentWinsOverQuery()
+    {
+        // Standard URL semantics: the game lives in the fragment, so a link carrying both is a
+        // link to what its fragment says — never a merge of the two.
+        GameLinkCodec.ExtractBody("chess://play?g=e2e4#g=d2d4").ShouldBe("g=d2d4");
+    }
+
+    [Theory]
+    [InlineData("  #g=e2e4  ")]
+    [InlineData("\n#g=e2e4\n")]
+    [InlineData("\t https://sebgod.github.io/chess/#g=e2e4 \r\n")]
+    public void ExtractBody_TrimsSurroundingWhitespace(string received)
+    {
+        // A link pasted out of a chat client or handed over on a command line routinely carries a
+        // trailing newline; without the trim the last move token would fail to parse.
+        GameLinkCodec.ExtractBody(received).ShouldBe("g=e2e4");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ExtractBody_NothingReceived_ReturnsEmptyWhichDecodesAsNoLink(string? received)
+    {
+        // A bare launch (no argv, empty clipboard) must reach the wizard, not an error.
+        GameLinkCodec.ExtractBody(received).ShouldBe("");
+        GameLinkCodec.TryDecode(GameLinkCodec.ExtractBody(received), out _, out _)
+            .ShouldBe(GameLinkResult.NoLink);
+    }
+
+    [Fact]
+    public void TryDecode_UrlWithNoGameKey_IsNoLinkNotInvalid()
+    {
+        // Launching with some unrelated argument must fall through to the normal startup flow
+        // silently — it is not a malformed link, it is not a link.
+        GameLinkCodec.TryDecode("https://sebgod.github.io/chess/", out var game, out var error)
+            .ShouldBe(GameLinkResult.NoLink);
+
+        game.ShouldBeNull();
+        error.ShouldBeNull();
+    }
+
+    // ── Continuation vs a different game ────────────────────
+
+    [Fact]
+    public void IsContinuationOf_TheOpponentsReply_IsAContinuation()
+    {
+        var mine = PlayMoves(DoMove(E2, E4));
+        var theirReply = PlayMoves(DoMove(E2, E4), DoMove(E7, E5));
+
+        GameLinkCodec.IsContinuationOf(mine, theirReply).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void IsContinuationOf_TheSameGame_IsAContinuation()
+    {
+        // Re-pasting the link you already have must not read as "a different game" and cost
+        // somebody their board.
+        var game = PlayMoves(DoMove(E2, E4), DoMove(E7, E5));
+
+        GameLinkCodec.IsContinuationOf(game, PlayMoves(DoMove(E2, E4), DoMove(E7, E5))).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void IsContinuationOf_AFreshGame_ContinuesIntoAnything()
+    {
+        GameLinkCodec.IsContinuationOf(new Game(), PlayMoves(DoMove(D2, D4))).ShouldBeTrue();
+    }
+
+    [Fact]
+    public void IsContinuationOf_ADivergentLine_IsNot()
+    {
+        var mine = PlayMoves(DoMove(E2, E4), DoMove(E7, E5));
+        var other = PlayMoves(DoMove(E2, E4), DoMove(C7, C5));
+
+        GameLinkCodec.IsContinuationOf(mine, other).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void IsContinuationOf_AShorterGame_IsNot()
+    {
+        // A rolled-back history is not a reply. (Server-side the cloud courier refuses this with an
+        // append-only rule; this is the same policy, client side.)
+        var mine = PlayMoves(DoMove(E2, E4), DoMove(E7, E5));
+
+        GameLinkCodec.IsContinuationOf(mine, PlayMoves(DoMove(E2, E4))).ShouldBeFalse();
+    }
+
+    [Fact]
+    public void IsContinuationOf_HandlesTheVariableLengthPromotionToken()
+    {
+        // Promotions are where a naive string-prefix test comes closest to breaking, because a
+        // promotion token is 5 characters where every other move is 4 ("e7e8" is a string prefix of
+        // "e7e8q"). Chess itself keeps that from becoming a wrong answer here — from one position the
+        // piece on e7 is either a pawn that must promote or something that cannot — so this is a
+        // regression guard, not a demonstration of a live bug.
+        //
+        // The reason to compare decoded plies anyway is stronger than any single case: a string test
+        // compares an ENCODING, and the encoding carries things that are not the game (the '&'
+        // key=value params reserved for forward compatibility), so it can be made to answer wrongly
+        // by a change that has nothing to do with the moves.
+        var pushed = PlayMoves(
+            DoMove(A2, A4), DoMove(B7, B5),
+            DoMove(A4, B5), DoMove(B8, C6),
+            DoMove(B5, B6), DoMove(H7, H6),
+            DoMove(B6, B7), DoMove(H6, H5));
+
+        var promoted = PlayMoves(
+            DoMove(A2, A4), DoMove(B7, B5),
+            DoMove(A4, B5), DoMove(B8, C6),
+            DoMove(B5, B6), DoMove(H7, H6),
+            DoMove(B6, B7), DoMove(H6, H5),
+            Promote(B7, A8, PieceType.Queen));
+
+        // Here both tests agree, and should: the promotion genuinely does extend that line.
+        GameLinkCodec.IsContinuationOf(pushed, promoted).ShouldBeTrue();
+
+        // The trap bites the other way round: a bare push is NOT a continuation of the promotion.
+        GameLinkCodec.IsContinuationOf(promoted, pushed).ShouldBeFalse();
+    }
 }
