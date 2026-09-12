@@ -1,6 +1,6 @@
 # Design: Correspondence play — the link courier, then the cloud courier
 
-**Status:** Phases 1 and 2 **done and live-verified in a running window**. Phase 3's backend is **live and verified end to end** — europe-west1 instance, deployed rules, anonymous auth — with its client not yet written; phases 4-5 not started. The cloud courier is **the browser first, then Android** (see [Scope](#scope-the-browser-first-then-android)) — the native half puts back the `ILobby` extraction and the second API key that a browser-only scope had struck out. See [Phasing](#phasing). **Repo scope:** almost entirely **chess**; one
+**Status:** Phases 1 and 2 **done and live-verified in a running window**. Phase 3's backend is **live and verified end to end** — europe-west1 instance, deployed rules, anonymous auth — and its browser client has a **walking skeleton passing against the emulator** (anonymous auth, seat claim, turn gate and push, in two browser contexts) plus config plumbing in CI; what is not written is the wiring into `Play.razor`; phases 4-5 not started. The cloud courier is **the browser first, then Android** (see [Scope](#scope-the-browser-first-then-android)) — the native half puts back the `ILobby` extraction and the second API key that a browser-only scope had struck out. See [Phasing](#phasing). **Repo scope:** almost entirely **chess**; one
 *optional* sibling cleanup is called out as the last phase and nothing here is blocked on a sibling
 release. Both capabilities the link half leans on already ship and are already in chess's package
 graph as of the DIR.Lib 8.8 repin: `SharpAstro.AppShell`'s `InstanceGate` (arrives transitively under
@@ -770,7 +770,7 @@ that no one later reaches for a server-side "anti-cheat" that this architecture 
 |---|---|---|---|
 | 1 | **Link play in the GUI**, end to end and with no new plumbing: `args` on `Program.cs`, `StartupWizardOptions.LinkPlay` on `VkStartupMenu`, paste-a-link (Ctrl+V, `SDL.GetClipboardText`), the turn semantics above, and "copy reply link" (Ctrl+L, `SDL.SetClipboardText`) | chess | **Done** — live-verified, see below |
 | 2 | **The inbox:** multi-slot store (`GameInbox`) + a "your move" list + staleness, and the GUI picker over it | chess | **Done** — live-verified |
-| 3a | **Cloud courier in the browser:** Firebase JS SDK via `[JSImport]`, anonymous auth, the schema and rules above, lobby UI in `Play.razor`, the README wording | chess | Backend live and verified; client not started |
+| 3a | **Cloud courier in the browser:** Firebase JS SDK via `[JSImport]`, anonymous auth, the schema and rules above, lobby UI in `Play.razor`, the README wording | chess | Backend live; `wwwroot/js/firebase-cloud.js` + walking skeleton passing (emulator); `Play.razor` not wired |
 | 3b | **Cloud courier on Android:** REST + SSE in `Chess.Net`, the `ILobby` extraction + `ISessionConnection` rename, a second API key with no referrer restriction, a cloud lobby beside the LAN one in `MainActivity` | chess | Not started |
 | 4 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, building or reusing the drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | Not started |
 | 5 | *Optional cleanup:* a public, non-`DEBUG` per-iteration hook on `SdlEventLoop` so the drain stops living in a side-effecting predicate | SdlVulkan.Renderer | Not started |
@@ -891,7 +891,26 @@ exempt, and Chess.Droid is not distributed through Play).
   by one harness.
 - **The append-only rule deserves one test against a real database**, because it is the only piece of
   logic that does not live in this repository. The Firebase emulator runs locally and free; a rules
-  test asserting that a truncating write is rejected is worth more than any amount of client-side care.
+  test asserting that a truncating write is rejected is worth more than any amount of client-side
+  care. **Built and passing:** `firebase/rules.test.mjs`, 22 tests, `npm test` from `firebase/`.
+- **The walking skeleton is a checked-in check, not a one-off.** `firebase/cloud-check.html` is two
+  tabs and one game with no Blazor in the way; `firebase/cloud-check.cjs` drives it in two browser
+  contexts and asserts the ply arrives in the other one (`npm run check:cloud`, which starts the
+  emulators and serves the repo itself). It proves what the rules tests cannot: that the real SDK,
+  real anonymous auth and real push work from browser code, through the same
+  `wwwroot/js/firebase-cloud.js` the app will use.
+
+  Two traps it caught immediately, both of which would have been read as bugs in the app later:
+
+  - **Two tabs are one player.** Anonymous sign-in is persisted per origin, so the second tab is the
+    same uid and simply takes both seats. That still shows push working, and proves nothing about
+    rules that are entirely about who you are. Two *storage contexts* are needed — a private window
+    by hand, `browser.newContext()` under Playwright.
+  - **A `databaseURL` pointing at the emulator's host:port silently uses the wrong database.** The
+    SDK takes the namespace from the URL's first label, so `127.0.0.1:9000` reads as namespace
+    `127`, which the emulator creates on demand **with default open rules** — every write succeeds
+    and nothing under test is exercised. Both clients "created" the same game before this was
+    caught. Use `connectDatabaseEmulator` and give the SDK a well-formed URL for the namespace.
 - **The hand-off and the minimized push** are integration tests, not unit tests: launch instance A,
   deliver a payload, assert A applied it. The SDL debug inspector can drive and screenshot A
   headlessly, which is what makes this testable at all — and it is the one test that would catch the

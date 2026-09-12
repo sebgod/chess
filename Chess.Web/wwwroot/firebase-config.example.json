@@ -1,0 +1,20 @@
+{
+  "_comment": [
+    "Copy this to firebase-config.json (gitignored) to enable cloud play locally. In CI the same",
+    "JSON comes from the FIREBASE_CONFIG repo secret. With no file, the cloud courier is disabled",
+    "and nothing is fetched -- link play, hot-seat and vs-computer are unaffected.",
+    "",
+    "Get the real values from the Firebase console: Project settings -> Your apps -> SDK setup",
+    "and configuration -> Config. The whole object is the secret, not just the apiKey: none of",
+    "these values is confidential (the database rules are the security boundary, not the key),",
+    "but keeping them out of the source tree is what stops a fork writing to our backend.",
+    "",
+    "Replace this file's contents entirely -- the keys below are the shape, not real values.",
+    "Delete this _comment key in the real file; unknown keys are handed straight to the SDK."
+  ],
+  "apiKey": "AIza...",
+  "authDomain": "your-project.firebaseapp.com",
+  "databaseURL": "https://your-project-default-rtdb.europe-west1.firebasedatabase.app",
+  "projectId": "your-project",
+  "appId": "1:000000000000:web:0000000000000000000000"
+}

@@ -84,6 +84,27 @@ jobs:
       - name: Publish Chess.Web (Release)
         run: dotnet publish Chess.Web/Chess.Web.csproj -c Release -o publish -p:UseLocalSiblings=false -p:RunAOTCompilation=true --nologo
 
+      # The cloud courier's config. It is a repo secret rather than a source file, and the reason
+      # is NOT that the values are confidential -- a Firebase web apiKey and database URL are public
+      # identifiers, and the security boundary is the database rules. It is that a FORK would
+      # otherwise inherit a working pointer at OUR backend and write to it by accident. Absent
+      # secret (every fork, every PR from one) = no file = cloud disabled, and the app still builds,
+      # deploys and plays: link play, hot-seat and vs-computer need nothing from this.
+      - name: Write the Firebase config (skipped when the secret is absent)
+        env:
+          FIREBASE_CONFIG: ${{ secrets.FIREBASE_CONFIG }}
+        run: |
+          set -euo pipefail
+          if [ -z "${FIREBASE_CONFIG}" ]; then
+            echo "FIREBASE_CONFIG not set — cloud play will be disabled in this build."
+            exit 0
+          fi
+          printf '%s' "${FIREBASE_CONFIG}" > publish/wwwroot/firebase-config.json
+          # Fail loudly on a malformed secret: a config that parses nowhere would otherwise show up
+          # as "cloud silently missing" on the live site, which reads as a code bug for hours.
+          python3 -c "import json,sys; json.load(open('publish/wwwroot/firebase-config.json'))"
+          echo "Firebase config written ($(wc -c < publish/wwwroot/firebase-config.json) bytes)."
+
       - name: Rewrite base href for the /chess/ project-site subpath
         run: |
           set -euo pipefail

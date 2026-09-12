@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Cloud courier — walking skeleton</title>
+<!--
+  Two tabs, one game, no Blazor. This is the walking skeleton the plan asks for: prove that
+  anonymous auth, the seat claim, the turn gate and PUSH all work from browser code against the
+  deployed rules, before any of it is wired into the app and a lobby is built on top of it.
+
+  It imports the very module the app will use (Chess.Web/wwwroot/js/firebase-cloud.js), so what it
+  proves is the real thing rather than a parallel implementation.
+
+  It is deliberately NOT in wwwroot: it would otherwise be published to the live site, and a page
+  that can write to the database has no business being there. Serve the repo root instead:
+
+      python -m http.server 8080            # from the repo root
+      open http://localhost:8080/firebase/cloud-check.html
+
+  Two players means two STORAGE contexts, not two tabs: anonymous auth is persisted per origin, so
+  a second tab in the same profile signs in as the same uid and takes both seats. Use a private
+  window for the second one. (The automated version of this check drives two Playwright browser
+  contexts for exactly that reason.)
+
+  Against the emulator (no secrets, no live project) -- two terminals:
+
+      PATH="/c/Program Files/Microsoft/jdk-25.0.2.10-hotspot/bin:$PATH" \
+        npx firebase emulators:start --project demo-chess --only database,auth
+      python -m http.server 8080
+
+  Against the LIVE project, drop the real config at Chess.Web/wwwroot/firebase-config.json (it is
+  gitignored) and reload; the page prefers it whenever it is present. `localhost:*` is already on
+  the browser key's referrer allow-list, so port 8080 is fine.
+-->
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 2rem; max-width: 44rem; }
+  h1 { font-size: 1.2rem; }
+  dt { font-weight: 600; float: left; width: 7rem; clear: left; }
+  dd { margin: 0 0 .25rem 7rem; font-family: ui-monospace, monospace; word-break: break-all; }
+  button { font: inherit; padding: .4rem .9rem; }
+  #log { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 12px;
+         background: #f4f4f4; padding: .75rem; margin-top: 1rem; max-height: 16rem; overflow: auto; }
+  .bad { color: #b00; }
+</style>
+
+<h1>Cloud courier — walking skeleton</h1>
+<p>Open this page in <strong>two windows, the second of them private</strong>. The first takes
+   White, the second takes Black, and each can only move on its own turn. A ply played in one must
+   appear in the other without a reload — that is the whole thing being proven.</p>
+<p><strong>Why private:</strong> the SDK persists the anonymous sign-in per origin, so a second
+   ordinary tab is the <em>same</em> player and simply holds both seats. That still proves push, but
+   it proves nothing about the rules, which are all about who you are.</p>
+
+<dl>
+  <dt>game</dt><dd id="game"></dd>
+  <dt>backend</dt><dd id="backend">…</dd>
+  <dt>your uid</dt><dd id="uid">…</dd>
+  <dt>your seat</dt><dd id="seat">—</dd>
+  <dt>white</dt><dd id="w">—</dd>
+  <dt>black</dt><dd id="b">—</dd>
+  <dt>plies (n)</dt><dd id="n">—</dd>
+  <dt>g</dt><dd id="g">—</dd>
+</dl>
+
+<button id="play" disabled>Play a ply</button>
+
+<div id="log"></div>
+
+<script type="module">
+import { init, currentUid, watch, append, create, claim }
+  from '../Chess.Web/wwwroot/js/firebase-cloud.js';
+
+const $ = (id) => document.getElementById(id);
+const log = (msg, bad) => {
+  const line = document.createElement('div');
+  if (bad) line.className = 'bad';
+  line.textContent = new Date().toLocaleTimeString() + '  ' + msg;
+  $('log').prepend(line);
+};
+
+// One game id for every tab, overridable with ?g=... so two independent games can be run side by
+// side without clearing the database.
+const gameId = new URLSearchParams(location.search).get('g') || 'skeleton';
+$('game').textContent = gameId;
+
+// Plausible-looking plies. Nothing validates chess server-side and the skeleton is not the app --
+// these only have to be distinct, so a move arriving in the other tab is unmistakable.
+const MOVES = ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1b5', 'a7a6', 'b5a4', 'g8f6', 'e1g1', 'f8e7'];
+
+let seat = null;   // 'w' | 'b' | null
+let state = null;  // the last row we saw
+
+async function loadConfig() {
+  // The live config if someone has dropped it in, the emulator otherwise. Absent AND no emulator
+  // would mean "cloud disabled", which is the app's normal fork state but useless here, so the
+  // emulator is the fallback rather than an opt-in.
+  try {
+    const res = await fetch('../Chess.Web/wwwroot/firebase-config.json', { cache: 'no-store' });
+    if (res.ok) {
+      const text = (await res.text()).trim();
+      if (text && !text.startsWith('<')) {
+        $('backend').textContent = 'live project (firebase-config.json)';
+        return text;
+      }
+    }
+  } catch { /* fall through to the emulator */ }
+
+  $('backend').textContent = 'emulator (demo-chess)';
+  return JSON.stringify({
+    projectId: 'demo-chess',
+    emulator: { auth: 'http://127.0.0.1:9099', host: '127.0.0.1', port: 9000 },
+  });
+}
+
+function render() {
+  const w = state?.w, b = state?.b;
+  $('w').textContent = w ? `${w.name} (${w.uid.slice(0, 8)}…)` : '— empty —';
+  $('b').textContent = b ? `${b.name} (${b.uid.slice(0, 8)}…)` : '— empty —';
+  $('n').textContent = state ? state.n : '—';
+  $('g').textContent = state?.g || '(no plies yet)';
+  $('seat').textContent = seat ? (seat === 'w' ? 'White' : 'Black') : 'none';
+
+  // The turn gate, client-side, mirroring the rule: White moves on even n, Black on odd.
+  const myTurn = !!seat && !!state && (state.n % 2 === 0 ? seat === 'w' : seat === 'b');
+  $('play').disabled = !myTurn || state.n >= MOVES.length;
+  $('play').textContent = myTurn ? 'Play a ply' : 'Waiting for the other side…';
+}
+
+async function main() {
+  const uid = await init(await loadConfig());
+  if (!uid) { log('no config and no emulator — cloud disabled', true); return; }
+  $('uid').textContent = uid;
+  log('signed in anonymously');
+
+  // Whoever gets here first creates the game and takes White; the second tab claims Black. Both
+  // are ordinary rule-gated writes, so the race resolves server-side rather than here.
+  const name = 'Tab ' + uid.slice(0, 4);
+  if (await create(gameId, 'w', name)) {
+    seat = 'w';
+    log('created the game, took White');
+  } else if (await claim(gameId, 'b', name)) {
+    seat = 'b';
+    log('claimed the empty Black seat');
+  } else {
+    log('both seats are taken — this tab is a spectator, and the rules will not even let it read', true);
+  }
+
+  watch(gameId, (json) => {
+    if (json === null) { log('no game, or not ours to read', true); state = null; render(); return; }
+    const next = JSON.parse(json);
+    if (state && next.n !== state.n) log(`push: ply ${next.n} arrived — "${next.g.split('.').pop()}"`);
+    state = next;
+    render();
+  });
+
+  $('play').onclick = async () => {
+    $('play').disabled = true;
+    const move = MOVES[state.n];
+    const g = state.g ? `${state.g}.${move}` : move;
+    log(await append(gameId, g, state.n + 1)
+      ? `appended "${move}"`
+      : `the rules REFUSED "${move}" — not your turn, or not your game`,
+      false);
+  };
+}
+
+main().catch((e) => log('failed: ' + e, true));
+</script>
