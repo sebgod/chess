@@ -274,8 +274,24 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
     // Same background the game display paints with — a re-typed literal here would band.
     BackgroundColor = PixelGameDisplay<VulkanContext>.Background,
 
-    OnKeyDown = (inputKey, inputMod) =>
+    // SdlVulkan.Renderer 7.33 collapsed the two arguments into the event itself, which also carries
+    // whether the OS is auto-repeating a held key.
+    OnKeyDown = keyEvent =>
     {
+        var (inputKey, inputMod) = keyEvent;
+        var isCtrl = (inputMod & InputModifier.Ctrl) != 0;
+
+        // Everything THIS host handles directly is a one-shot, and a repeat of one is never wanted:
+        // held F11 would strobe the window between fullscreen and not, and a repeating Ctrl+V would
+        // restart the game several times a second. Named precisely rather than blocking all repeats
+        // with a modifier held — Ctrl+Arrow is history navigation, a STEP, and stepping is exactly
+        // what auto-repeat is for. PageUp/PageDown and the widgets below are steps too, so they fall
+        // through untouched.
+        if (keyEvent.Repeat && (inputKey is InputKey.F11 || (isCtrl && inputKey is InputKey.L or InputKey.V)))
+        {
+            return true;
+        }
+
         if (inputKey == InputKey.F11)
         {
             sdlWindow.ToggleFullscreen();
@@ -285,12 +301,12 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
         // rather than in GameUI's keymap because a clipboard is a HOST capability: Chess.Lib has no
         // SDL, and the browser's clipboard is an async JS call, so the shared keymap must not promise
         // keys that two of the three front-ends cannot honour.
-        if ((inputMod & InputModifier.Ctrl) != 0 && inputKey is InputKey.L)
+        if (isCtrl && inputKey is InputKey.L)
         {
             CopyReplyLink();
             return true;
         }
-        if ((inputMod & InputModifier.Ctrl) != 0 && inputKey is InputKey.V)
+        if (isCtrl && inputKey is InputKey.V)
         {
             PasteLink();
             return true;
@@ -302,7 +318,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             return true; // display.HasPendingUpdate (set by PageHistory) drives the redraw
         }
         IWidget activeWidget = menu is { IsComplete: false } ? menu : lobby is not null ? lobby : player;
-        return activeWidget.HandleInput(new InputEvent.KeyDown(inputKey, inputMod));
+        return activeWidget.HandleInput(keyEvent);
     },
 
     // One unified pointer path (SdlVulkan.Renderer 6.28) replaces the separate OnMouseDown +
