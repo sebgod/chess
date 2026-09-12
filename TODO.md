@@ -16,7 +16,10 @@ defects; these are planned changes.
   play in the GUI (argv link skips the wizard, the board orients to the local side, the one-move gate
   refuses the other colour, Ctrl+L / Ctrl+V carry the game out and back) and the inbox behind it
   (several games at once, "waiting on you" first, stale hidden not deleted, legacy save migrated).
-  Phases 3-6 not started.*
+  Phase 3's cloud BACKEND is live and verified (europe-west1 instance, deployed rules with 16 emulator
+  tests, anonymous auth, config in a FIREBASE_CONFIG repo secret) but its client is not written. The
+  cloud courier is **browser-only** — the desktop keeps link play — which deleted the `ILobby`
+  extraction, the hand-rolled REST+SSE client and the second API key. Phases 4-5 not started.*
 - [**Content→device transform**](docs/content-transform.md) — DPI and rotation unified as one
   constrained affine map, which is what the Android "across the table" flip is built on. *Phases 1a and
   2 done; WebGL compose and the CPU backend pending.*

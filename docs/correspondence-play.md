@@ -1,6 +1,6 @@
 # Design: Correspondence play — the link courier, then the cloud courier
 
-**Status:** Phases 1 and 2 **done and live-verified in a running window**. Phase 3's backend is **live and verified end to end** — europe-west1 instance, deployed rules, anonymous auth — with its transport and lobby not yet written; phases 4-6 not started (see [Phasing](#phasing)). **Repo scope:** almost entirely **chess**; one
+**Status:** Phases 1 and 2 **done and live-verified in a running window**. Phase 3's backend is **live and verified end to end** — europe-west1 instance, deployed rules, anonymous auth — with its client not yet written; phases 4-5 not started. The cloud courier is **browser-only** (see [Scope](#scope-the-cloud-courier-is-the-browsers-and-that-deletes-most-of-it)), which deleted the riskiest part of it. See [Phasing](#phasing). **Repo scope:** almost entirely **chess**; one
 *optional* sibling cleanup is called out as the last phase and nothing here is blocked on a sibling
 release. Both capabilities the link half leans on already ship and are already in chess's package
 graph as of the DIR.Lib 8.8 repin: `SharpAstro.AppShell`'s `InstanceGate` (arrives transitively under
@@ -314,6 +314,32 @@ is **specific to chess**. `docs/game-library.md` records the contrast for the se
 needs a real LAN authority because someone must deal, and per-seat hidden state means a relay-the-move
 design is unsound there. Nothing in this plan generalises to a hidden-information game, and it should
 not be written as though it does.
+
+## Scope: the cloud courier is the browser's, and that deletes most of it
+
+Decided after the backend was standing up, and it removes more than it defers. The desktop keeps link
+play; only Chess.Web gets cloud play. What that strikes out:
+
+- **The `ILobby` extraction — the design risk of the whole phase.** It existed so a desktop with BOTH a
+  LAN lobby and a cloud lobby would not fork its lobby UI. Browser-only means the web has no LAN lobby
+  to share with and the desktop has no cloud lobby, so there is nothing to unify: LAN's
+  *invite → accept* and the cloud's *post → claim a seat* never have to fit one state machine.
+- **The `ILanConnection` → `ISessionConnection` rename**, which was only tidying up after that.
+- **The hand-rolled REST + SSE client.** It was the price of keeping `Chess.Net` AOT-clean and free of
+  packages. The browser instead uses the Firebase JS SDK through `[JSImport]` — an established pattern
+  here (WebGl.Renderer's command buffer, `wwwroot/js/chess-canvas.js`) — which also brings
+  reconnection, token refresh and push for free rather than as three things to get right by hand.
+- **The second API key.** A referrer-restricted key refuses the desktop, so a native client needed its
+  own; with no native client, the browser key is the only key and `FIREBASE_CONFIG` stays one config.
+- **The minimized-window drain**, which is an `SdlEventLoop` problem with no browser analogue. It
+  belongs to the `chess://` hand-off now, and only to that.
+
+What stays is everything already built and verified: the schema, the rules, anonymous auth, the
+instance. None of that was desktop-specific.
+
+The sections below that describe a desktop cloud client — the REST + SSE transport, what `Chess.Net`
+would have contributed — are kept rather than deleted, because the reasoning stands if the desktop ever
+wants this. They describe a road not currently taken, not the plan.
 
 ## Which free tier, and why the cap matters more than the quota
 
@@ -634,17 +660,17 @@ that no one later reaches for a server-side "anti-cheat" that this architecture 
 |---|---|---|---|
 | 1 | **Link play in the GUI**, end to end and with no new plumbing: `args` on `Program.cs`, `StartupWizardOptions.LinkPlay` on `VkStartupMenu`, paste-a-link (Ctrl+V, `SDL.GetClipboardText`), the turn semantics above, and "copy reply link" (Ctrl+L, `SDL.SetClipboardText`) | chess | **Done** — live-verified, see below |
 | 2 | **The inbox:** multi-slot store (`GameInbox`) + a "your move" list + staleness, and the GUI picker over it | chess | **Done** — live-verified |
-| 3 | **Cloud courier, desktop:** RTDB over REST + SSE (no new package), anonymous auth, the schema and rules above, `ILobby` extraction + `CloudLobby`/`CloudPlayStack`, `ILanConnection` rename | chess | **Backend live and verified**; transport and lobby not started |
-| 4 | **Cloud courier, browser:** the same client if REST + SSE works under WASM, otherwise the Firebase JS SDK via `[JSImport]`; lobby UI in `Play.razor`; the README wording | chess | Not started |
-| 5 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, building or reusing the drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | Not started |
-| 6 | *Optional cleanup:* a public, non-`DEBUG` per-iteration hook on `SdlEventLoop` so the drain stops living in a side-effecting predicate | SdlVulkan.Renderer | Not started |
+| 3 | **Cloud courier, browser only:** Firebase JS SDK via `[JSImport]`, anonymous auth, the schema and rules above, lobby UI in `Play.razor`, the README wording | chess | Backend live and verified; client not started |
+| 4 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, building or reusing the drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | Not started |
+| 5 | *Optional cleanup:* a public, non-`DEBUG` per-iteration hook on `SdlEventLoop` so the drain stops living in a side-effecting predicate | SdlVulkan.Renderer | Not started |
 
-**The drain is not phase 2's**, though an earlier version of this table put it there. It has no
-producer until a payload can arrive from off-thread, which is phase 3 (a cloud push) or phase 5 (an
-`InstanceGate` hand-off) — so building it with the inbox would be plumbing with nothing flowing
-through it, which is the same objection this document raises against doing the gate early. Whichever
-of those two lands first builds it; the other consumes it. The [spine](#one-drain) said so all along
-and the table was the half that was wrong.
+**The drain belongs to phase 4 alone**, though an earlier version of this table put it in phase 2 and a
+later one had it shared with the cloud. It has no producer until a payload can arrive from off-thread
+in an **SDL** host, and a browser-only cloud courier is not one: the minimized-window problem it exists
+to solve is `SdlEventLoop` excluding minimized windows from `anyNeedsRedraw`, which has no browser
+analogue. That leaves the `InstanceGate` hand-off as its only producer. Building it before then would
+be plumbing with nothing flowing through it — the same objection this document raises against doing the
+gate early.
 
 **Phase 1 is done except for being watched.** What landed: `GameLinkCodec.ExtractBody` (one reduction
 for a page URL / `chess://` / bare fragment / bare body, folded into `TryDecode` so no host parses) and
@@ -680,10 +706,13 @@ Two orderings inside that are less obvious:
   *scheme* exists, because a scheme is what spawns a fresh process per click — the only problem the
   gate solves. It was phase 2 when this was a link-only plan; the cloud work outranks it because the
   cloud adds a capability and the scheme adds convenience to one that already works.
-- **Desktop cloud before browser cloud**, because the desktop path needs no new dependency and proves
-  the schema and rules against code that is already `IsAotCompatible` and already has an in-memory
-  test double. The counter-argument is real — the browser is where the players are — so if only one
-  of the two is ever built, build phase 4.
+- **The cloud courier is browser-only**, which is the counter-argument this list used to note winning
+  outright: the browser is where the players are, and it is the only front-end with neither LAN play
+  nor any other way to meet a stranger. The desktop keeps link play, which is cross-platform — a
+  desktop player and a browser player can already play each other by swapping links. So the split
+  reads: **the desktop gets the courier that needs no account, the browser gets the one that needs no
+  messenger**, and the only gap left is a desktop player meeting a stranger, which LAN covers for the
+  same room and links cover for anyone reachable by message.
 
 ## Open questions
 
