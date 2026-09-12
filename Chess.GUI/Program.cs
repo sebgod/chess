@@ -4,6 +4,7 @@ using Chess.Lib.UI;
 using Chess.Net;
 using Chess.UCI;
 using DIR.Lib;
+using SDL3;
 using SdlVulkan.Renderer;
 using System.Numerics;
 
@@ -23,6 +24,9 @@ var savePath = Path.Combine(
     Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
     "SharpAstro.Chess", "game.uci");
 Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
+
+// Where a copied reply link points. The web app, deliberately — see CopyReplyLink.
+const string LinkShareBaseUrl = "https://sebgod.github.io/chess/";
 
 var player = new HumanPlayer();
 var bus = new SignalBus();
@@ -72,7 +76,157 @@ void SaveCurrentGame()
     GameStore.Save(savePath, g, currentComputerSide, currentGameMode);
 }
 
-VkStartupMenu? menu = new(CanContinue());
+// A link waiting to become a game — handed over on argv at boot, or pasted mid-game. Declared up here
+// because the local functions below capture it, and a local function may only reach locals declared
+// above it.
+Game? pendingLinkGame = null;
+VkStartupMenu? menu = null;
+
+// The ply the current StatusOverride was raised at, so it can be retired once the game moves on —
+// see the clear in OnRender. Without it a transient message ("Link copied") would shadow the derived
+// status ("Black to move") for the rest of the game, because StatusOverride wins unconditionally.
+var statusPly = -1;
+
+// Builds the display and the loop for ONE game and starts it. Extracted because there are now two
+// ways in: the wizard's dispatch below, and a link, which has no wizard to come through at all.
+void StartGame(GameMode gameMode, Side computerSide, Side sideToMove, Difficulty difficulty, Game? resumeGame)
+{
+    currentGameIsNetwork = false;
+    currentComputerSide = computerSide;
+    currentGameMode = gameMode;
+
+    display = new PixelGameDisplay<VulkanContext>(renderer) { Bus = bus, SetupStartRequested = FinishSetup };
+    statusPly = -1;
+
+    // Play by Link needs no branch of its own: GameSession builds an opponent only for the modes that
+    // have one (PvC, custom, LAN), so the engine factory below is simply never called for a link game
+    // — no chess-engine process is spawned — and the session arms the one-local-move gate itself.
+    // Continue resumes one too: GameStore already persists the mode and the correspondent's colour,
+    // which is all a link game is.
+    var gameLoop = new GameLoop(
+        TimeProvider.System,
+        () => display,
+        () => player,
+        (cs, tp) => new UciPlayer(UciPlayer.DefaultEnginePath, cs, tp, difficulty)
+    );
+
+    gameTask = gameLoop.RunAsync(gameMode, computerSide, sideToMove, cts.Token, resumeGame);
+}
+
+// Turns a decoded link into the running game. "Receiving a link means it's your turn", so the
+// correspondent is whoever is NOT to move — GameSession.CorrespondentSideFor states that rule once
+// rather than letting each front-end re-derive the inversion.
+void StartPendingLinkGame()
+{
+    if (pendingLinkGame is not { } linked) return;
+    pendingLinkGame = null;
+    menu = null;
+    StartGame(GameMode.PlayByLink, GameSession.CorrespondentSideFor(linked), linked.CurrentSide,
+        Difficulty.Normal, linked);
+}
+
+// Nudge the display into repainting after something only the host knows about changed (a status
+// message). HasPendingUpdate is read-and-clear and RenderInitial is how the rest of the app raises
+// it; neither paints here — the next OnRender does.
+void RequestStatus(string message)
+{
+    // No board on screen (the menu) means no status bar to write to, so say it where it can still be
+    // diagnosed rather than swallowing it — a paste that reports nothing at all is the worst outcome.
+    if (display is not { HasGameUI: true })
+    {
+        Console.Error.WriteLine($"[chess] {message}");
+        return;
+    }
+
+    display.StatusOverride = message;
+    statusPly = display.UI.Game.PlyCount;
+    display.RenderInitial(display.UI.Game);
+}
+
+// Copy the reply link for the game as it stands. Deliberately the WEB url, not a chess:// one: the
+// person receiving it may have nothing installed, and sebgod.github.io/chess plays the same game in
+// any browser — while this app reads that shape back happily (GameLinkCodec.ExtractBody). A link that
+// only works for people who already have the app is not a correspondence link.
+void CopyReplyLink()
+{
+    if (display is not { HasGameUI: true } || currentGameMode is not GameMode.PlayByLink) return;
+
+    var url = LinkShareBaseUrl + GameLinkCodec.EncodeFragment(display.UI.Game);
+    RequestStatus(SDL.SetClipboardText(url)
+        ? "Link copied — send it to your opponent"
+        : "Couldn't reach the clipboard");
+}
+
+// Take the opponent's reply (or a fresh invitation) off the clipboard. Always restarts the session
+// from the decoded game rather than applying the missing plies to the live board: the link IS the
+// whole game, replaying it re-validates every ply through the rules engine, and the one-local-move
+// gate would refuse a correspondent's move anyway. Chess.Web does exactly the same thing.
+void PasteLink()
+{
+    if (!SDL.HasClipboardText())
+    {
+        RequestStatus("Clipboard is empty");
+        return;
+    }
+
+    var result = GameLinkCodec.TryDecode(SDL.GetClipboardText(), out var pasted, out var linkError);
+
+    if (result is GameLinkResult.NoLink)
+    {
+        RequestStatus("That doesn't look like a game link");
+        return;
+    }
+
+    if (result is GameLinkResult.Invalid)
+    {
+        RequestStatus($"Invalid link: {linkError}");
+        return;
+    }
+
+    pendingLinkGame = pasted;
+
+    if (display is null)
+    {
+        StartPendingLinkGame(); // pasted at the menu: straight into the game
+        return;
+    }
+
+    // Mid-game: warn when this is a DIFFERENT game rather than the reply we were waiting for. The
+    // single save slot means the current game is about to be the one that gets kept (the restart
+    // handler saves it first), so the swap should never be silent.
+    if (display is { HasGameUI: true } && !GameLinkCodec.IsContinuationOf(display.UI.Game, pasted!))
+    {
+        Console.Error.WriteLine("[chess] pasted link is a different game; the current one was saved.");
+    }
+
+    // Unwind the running game the way F8 does, and let the restart handler pick the link back up.
+    // Injecting the existing key beats inventing a second teardown path that could drift from it.
+    player.HandleInput(new InputEvent.KeyDown(InputKey.F8, InputModifier.None));
+}
+
+// A game link handed over on the command line — a browser's "open with", a shell, a file manager, and
+// later a chess:// click — skips the wizard entirely, exactly as the web does (Play.razor:323).
+// Asking someone to choose a game mode for a game that already has one is a question with a wrong
+// answer available. TryDecode takes the raw argument: it reduces a page URL, a chess:// URL or a bare
+// body itself (GameLinkCodec.ExtractBody), so there is no argv parser here to drift from the web's.
+foreach (var arg in args)
+{
+    var bootResult = GameLinkCodec.TryDecode(arg, out var decoded, out var linkError);
+    if (bootResult is GameLinkResult.Ok)
+    {
+        pendingLinkGame = decoded;
+        break;
+    }
+    // An argument that IS a link but a broken one is worth saying out loud; one that simply isn't a
+    // link (GameLinkResult.NoLink) is not an error — it falls through to the menu silently.
+    if (bootResult is GameLinkResult.Invalid)
+    {
+        Console.Error.WriteLine($"[chess] ignoring '{arg}': {linkError}");
+    }
+}
+
+// No wizard when a link decided the game for us.
+menu = pendingLinkGame is null ? new(CanContinue()) : null;
 
 // Map a pointer event's pixel coordinates from device space into content space through the renderer's
 // ContentTransform — the inverse of what the projection applies, so draw and hit-test can never drift
@@ -125,6 +279,20 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
         if (inputKey == InputKey.F11)
         {
             sdlWindow.ToggleFullscreen();
+            return true;
+        }
+        // Ctrl+L / Ctrl+V — the two halves of carrying a correspondence game by hand. They live here
+        // rather than in GameUI's keymap because a clipboard is a HOST capability: Chess.Lib has no
+        // SDL, and the browser's clipboard is an async JS call, so the shared keymap must not promise
+        // keys that two of the three front-ends cannot honour.
+        if ((inputMod & InputModifier.Ctrl) != 0 && inputKey is InputKey.L)
+        {
+            CopyReplyLink();
+            return true;
+        }
+        if ((inputMod & InputModifier.Ctrl) != 0 && inputKey is InputKey.V)
+        {
+            PasteLink();
             return true;
         }
         // Page the history panel directly on this thread (its scroll model lives in the display).
@@ -196,6 +364,12 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
 
         if (display is not null)
         {
+            // Retire a transient host message once the game has moved past the ply it belonged to.
+            if (display is { HasGameUI: true, StatusOverride: not null } && display.UI.Game.PlyCount != statusPly)
+            {
+                display.StatusOverride = null;
+            }
+
             display.Render();
         }
         else if (menu is { IsComplete: false })
@@ -254,7 +428,6 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             else
             {
                 menu = null;
-                currentGameIsNetwork = false;
 
                 // Continue: the save (not the wizard) defines the real mode and computer side; load it
                 // and hand the loaded game to the loop so its full history drives both display and engine.
@@ -277,20 +450,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                         gameMode = GameMode.PlayerVsPlayer; // nothing to resume -> plain hot-seat
                     }
                 }
-                currentComputerSide = computerSide;
-                currentGameMode = gameMode;
-
-                display = new PixelGameDisplay<VulkanContext>(renderer) { Bus = bus, SetupStartRequested = FinishSetup };
-                var timeProvider = TimeProvider.System;
-
-                var gameLoop = new GameLoop(
-                    timeProvider,
-                    () => display,
-                    () => player,
-                    (cs, tp) => new UciPlayer(UciPlayer.DefaultEnginePath, cs, tp, difficulty)
-                );
-
-                gameTask = gameLoop.RunAsync(gameMode, computerSide, sideToMove, cts.Token, resumeGame);
+                StartGame(gameMode, computerSide, sideToMove, difficulty, resumeGame);
             }
         }
     },
@@ -311,6 +471,15 @@ bus.Subscribe<RequestRestartSignal>(_ =>
     display?.Dispose();
     display = null;
     gameTask = null;
+
+    // A link pasted mid-game unwound us through this same path; resume into IT, not the menu.
+    if (pendingLinkGame is not null)
+    {
+        StartPendingLinkGame();
+        loop.RequestRedraw();
+        return;
+    }
+
     menu = new VkStartupMenu(CanContinue());
     // Display→menu state swap happens during OnPostFrame, after this frame's
     // render. Without an explicit nudge, SDL would park in WaitEventTimeout
@@ -359,6 +528,11 @@ using var inspector = DebugInspector.Attach(loop, new DebugInspectorOptions
     },
 });
 #endif
+
+// The link that came in on argv, now that the loop and its handlers exist. "Receiving a link means
+// it's your turn", so the correspondent is whoever is NOT to move — GameSession states that rule once
+// (CorrespondentSideFor) rather than each front-end re-deriving the inversion.
+StartPendingLinkGame();
 
 loop.Run(cts.Token);
 
