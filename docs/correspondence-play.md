@@ -665,14 +665,6 @@ Two orderings inside that are less obvious:
 - **Who is allowed to claim an open game?** Anyone, or only whoever has the game id? "Anyone" is a
   lobby and is the point; it is also the abuse surface. A "private game" that only appears to whoever
   holds the id is the cheap middle — and it is, again, a link.
-- **Rated / persistent identity.** Anonymous auth means a player is a fresh uid per browser profile,
-  and on a phone it is bound to the device: switch handsets and you are a new person with no games.
-  There is therefore no identity across devices, so no ratings and no history. That is almost
-  certainly the right trade for a free tier, but it should be a decision, not an accident — and it
-  is worth knowing that the escape hatch is not "add real accounts": Android's **Restore Credentials
-  API** carries a sign-in across a device transfer, which is the mechanism behind Google Play's
-  April 2027 Zero-Tap Sign-In requirement (a requirement chess is doubly clear of — games are exempt,
-  and Chess.Droid is not distributed through Play).
 - **Chess.Console.** Phase 1 applies almost unchanged (the wizard and codec are shared, and the TUI has
   its own clipboard story), and the console already references `Chess.Net`, so phase 3 reaches it too.
   Worth doing, not scoped here.
@@ -681,6 +673,39 @@ Two orderings inside that are less obvious:
 - **Drag and drop.** `OnDropFile` is already wired in the backend and unused, so dropping a saved
   `.uci` game onto the window is nearly free — but nobody receives a correspondence game *as a file*,
   so this is an extra, not a phase.
+
+## Identity: anonymous by default, Google as an upgrade
+
+This was an open question — anonymous auth gives a fresh uid per browser profile, and on a phone one
+bound to the device, so switching handsets makes you a new person with no games. The answer is to
+offer **Google sign-in as an optional upgrade**, not to require accounts.
+
+**The rule that matters, because the obvious implementation gets it wrong: link, do not replace.**
+Firebase can *link* an anonymous account to a Google credential and keep the SAME uid. Signing in with
+Google as a separate action instead mints a DIFFERENT uid — and every seat in this design is pinned to
+uid (`data.child('w/uid').val() === auth.uid`), so the player is locked out of their own games by a
+rule working exactly as intended. State it once, here: **anything that changes a player's uid orphans
+their games.** The same trap arrives from another direction as Firebase Auth's "auto clean-up", which
+deletes anonymous accounts older than 30 days — deliberately left OFF, because a correspondence game
+may legitimately run for months (this document's own staleness threshold is 120 days), and an identity
+that expires inside a live game is worse than no cleanup at all.
+
+Anonymous therefore stays the default: it is what keeps the README's "no accounts, no logins" true, and
+nobody is ever forced through a sign-in wall. Google is there for a player who wants their games to
+survive a reinstall or follow them to another machine.
+
+Uneven across the front-ends, which is why it is web-first: a popup on the web, natural on Android, and
+genuinely awkward on the SDL desktop, where OAuth needs a system browser plus a loopback redirect
+listener. The desktop stays anonymous-only until somebody wants it enough to build that.
+
+Not enabled yet — nothing can use it, and it carries a small authorised-domains tail. This records the
+decision so that whoever implements sign-in does not reach for the obvious `signInWithPopup` and
+silently strand every game on the device.
+
+Worth knowing that the Android escape hatch is not "add real accounts" either: the **Restore
+Credentials API** carries a sign-in across a device transfer, which is the mechanism behind Google
+Play's April 2027 Zero-Tap Sign-In requirement (a requirement chess is doubly clear of — games are
+exempt, and Chess.Droid is not distributed through Play).
 
 ## Testing
 
