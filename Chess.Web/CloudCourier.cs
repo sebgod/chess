@@ -34,6 +34,7 @@ internal static partial class CloudCourier
     private const string Module = "firebase-cloud";
 
     private static bool _moduleLoaded;
+    private static string? _config;     // fetched once; null until asked, "" once known absent
 
     /// <summary>Our anonymous uid, or empty while the cloud is disabled or not yet signed in.</summary>
     public static string Uid { get; private set; } = "";
@@ -42,28 +43,44 @@ internal static partial class CloudCourier
     public static bool IsEnabled => Uid.Length > 0;
 
     /// <summary>
-    /// Load the config, the SDK and an anonymous identity, in that order, and stop quietly at the
-    /// first one that is absent. Safe to call more than once.
+    /// Whether this deployment has a backend at all — one small fetch, and nothing else. It loads
+    /// no SDK and creates no identity, which is the point: every visitor asks this (the menu offers
+    /// online play or it does not), and only the ones who choose it should cost an anonymous user.
+    ///
+    /// <para>The config is fetched rather than embedded because it is deployment state, not build
+    /// state: the same wasm serves a fork with no backend and the live site with one.</para>
+    /// </summary>
+    public static async Task<bool> IsConfiguredAsync(HttpClient http)
+    {
+        if (_config is not null) return _config.Length > 0;
+
+        try
+        {
+            using var res = await http.GetAsync("firebase-config.json");
+            _config = res.IsSuccessStatusCode ? (await res.Content.ReadAsStringAsync()).Trim() : "";
+        }
+        catch
+        {
+            _config = "";
+        }
+
+        // A dev server with no such file answers 200 and an HTML fallback rather than 404, so the
+        // shape is checked too: a config is an object, and "<!DOCTYPE html>" is not one.
+        if (!_config.StartsWith('{')) _config = "";
+
+        return _config.Length > 0;
+    }
+
+    /// <summary>
+    /// Load the SDK and take an anonymous identity. Call it when the player asks for online play,
+    /// not at boot. Safe to call more than once.
     /// </summary>
     public static async Task<bool> InitAsync(HttpClient http)
     {
         if (IsEnabled) return true;
+        if (!await IsConfiguredAsync(http)) return false;
 
-        // The config is fetched rather than embedded because it is deployment state, not build
-        // state: the same wasm serves a fork with no backend and the live site with one.
-        string config;
-        try
-        {
-            using var res = await http.GetAsync("firebase-config.json");
-            if (!res.IsSuccessStatusCode) return false;
-            config = await res.Content.ReadAsStringAsync();
-        }
-        catch
-        {
-            return false;
-        }
-
-        if (string.IsNullOrWhiteSpace(config)) return false;
+        var config = _config!;
 
         try
         {
@@ -123,6 +140,80 @@ internal static partial class CloudCourier
     /// <summary>Take the empty seat of someone else's game — the cloud's Accept.</summary>
     public static Task<bool> ClaimAsync(string gameId, string color, string name)
         => IsEnabled ? ClaimJs(gameId, color, name) : Task.FromResult(false);
+
+    /// <summary>Advertise a game with an empty seat. One per player, by construction.</summary>
+    public static Task<bool> PostAsync(string gameId, string name, string color)
+        => IsEnabled ? PostJs(gameId, name, color) : Task.FromResult(false);
+
+    /// <summary>Withdraw our open game.</summary>
+    public static Task<bool> UnpostAsync()
+        => IsEnabled ? UnpostJs() : Task.FromResult(false);
+
+    /// <summary>Watch the lobby; <paramref name="onList"/> gets the rows as a JSON array.</summary>
+    public static void WatchOpen(Action<string?> onList)
+    {
+        if (IsEnabled) WatchOpenJs(onList);
+    }
+
+    public static void UnwatchOpen()
+    {
+        if (IsEnabled) UnwatchOpenJs();
+    }
+
+    /// <summary>
+    /// A lobby row: somebody's open game. <c>Host</c> is the poster's uid, which is also the row's
+    /// key — so a player can hold at most one of these.
+    /// </summary>
+    public sealed record OpenGame(string Host, string GameId, string Name, string Color, long Updated)
+    {
+        /// <summary>The colour the POSTER took; whoever joins plays the other one.</summary>
+        public Side PosterSide => Color == "b" ? Side.Black : Side.White;
+
+        public Side JoinerSide => PosterSide.ToOpposite();
+
+        /// <summary>
+        /// Rows go stale rather than expiring: a posted game outlives the tab that posted it (that
+        /// is what makes correspondence possible), so nothing on the server removes an abandoned
+        /// one. The same 120 days the desktop inbox uses to hide a dead game hides a dead posting.
+        /// </summary>
+        public bool IsStale(DateTimeOffset now) =>
+            Updated > 0 && now - DateTimeOffset.FromUnixTimeMilliseconds(Updated) > TimeSpan.FromDays(120);
+    }
+
+    public static List<OpenGame> ParseOpen(string? json)
+    {
+        var rows = new List<OpenGame>();
+        if (string.IsNullOrEmpty(json)) return rows;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array) return rows;
+
+            foreach (var row in doc.RootElement.EnumerateArray())
+            {
+                if (row.ValueKind != JsonValueKind.Object) continue;
+
+                static string Str(JsonElement row, string key) =>
+                    row.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String
+                        ? v.GetString() ?? "" : "";
+
+                var host = Str(row, "host");
+                var gameId = Str(row, "gameId");
+                if (host.Length == 0 || gameId.Length == 0) continue;
+
+                rows.Add(new OpenGame(host, gameId, Str(row, "name"), Str(row, "color"),
+                    row.TryGetProperty("updated", out var u) && u.TryGetInt64(out var ms) ? ms : 0));
+            }
+        }
+        catch (JsonException)
+        {
+            // A malformed lobby is an empty lobby: it is a list of other people's rows, and no
+            // single bad one should cost the player the screen.
+        }
+
+        return rows;
+    }
 
     /// <summary>
     /// A game row: the move log, the ply count, and who holds the two seats. <c>Moves</c> is a bare
@@ -200,4 +291,17 @@ internal static partial class CloudCourier
 
     [JSImport("claim", Module)]
     private static partial Task<bool> ClaimJs(string gameId, string color, string name);
+
+    [JSImport("post", Module)]
+    private static partial Task<bool> PostJs(string gameId, string name, string color);
+
+    [JSImport("unpost", Module)]
+    private static partial Task<bool> UnpostJs();
+
+    [JSImport("watchOpen", Module)]
+    private static partial void WatchOpenJs(
+        [JSMarshalAs<JSType.Function<JSType.String>>] Action<string?> onList);
+
+    [JSImport("unwatchOpen", Module)]
+    private static partial void UnwatchOpenJs();
 }

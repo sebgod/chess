@@ -20,6 +20,7 @@ let db = null;      // the Database handle, null while the cloud is disabled
 let fns = null;     // the database functions we use, captured from the dynamic import
 let uid = '';       // our anonymous uid, '' until signed in
 const watches = new Map();  // gameId -> unsubscribe
+const OPEN = '*open';      // the lobby's key in `watches`; '*' is not a legal game id, so no clash
 
 /**
  * Load the SDK, sign in anonymously, and return the uid. Returns '' when the cloud is disabled,
@@ -112,6 +113,62 @@ export async function append(gameId, g, n) {
   } catch {
     return false;
   }
+}
+
+/**
+ * Advertise a game with an empty seat. Keyed by OUR uid, which makes "one open game per player" a
+ * property of the path rather than a count the rules cannot do.
+ *
+ * <p>Deliberately NOT cleaned up by onDisconnect(), which is how a presence table would do it. A
+ * posted correspondence game has to outlive the tab that posted it -- the whole point is that
+ * somebody claims it while you are away -- so it is durable, carries the time it was posted, and
+ * the client hides rows that have gone stale. A live-play lobby would want the opposite.</p>
+ */
+export async function post(gameId, name, color) {
+  if (!db) return false;
+  try {
+    await fns.set(fns.ref(db, `open/${uid}`),
+      { gameId, name, color, updated: fns.serverTimestamp() });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Withdraw our open game: someone took the seat, or we changed our mind. */
+export async function unpost() {
+  if (!db) return false;
+  try {
+    await fns.remove(fns.ref(db, `open/${uid}`));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Watch the lobby. `onList` receives a JSON array of rows, each with the poster's uid folded in as
+ * `host`, on every change including the first. The lobby is readable by any signed-in player --
+ * that is what a lobby is for -- so this is the one subscription that is not about our own games.
+ */
+export function watchOpen(onList) {
+  if (!db) return;
+  unwatchOpen();
+
+  const off = fns.onValue(
+    fns.ref(db, 'open'),
+    (snap) => {
+      const rows = [];
+      snap.forEach((child) => { rows.push({ host: child.key, ...child.val() }); });
+      onList(JSON.stringify(rows));
+    },
+    () => onList('[]'));
+
+  watches.set(OPEN, off);
+}
+
+export function unwatchOpen() {
+  unwatch(OPEN);
 }
 
 /** Create a game with us in one seat. Returns true on success. */

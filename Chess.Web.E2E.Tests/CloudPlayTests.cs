@@ -86,6 +86,77 @@ public sealed class CloudPlayTests(ChessWebFixture fixture)
     // finished game instead of starting a new one.
     private static string NewGameId() => "e2e" + DateTime.UtcNow.Ticks.ToString("x");
 
+    // The game-mode menu is drawn into the canvas, so there is nothing to read and nothing to click
+    // by name: a digit selects and confirms the item at that position. The order comes from
+    // StartupWizard.Current and is load-bearing — Player vs Player, Player vs Computer, Custom Game,
+    // Play by Link, Network game — so this constant moves if a new option is added before it.
+    private const string NetworkGameKey = "5";
+
+    private static async Task PressAsync(IPage page, string key)
+    {
+        await page.Locator("#board").FocusAsync();
+        await page.Keyboard.PressAsync(key);
+        await page.WaitForTimeoutAsync(250);
+    }
+
+    /// <summary>Wizard -> "Network game" -> "Play as White" -> the lobby.</summary>
+    private async Task<IPage> OpenLobbyAsync()
+    {
+        var page = await fixture.NewPageAsync();
+        await page.GotoAsync(fixture.BaseUrl, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
+        await Expect(Status(page)).ToContainTextAsync("Choose how", new() { Timeout = BootTimeout });
+
+        await PressAsync(page, NetworkGameKey);
+        await PressAsync(page, "1"); // Play as White
+        return page;
+    }
+
+    /// <summary>
+    /// Empties the emulator's lobby and games. A posted game is DURABLE by design — that is what
+    /// lets someone claim it tomorrow — so rows survive between runs and a previous run would
+    /// otherwise leave the lobby non-empty. Safe because the guard above already established that
+    /// this is the local emulator and not a real project.
+    /// </summary>
+    private static async Task ResetEmulatorAsync()
+    {
+        using var http = new HttpClient();
+        foreach (var path in (string[])["open", "games"])
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Delete,
+                $"http://127.0.0.1:9000/{path}.json?ns=demo-chess-default-rtdb");
+            req.Headers.Add("Authorization", "Bearer owner");
+            (await http.SendAsync(req)).EnsureSuccessStatusCode();
+        }
+    }
+
+    [Fact]
+    public async Task APostedGameIsFoundAndJoinedFromTheLobby()
+    {
+        RequireLocalBackend();
+        await ResetEmulatorAsync();
+
+        // Nobody has posted anything, and the lobby says so rather than showing an empty list.
+        var host = await OpenLobbyAsync();
+        await Expect(Status(host)).ToContainTextAsync("Nobody is waiting", new() { Timeout = BootTimeout });
+
+        // "Post a game and wait" is the only item, so it is the first.
+        await PressAsync(host, "1");
+        await Expect(Status(host)).ToContainTextAsync("Waiting for an opponent",
+            new() { Timeout = BootTimeout });
+
+        var joiner = await OpenLobbyAsync();
+        await Expect(Status(joiner)).ToContainTextAsync("Open games", new() { Timeout = BootTimeout });
+
+        await PressAsync(joiner, "1"); // the posted game is the only row
+        await Expect(Status(host)).ToContainTextAsync("Your move (White)", new() { Timeout = BootTimeout });
+
+        // The advertisement comes down once both seats are taken: a third player arriving now finds
+        // an empty lobby rather than an invitation to a game that is full.
+        var latecomer = await OpenLobbyAsync();
+        await Expect(Status(latecomer)).ToContainTextAsync("Nobody is waiting",
+            new() { Timeout = BootTimeout });
+    }
+
     [Fact]
     public async Task TwoPlayersJoinByLinkAndMovesTravelBothWays()
     {

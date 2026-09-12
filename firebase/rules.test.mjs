@@ -23,7 +23,7 @@ import test, { after, before, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { ref, set, get, update } from 'firebase/database';
+import { ref, set, get, update, serverTimestamp } from 'firebase/database';
 
 let env;
 
@@ -44,6 +44,10 @@ async function seedGame(id, { g = '', n = 0 } = {}) {
 }
 
 const dbFor = (uid) => env.authenticatedContext(uid).database();
+
+/** A lobby row, stamped the way the app stamps one -- by the SERVER, not the client. A client
+ *  clock a second fast writes a timestamp in the future, which the rule refuses. */
+const open = (gameId, name, color) => ({ gameId, name, color, updated: serverTimestamp() });
 
 before(async () => {
   env = await initializeTestEnvironment({
@@ -230,10 +234,10 @@ test('accepting an invite is claiming the seat it points at', async () => {
 test('an open game is keyed by its host, which caps them at one each', async () => {
   const alice = dbFor(ALICE);
 
-  await assertSucceeds(set(ref(alice, `open/${ALICE}`), { gameId: 'g1', name: 'Alice', color: 'w' }));
+  await assertSucceeds(set(ref(alice, `open/${ALICE}`), open('g1', 'Alice', 'w')));
   // A second post overwrites the first rather than adding to it -- "one open game per identity" as
   // a property of the PATH, since rules cannot count.
-  await assertSucceeds(set(ref(alice, `open/${ALICE}`), { gameId: 'g2', name: 'Alice', color: 'b' }));
+  await assertSucceeds(set(ref(alice, `open/${ALICE}`), open('g2', 'Alice', 'b')));
 
   // withSecurityRulesDisabled does not propagate its callback's return value, so read out sideways.
   let posted;
@@ -246,10 +250,23 @@ test('an open game is keyed by its host, which caps them at one each', async () 
 });
 
 test('nobody can post an open game under another player\'s name', async () => {
-  await assertFails(set(ref(dbFor(MALLORY), `open/${ALICE}`), { gameId: 'g1', name: 'A', color: 'w' }));
+  await assertFails(set(ref(dbFor(MALLORY), `open/${ALICE}`), open('g1', 'A', 'w')));
+});
+
+test('a lobby row must say when it was posted, and cannot claim the future', async () => {
+  // A posted game OUTLIVES the tab that posted it -- that is what makes correspondence possible,
+  // and it is why the row cannot expire by onDisconnect the way a presence entry does. The cost is
+  // that abandoned rows accumulate, so every row carries its own age and the client hides the stale
+  // ones. Without `updated` there is nothing to hide them by.
+  await assertFails(set(ref(dbFor(ALICE), `open/${ALICE}`),
+    { gameId: 'g1', name: 'Alice', color: 'w' }));
+
+  // And it has to be honest, or a stale row could pin itself to the top of the list forever.
+  await assertFails(set(ref(dbFor(ALICE), `open/${ALICE}`),
+    { gameId: 'g1', name: 'Alice', color: 'w', updated: Date.now() + 60 * 60 * 1000 }));
 });
 
 test('the lobby is readable by any signed-in player, since that is what a lobby is for', async () => {
-  await assertSucceeds(set(ref(dbFor(ALICE), `open/${ALICE}`), { gameId: 'g1', name: 'Alice', color: 'w' }));
+  await assertSucceeds(set(ref(dbFor(ALICE), `open/${ALICE}`), open('g1', 'Alice', 'w')));
   await assertSucceeds(get(ref(dbFor(MALLORY), 'open')));
 });

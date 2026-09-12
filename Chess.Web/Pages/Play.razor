@@ -200,7 +200,7 @@
 
     // The canvas shows one of three things: the startup wizard, board setup (custom game), or a
     // live game.
-    enum Screen { Menu, Setup, Playing }
+    enum Screen { Menu, Lobby, Setup, Playing }
 
     Game _game = null!;
 
@@ -244,6 +244,12 @@
     // this page only presents Current through the menu widget and forwards confirms. The web is
     // (so far) the only front-end that can produce/consume game links, so only it opts in.
     StartupWizard _wizard = new(StartupWizardOptions.LinkPlay);
+
+    // "Network game" is offered only where there is a backend to reach. It is the SAME wizard entry
+    // the desktop uses for LAN: the courier is a host concern, and the browser's happens to be a
+    // database. A build with no config simply never shows it.
+    StartupWizardOptions WizardOptions => StartupWizardOptions.LinkPlay
+        | (_cloudConfigured ? StartupWizardOptions.NetworkPlay : StartupWizardOptions.None);
     bool _vsComputer = true;
     // Side to move for a custom game, from the wizard; consumed when setup finishes.
     Side _setupSideToMove = Side.White;
@@ -281,6 +287,11 @@
     bool _cloudJoining;             // true until the first row tells us which seat we hold
     CloudCourier.Row? _cloudRow;    // last row the server confirmed — what a refused move rolls back to
     string? _cloudError;            // why cloud play is unavailable or stopped, shown on the menu
+    bool _cloudConfigured;          // a backend exists at all — one fetch at boot, no SDK, no identity
+    List<CloudCourier.OpenGame> _lobby = [];
+    bool _lobbyLoading;
+    Side _lobbyPreferredSide = Side.White; // the colour the wizard asked for, used when posting
+    string? _postedGameId;          // our advertisement, withdrawn once the second seat fills
 
     // Must match PixelGameDisplay's internal background — the display's GameUI paints margins
     // with it, and the host clears the rest of the surface; a mismatch would band.
@@ -334,6 +345,12 @@
         // A game link in the fragment skips the wizard entirely: the link means "it's your
         // turn" — decode, replay, and put the board straight on screen. A CLOUD link (#c=…) names
         // a game instead of carrying one, so it is the same hand-off with a database in the middle.
+        // One small fetch, no SDK and no identity: it only decides whether the menu offers online
+        // play. Signing in happens when the player asks for it, so a visitor who never plays online
+        // never becomes an anonymous user.
+        _cloudConfigured = await CloudCourier.IsConfiguredAsync(Http);
+        _wizard = new StartupWizard(WizardOptions);
+
         var bootFragment = new Uri(Nav.Uri).Fragment;
         if (GameLinkCodec.TryExtractCloudId(bootFragment, out var bootCloudId))
         {
@@ -384,7 +401,7 @@
         // (state-preserving); a no-op until the first ResetGame.
         _display.OnResize((int)_backingW, (int)_backingH);
 
-        if (_screen == Screen.Menu)
+        if (_screen is Screen.Menu or Screen.Lobby)
             await RenderMenuAsync();
         else
             await RenderBoardAsync();
@@ -459,7 +476,12 @@
     {
         var confirmed = DispatchMenu(new InputEvent.MouseDown(e.X, e.Y));
         if (confirmed is { } sel)
-            await ConfirmWizardAsync(sel);
+        {
+            if (_screen == Screen.Lobby)
+                await ConfirmLobbyAsync(sel);
+            else
+                await ConfirmWizardAsync(sel);
+        }
         // A click that misses every item confirms nothing and changes nothing — no redraw needed.
     }
 
@@ -470,16 +492,24 @@
     {
         if (!_ready || _busy) return;
 
-        if (_screen == Screen.Menu)
+        if (_screen is Screen.Menu or Screen.Lobby)
         {
             // Same key map as gameplay: MenuModel consumes arrows/Enter/digits, ignores the rest.
             if (MapGameKey(e.Key) is not { } key) return;
 
             var confirmed = DispatchMenu(new InputEvent.KeyDown(key));
-            if (confirmed is { } sel)
-                await ConfirmWizardAsync(sel);
-            else
+            if (confirmed is not { } sel)
+            {
                 await RenderMenuAsync(); // selection moved — repaint the highlight
+            }
+            else if (_screen == Screen.Lobby)
+            {
+                await ConfirmLobbyAsync(sel);
+            }
+            else
+            {
+                await ConfirmWizardAsync(sel);
+            }
             return;
         }
 
@@ -536,6 +566,16 @@
         var (mode, computerSide, sideToMove, difficulty) = _wizard.Result;
         _difficulty = difficulty;
 
+        if (mode == GameMode.NetworkGame)
+        {
+            // As with link play, "computerSide" carries the side we do NOT control — so ours is the
+            // other one, and that is the colour a posted game advertises.
+            _vsComputer = false;
+            _lobbyPreferredSide = computerSide == Side.White ? Side.Black : Side.White;
+            await EnterLobbyAsync();
+            return;
+        }
+
         if (mode == GameMode.PlayByLink)
         {
             // "computerSide" carries the side NOT locally controlled — here the remote
@@ -586,6 +626,7 @@
     {
         _busy = false;
         _display.StatusOverride = null;
+        await LeaveLobbyAsync();
         if (_cloudGameId is { } leaving)
         {
             // Stop the subscription before anything else: a row arriving after we have left would
@@ -605,7 +646,7 @@
             await JS.InvokeVoidAsync("chessCanvas.replaceStateFragment", "");
         }
         _screen = Screen.Menu;
-        _wizard = new StartupWizard(StartupWizardOptions.LinkPlay);
+        _wizard = new StartupWizard(WizardOptions);
         ShowWizardStep();
         await RenderMenuAsync();
     }
@@ -799,7 +840,7 @@
     {
         if (!_ready || _busy) return;
 
-        if (_screen == Screen.Menu)
+        if (_screen is Screen.Menu or Screen.Lobby)
         {
             await HandleMenuClickAsync(e);
             return;
@@ -1050,6 +1091,8 @@
             return;
         }
 
+        await WithdrawPostingIfClaimedAsync(row);
+
         if (_cloudJoining)
         {
             _cloudJoining = false;
@@ -1137,6 +1180,152 @@
         return _game.CurrentSide == _localSide
             ? $"Your move ({_localSide})."
             : $"Waiting for {opponent}…";
+    }
+
+    // ---- The cloud lobby ------------------------------------------------------------------------
+
+    // A screen the wizard routes INTO, not a wizard phase — the same shape Chess.GUI's LAN lobby and
+    // game picker take, and for the same reason: StartupWizard switches on a fixed set of indices,
+    // and a list whose length is however many games happen to be open is data, not a phase.
+    async Task EnterLobbyAsync()
+    {
+        _status = "Signing in…";
+        StateHasChanged();
+
+        if (!await CloudCourier.InitAsync(Http))
+        {
+            // Configured but unreachable — offline, or the backend said no. The menu is the only
+            // honest place to land, since there is nothing to show.
+            _screen = Screen.Menu;
+            ShowWizardStep();
+            _status = "Couldn't reach the online service. Play by Link still works.";
+            await RenderMenuAsync();
+            return;
+        }
+
+        _screen = Screen.Lobby;
+        _lobbyLoading = true;
+        CloudCourier.WatchOpen(OnLobbyRows);
+        ShowLobbyMenu();
+        await RenderMenuAsync();
+    }
+
+    void OnLobbyRows(string? json) => _ = InvokeAsync(async () =>
+    {
+        try
+        {
+            if (_screen != Screen.Lobby) return; // a lobby update that arrived after we left
+
+            var now = DateTimeOffset.UtcNow;
+            _lobby = [.. CloudCourier.ParseOpen(json)
+                .Where(row => !row.IsStale(now))
+                .OrderByDescending(row => row.Updated)];
+            _lobbyLoading = false;
+
+            ShowLobbyMenu();
+            await RenderMenuAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[chess-web] lobby update failed: {ex}");
+        }
+    });
+
+    void ShowLobbyMenu()
+    {
+        string[] items =
+        [
+            .. _lobby.Select(LobbyItemText),
+            "Post a game and wait",
+            "Back",
+        ];
+
+        var prompt = _lobbyLoading
+            ? "Looking for open games…"
+            : _lobby.Count == 0
+                ? "Nobody is waiting. Post a game and someone can join it later:"
+                : "Open games — pick one to join:";
+
+        _menu?.Reset(StartupWizard.Title, prompt, [.. items]);
+        _status = prompt;
+    }
+
+    // Your own posting is shown rather than filtered out, and picking it takes you back into the
+    // game. Without that, closing the tab on a game nobody has joined yet would lose it: the row is
+    // the only record of the id, and the browser has no inbox to look it up in.
+    string LobbyItemText(CloudCourier.OpenGame row) =>
+        row.Host == CloudCourier.Uid
+            ? $"Your game — waiting for an opponent (you are {row.PosterSide})"
+            : $"{(string.IsNullOrWhiteSpace(row.Name) ? "Someone" : row.Name)} — you would play {row.JoinerSide}";
+
+    async Task ConfirmLobbyAsync(int selected)
+    {
+        if (selected >= 0 && selected < _lobby.Count)
+        {
+            // Read the row BEFORE leaving: LeaveLobbyAsync empties the list, and the list is also
+            // replaced whenever the lobby pushes an update, so nothing may index it across an await.
+            var gameId = _lobby[selected].GameId;
+            await LeaveLobbyAsync();
+            await JoinCloudGameAsync(gameId);
+            return;
+        }
+
+        if (selected == _lobby.Count)
+        {
+            await PostGameAsync();
+            return;
+        }
+
+        await LeaveLobbyAsync();
+        _screen = Screen.Menu;
+        ShowWizardStep();
+        await RenderMenuAsync();
+    }
+
+    Task LeaveLobbyAsync()
+    {
+        CloudCourier.UnwatchOpen();
+        _lobby = [];
+        _lobbyLoading = false;
+        return Task.CompletedTask;
+    }
+
+    // Post: mint an id, create the game with our seat taken, advertise it, then walk into it exactly
+    // as a joiner would. The posting stays up until somebody claims the other seat — it is an
+    // invitation, and an invitation that vanished when you closed the tab would be no use for a game
+    // played over days.
+    async Task PostGameAsync()
+    {
+        _status = "Posting…";
+        StateHasChanged();
+
+        var gameId = CloudCourier.NewGameId();
+        var colour = _lobbyPreferredSide == Side.Black ? "b" : "w";
+
+        if (!await CloudCourier.CreateAsync(gameId, colour, CloudPlayerName)
+            || !await CloudCourier.PostAsync(gameId, CloudPlayerName, colour))
+        {
+            _status = "Couldn't post that game — try again.";
+            StateHasChanged();
+            return;
+        }
+
+        _postedGameId = gameId;
+        await LeaveLobbyAsync();
+        await JoinCloudGameAsync(gameId);
+    }
+
+    // Once both seats are taken the advertisement is a lie, so it comes down. Only the poster can
+    // remove it (the row is keyed by their uid), which is why this is driven by watching our own
+    // game rather than by the joiner.
+    async Task WithdrawPostingIfClaimedAsync(CloudCourier.Row row)
+    {
+        if (_postedGameId is null || _postedGameId != _cloudGameId) return;
+        if (row.WhiteUid is null || row.BlackUid is null) return;
+
+        _postedGameId = null;
+        await CloudCourier.UnpostAsync();
     }
 
     // ---- Play by Link: fragment plumbing --------------------------------------------------------

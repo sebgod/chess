@@ -1,6 +1,6 @@
 # Design: Correspondence play — the link courier, then the cloud courier
 
-**Status:** Phases 1 and 2 **done and live-verified in a running window**. Phase 3's backend is **live and verified end to end** — europe-west1 instance, deployed rules, anonymous auth — and **a cloud game is playable in the browser**, joined by a `#c=<id>` link — verified in two browser contexts against the emulator, and smoke-tested against the **live project on the deployed site**; what remains of 3a is the lobby (posting and browsing open games) and the README wording; phases 4-5 not started. The cloud courier is **the browser first, then Android** (see [Scope](#scope-the-browser-first-then-android)) — the native half puts back the `ILobby` extraction and the second API key that a browser-only scope had struck out. See [Phasing](#phasing). **Repo scope:** almost entirely **chess**; one
+**Status:** Phases 1 and 2 **done and live-verified in a running window**. Phase 3's backend is **live and verified end to end** — europe-west1 instance, deployed rules, anonymous auth — and **cloud play is complete in the browser** — a lobby to post and join games, or a `#c=<id>` link to skip it — verified in two browser contexts against the emulator and smoke-tested against the **live project on the deployed site**; what remains of 3a is the README wording; phases 4-5 not started. The cloud courier is **the browser first, then Android** (see [Scope](#scope-the-browser-first-then-android)) — the native half puts back the `ILobby` extraction and the second API key that a browser-only scope had struck out. See [Phasing](#phasing). **Repo scope:** almost entirely **chess**; one
 *optional* sibling cleanup is called out as the last phase and nothing here is blocked on a sibling
 release. Both capabilities the link half leans on already ship and are already in chess's package
 graph as of the DIR.Lib 8.8 repin: `SharpAstro.AppShell`'s `InstanceGate` (arrives transitively under
@@ -556,7 +556,8 @@ server confirmed rather than leaving a phantom ply on screen.
     updated  <server timestamp>
 
 /open/{uid}                       <- the lobby: games with an empty seat, ONE PER HOST
-    gameId, name, color, updated  <- also the peer table: self-expires via onDisconnect()
+    gameId, name, color, updated  <- DURABLE (no onDisconnect); `updated` is required, and stale
+                                     rows are hidden by the client, not deleted by the server
 
                                   <- and #c={gameId} is the link that names one (see above)
 
@@ -635,14 +636,26 @@ player typed. The web API key is public by design; the rules are the security bo
 anything that expires has to expire some other way. Two answers, and the first is better than it
 sounds:
 
-- **Lobby entries expire by themselves.** RTDB's `onDisconnect()` is part of the database protocol,
-  not a Cloud Function, so it works on the free plan: a client registers "delete my `/open` row when
-  my connection drops" *at the server* when it arrives. That is precisely the semantic LAN.Lib's
-  self-expiring peer table gives on the LAN, and it means a crashed client does not leave a ghost
-  opponent in the lobby.
-- **Finished and abandoned games need a client-driven sweep.** Delete on game end, and let any client
-  opening the lobby prune rows older than N days. Ugly but adequate, and the alternative is a billing
-  account.
+- **`onDisconnect()` is available, and is the wrong tool for this lobby.** It is part of the database
+  protocol rather than a Cloud Function, so it does work on the free plan: a client can register
+  "delete my `/open` row when my connection drops" *at the server* when it arrives, which is exactly
+  the semantic LAN.Lib's self-expiring peer table gives on the LAN.
+
+  This document said that was the answer. **It is not, and the reason is the difference between the
+  two products sharing one store.** A LAN peer row means *I am here now*, so it should vanish with
+  the connection. A posted correspondence game means *I have started a game and you can take the
+  other seat* — and if that vanished when the tab closed, the only games ever visible would be from
+  players sitting at the lobby at that moment, which is precisely the audience correspondence play
+  does not have. So `/open` rows are **durable**: no `onDisconnect()`, a required `updated`
+  timestamp, and the client hides rows past the same 120 days the desktop inbox uses. A live-play
+  lobby, if one is ever built on the same table, wants the opposite and should say so where it
+  registers it.
+- **What actually removes a row is the seat filling.** The poster is watching its own game, sees the
+  second seat taken, and withdraws the advertisement — the joiner cannot, since the row is keyed by
+  the poster's uid.
+- **Finished and abandoned games still need a client-driven sweep.** Delete on game end, and let any
+  client opening the lobby prune rows older than N days. Ugly but adequate, and the alternative is a
+  billing account.
 
 ## Live and correspondence are the same store
 
@@ -828,7 +841,7 @@ that no one later reaches for a server-side "anti-cheat" that this architecture 
 |---|---|---|---|
 | 1 | **Link play in the GUI**, end to end and with no new plumbing: `args` on `Program.cs`, `StartupWizardOptions.LinkPlay` on `VkStartupMenu`, paste-a-link (Ctrl+V, `SDL.GetClipboardText`), the turn semantics above, and "copy reply link" (Ctrl+L, `SDL.SetClipboardText`) | chess | **Done** — live-verified, see below |
 | 2 | **The inbox:** multi-slot store (`GameInbox`) + a "your move" list + staleness, and the GUI picker over it | chess | **Done** — live-verified |
-| 3a | **Cloud courier in the browser:** Firebase JS SDK via `[JSImport]`, anonymous auth, the schema and rules above, lobby UI in `Play.razor`, the README wording | chess | **Playable** — join by `#c=` link, 3 browser E2E tests; lobby + README wording outstanding |
+| 3a | **Cloud courier in the browser:** Firebase JS SDK via `[JSImport]`, anonymous auth, the schema and rules above, lobby UI in `Play.razor`, the README wording | chess | **Done bar the README** — lobby + `#c=` link, 4 browser E2E tests |
 | 3b | **Cloud courier on Android:** REST + SSE in `Chess.Net`, the `ILobby` extraction + `ISessionConnection` rename, a second API key with no referrer restriction, a cloud lobby beside the LAN one in `MainActivity` | chess | Not started |
 | 4 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, building or reusing the drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | Not started |
 | 5 | *Optional cleanup:* a public, non-`DEBUG` per-iteration hook on `SdlEventLoop` so the drain stops living in a side-effecting predicate | SdlVulkan.Renderer | Not started |

@@ -17,12 +17,13 @@
 
       "$uid": {
         ".write": "auth != null && auth.uid === $uid",
-        ".validate": "!newData.exists() || newData.hasChildren(['gameId', 'name', 'color'])",
+        ".validate": "!newData.exists() || newData.hasChildren(['gameId', 'name', 'color', 'updated'])",
 
-        "gameId": { ".validate": "newData.isString() && newData.val().length <= 64" },
-        "name":   { ".validate": "newData.isString() && newData.val().length <= 32" },
-        "color":  { ".validate": "newData.isString() && (newData.val() === 'w' || newData.val() === 'b')" },
-        "$other": { ".validate": false }
+        "gameId":  { ".validate": "newData.isString() && newData.val().length <= 64" },
+        "name":    { ".validate": "newData.isString() && newData.val().length <= 32" },
+        "color":   { ".validate": "newData.isString() && (newData.val() === 'w' || newData.val() === 'b')" },
+        "updated": { ".validate": "newData.isNumber() && newData.val() <= now" },
+        "$other":  { ".validate": false }
       }
     },
 
