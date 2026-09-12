@@ -15,6 +15,7 @@ A chess game with browser (WebGL), terminal (Sixel), and Vulkan GUI rendering ba
 - **Vulkan GUI app**: standalone windowed app using SDL3 + Vortice.Vulkan
 - **Browser app**: the full engine compiled to WebAssembly, rendered with WebGL2 — [play online](https://sebgod.github.io/chess/), nothing to install
 - **Play by Link**: serverless correspondence chess (browser) — the whole game travels in the URL, so you can play someone on the other side of the planet by swapping links over any messenger. No accounts, no server, no logins
+- **Play online** (browser): the same correspondence game, delivered for you — post a game in the lobby, or send a link, and moves arrive as they are played. Still no sign-up and no password: you are an anonymous player the moment you open the lobby. The one thing a link cannot do is find you an opponent you have not already met
 - Move history panel with algebraic notation — click any move or use Ctrl+Arrow to review past positions
 - Cross-platform: Windows, Linux, and macOS (x64 and ARM64)
 - Native AOT compiled for fast startup and small footprint
@@ -33,6 +34,10 @@ A chess game with browser (WebGL), terminal (Sixel), and Vulkan GUI rendering ba
 The browser version is live at **[sebgod.github.io/chess](https://sebgod.github.io/chess/)** — it runs entirely in your browser as WebAssembly, so there is nothing to install. It draws through WebGL2, which every browser has shipped since 2017; anything older (iOS 14 or earlier, Internet Explorer) gets an explanation instead of a board.
 
 It includes **Play by Link**: choose *Play by Link* from the menu and pick your colour, make your move, then copy, email, or share the link with your opponent. The link *is* the game — opening one means it's your turn. The titlebar's "Play by link" panel explains the full flow.
+
+It also includes **online play**: choose *Network game*, and either join a game somebody has posted or post one of your own and wait. Moves then arrive on their own, whether the game takes five minutes or five days. Sharing that game's link works too — it names the game rather than carrying it, so unlike a Play-by-Link URL it stays short and stays valid for the whole game.
+
+Both are correspondence chess and both are optional: Play by Link needs no server at all, and online play needs no account — signing in is anonymous and happens only when you open the lobby. A build of this repository with no backend configured simply doesn't offer the online option, and everything else works unchanged.
 
 ### Download a release
 
@@ -133,7 +138,7 @@ In Custom Game mode, you place pieces on the board before playing. The popup app
 | `Chess.Engine` | Standalone UCI engine executable (`chess-engine`), supports `go depth N` |
 | `Chess.GUI` | Vulkan chess app (SDL3 + Vortice.Vulkan windowing/rendering) |
 | `Chess.Console` | Terminal chess app with Sixel and ASCII display backends |
-| `Chess.Web` | Browser app: Blazor WebAssembly, WebGL2 renderer, Play by Link |
+| `Chess.Web` | Browser app: Blazor WebAssembly, WebGL2 renderer, Play by Link, online play |
 | `Chess.Tests` | xUnit v3 test suite |
 
 ### NuGet library dependencies
