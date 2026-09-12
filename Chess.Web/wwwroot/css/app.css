@@ -157,6 +157,21 @@ html, body {
 .toolbar label { color: var(--muted); display: inline-flex; gap: .4rem; align-items: center; }
 .toolbar select { padding: .3rem .45rem; }
 
+/* The lobby's name field. Sized to the 32 characters the database rules allow rather than to the
+   toolbar, so a long name is visibly too long before it is silently truncated. */
+.toolbar input[type="text"] {
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: .35rem .55rem;
+    font: inherit;
+    width: 12rem;
+    max-width: 40vw;
+}
+
+.toolbar input[type="text"]:focus { outline: none; border-color: var(--accent); }
+
 /* --- the board: everything the chrome leaves --- */
 /* min-height:0 is load-bearing: without it a flex item refuses to shrink below its content and
    the canvas pushes the toolbar off-screen instead of taking the remainder. position:relative

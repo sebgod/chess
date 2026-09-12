@@ -129,6 +129,61 @@ public sealed class CloudPlayTests(ChessWebFixture fixture)
         }
     }
 
+    private static async Task SetNameAsync(IPage page, string name)
+    {
+        var field = page.Locator(".toolbar input[type=\"text\"]");
+        await field.FillAsync(name);
+        await field.BlurAsync(); // @onchange fires on blur, which is what writes localStorage
+        await page.WaitForTimeoutAsync(200);
+    }
+
+    [Fact]
+    public async Task PlayersAreCalledWhatTheyTypedAndItSurvivesAReload()
+    {
+        RequireLocalBackend();
+        await ResetEmulatorAsync();
+
+        var ada = await OpenLobbyAsync();
+        await Expect(Status(ada)).ToContainTextAsync("Nobody is waiting", new() { Timeout = BootTimeout });
+        await SetNameAsync(ada, "Ada");
+
+        await PressAsync(ada, "1"); // post
+        await Expect(Status(ada)).ToContainTextAsync("Waiting for an opponent",
+            new() { Timeout = BootTimeout });
+
+        var bo = await OpenLobbyAsync();
+        await Expect(Status(bo)).ToContainTextAsync("Open games", new() { Timeout = BootTimeout });
+        await SetNameAsync(bo, "Bo");
+        await PressAsync(bo, "1"); // join
+
+        await Expect(Status(ada)).ToContainTextAsync("Your move (White)", new() { Timeout = BootTimeout });
+        await PlayMoveAsync(ada, "e2e4");
+
+        // The line this whole change exists for: it used to read "Waiting for Player…".
+        await Expect(Status(ada)).ToContainTextAsync("Waiting for Bo", new() { Timeout = PushTimeout });
+
+    }
+
+    [Fact]
+    public async Task TheNameIsRememberedAcrossAReload()
+    {
+        RequireLocalBackend();
+
+        // Deliberately the SAME page rather than a second one: NewPageAsync gives every page its own
+        // browser context, which is what makes two players two players — and means a "second tab"
+        // here would be a different profile with legitimately no name saved in it.
+        var page = await OpenLobbyAsync();
+        await SetNameAsync(page, "Ada");
+
+        await page.ReloadAsync();
+        await Expect(Status(page)).ToContainTextAsync("Choose how", new() { Timeout = BootTimeout });
+        await PressAsync(page, NetworkGameKey);
+        await PressAsync(page, "1");
+
+        await Expect(page.Locator(".toolbar input[type=\"text\"]")).ToHaveValueAsync("Ada",
+            new() { Timeout = BootTimeout });
+    }
+
     [Fact]
     public async Task APostedGameIsFoundAndJoinedFromTheLobby()
     {

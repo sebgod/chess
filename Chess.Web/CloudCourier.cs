@@ -226,6 +226,14 @@ internal static partial class CloudCourier
         public Side? SeatOf(string uid) =>
             WhiteUid == uid ? Side.White : BlackUid == uid ? Side.Black : null;
 
+        /// <summary>Who holds a seat, or null while it is still empty.</summary>
+        public string? UidOf(Side side) => side == Side.White ? WhiteUid : BlackUid;
+
+        /// <summary>
+        /// The name on a seat. Optional even when the seat is taken — a name is something a player
+        /// types, so "nobody has sat down yet" and "they did not say who they are" are different
+        /// answers and the caller has to tell them apart (see <see cref="UidOf"/>).
+        /// </summary>
         public string? NameOf(Side side) => side == Side.White ? WhiteName : BlackName;
     }
 

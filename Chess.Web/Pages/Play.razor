@@ -42,7 +42,20 @@
                 @onclick="() => TogglePanel(Panel.UnderTheHood)">Under the hood</button>
     </div>
 
-    @if (_screen == Screen.Setup)
+    @if (_screen == Screen.Lobby)
+    {
+        @* The one piece of chrome the lobby needs. It is a DOM input rather than something drawn on
+           the canvas because the canvas menu has no text entry — and because a name field is exactly
+           what the browser is good at. *@
+        <div class="toolbar">
+            <label>Your name
+                <input type="text" maxlength="@MaxNameLength" placeholder="Player"
+                       value="@_playerName" @onchange="OnPlayerNameChangedAsync" />
+            </label>
+            <button @onclick="BackToMenuAsync" disabled="@_busy">↩ Menu</button>
+        </div>
+    }
+    else if (_screen == Screen.Setup)
     {
         <div class="toolbar">
             <button class="new" @onclick="FinishSetupAsync" disabled="@_busy">▶ Start game</button>
@@ -396,6 +409,7 @@
         // play. Signing in happens when the player asks for it, so a visitor who never plays online
         // never becomes an anonymous user.
         _cloudConfigured = await CloudCourier.IsConfiguredAsync(Http);
+        if (_cloudConfigured) await LoadPlayerNameAsync();
         _wizard = new StartupWizard(WizardOptions);
 
         var bootFragment = new Uri(Nav.Uri).Fragment;
@@ -1036,10 +1050,52 @@
 
     // ---- Cloud play: the database as courier -----------------------------------------------------
 
-    // The name a seat carries. A cloud game needs one to show "waiting for X", and the browser has
-    // no LanProfile to borrow it from, so this is a placeholder until the lobby introduces a real
-    // one — the rules cap it at 32 characters either way.
-    const string CloudPlayerName = "Player";
+    // The name a seat carries. The desktop has LanProfile to borrow one from; the browser keeps it
+    // in localStorage, which is the same bargain the rest of this app makes — per-device, no account,
+    // nothing sent anywhere except onto the seat you are sitting in.
+    const string NameStorageKey = "chess.playerName";
+    const int MaxNameLength = 32; // the database rules refuse anything longer
+
+    string _playerName = "";
+
+    // What actually goes on a seat: trimmed, capped, and never empty. An unnamed player still has to
+    // read as somebody in "waiting for …", so the fallback is a word rather than a blank.
+    string DisplayName
+    {
+        get
+        {
+            var name = _playerName.Trim();
+            if (name.Length == 0) return "Player";
+            return name.Length <= MaxNameLength ? name : name[..MaxNameLength];
+        }
+    }
+
+    async Task LoadPlayerNameAsync()
+    {
+        try
+        {
+            _playerName = await JS.InvokeAsync<string>("localStorage.getItem", NameStorageKey) ?? "";
+        }
+        catch (Exception ex)
+        {
+            // Private windows and blocked site data throw rather than returning null. A missing name
+            // is not worth a broken app: play as "Player".
+            Console.Error.WriteLine($"[chess-web] could not read the saved name: {ex.Message}");
+        }
+    }
+
+    async Task OnPlayerNameChangedAsync(ChangeEventArgs e)
+    {
+        _playerName = (e.Value as string ?? "").Trim();
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", NameStorageKey, _playerName);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[chess-web] could not save the name: {ex.Message}");
+        }
+    }
 
     // Joining is a sequence of WRITES, not a read, because "the game does not exist" and "the game
     // is not mine to read" are the same answer from a database whose read rule is "you hold a seat"
@@ -1076,11 +1132,11 @@
         _lastAppliedFragment = fragment;
         await JS.InvokeVoidAsync("chessCanvas.replaceStateFragment", fragment);
 
-        if (!await CloudCourier.CreateAsync(gameId, "w", CloudPlayerName)
-            && !await CloudCourier.ClaimAsync(gameId, "b", CloudPlayerName))
+        if (!await CloudCourier.CreateAsync(gameId, "w", DisplayName)
+            && !await CloudCourier.ClaimAsync(gameId, "b", DisplayName))
         {
             // The creator may have taken Black, leaving White open.
-            await CloudCourier.ClaimAsync(gameId, "w", CloudPlayerName);
+            await CloudCourier.ClaimAsync(gameId, "w", DisplayName);
         }
 
         CloudCourier.Watch(gameId, OnCloudRow);
@@ -1226,13 +1282,16 @@
         if (_cloudJoining) return "Connecting…";
         if (_game.IsFinished) return PlainStatusText();
 
-        var opponent = _cloudRow?.NameOf(_localSide.ToOpposite());
-        if (opponent is null)
+        var opponentSide = _localSide.ToOpposite();
+        if (_cloudRow?.UidOf(opponentSide) is null)
             return $"Waiting for an opponent — share the link. You are {_localSide}.";
 
-        return _game.CurrentSide == _localSide
-            ? $"Your move ({_localSide})."
-            : $"Waiting for {opponent}…";
+        if (_game.CurrentSide == _localSide) return $"Your move ({_localSide}).";
+
+        // Seated but nameless is possible — a name is optional on the wire — so this says "your
+        // opponent" rather than printing an empty string or a placeholder.
+        var opponent = _cloudRow?.NameOf(opponentSide);
+        return $"Waiting for {(string.IsNullOrWhiteSpace(opponent) ? "your opponent" : opponent)}…";
     }
 
     // ---- The cloud lobby ------------------------------------------------------------------------
@@ -1366,8 +1425,8 @@
         var gameId = CloudCourier.NewGameId();
         var colour = _lobbyPreferredSide == Side.Black ? "b" : "w";
 
-        if (!await CloudCourier.CreateAsync(gameId, colour, CloudPlayerName)
-            || !await CloudCourier.PostAsync(gameId, CloudPlayerName, colour))
+        if (!await CloudCourier.CreateAsync(gameId, colour, DisplayName)
+            || !await CloudCourier.PostAsync(gameId, DisplayName, colour))
         {
             _status = "Couldn't post that game — try again.";
             StateHasChanged();
