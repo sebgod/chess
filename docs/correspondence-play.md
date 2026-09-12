@@ -406,6 +406,34 @@ A related correction to a natural assumption: **API key restrictions do not prot
 Firebase is explicit that restricting a key does not secure Realtime Database or Auth — rules and App
 Check do. The rules are the boundary; the key is a project identifier.
 
+### One key per front-end, because a referrer restriction excludes the desktop
+
+The browser key is restricted to `sebgod.github.io/*` and `localhost:*`. That is worth having for the
+same reason the config is a secret — a fork deployed on another domain cannot use it — and for nothing
+more; it guards an origin, not the data.
+
+**The trap it sets is for the desktop, and it is not theoretical.** An HTTP-referrer restriction
+matches on the `Referer` header, and a request that sends none is refused outright. Chess.GUI calling
+Identity Toolkit through `HttpClient` sends none. Measured against the live key:
+
+```
+no Referer                            -> 403  "Requests from referer <empty> are blocked"
+Referer: https://sebgod.github.io/... -> 200  token issued
+```
+
+So the restriction that protects the web would make the desktop courier fail at sign-in, and fail in
+the shape of a broken auth implementation rather than a key policy — which is a long way to debug from
+the symptom.
+
+Hence **two keys**: the browser key restricted as above, and a second key for the native front-ends
+with no referrer restriction (API restrictions to Identity Toolkit and Realtime Database are still
+worth setting, since those narrow what a leaked key can reach without depending on a header the caller
+cannot send). Mint the second one when the desktop transport lands.
+
+The consequence for `FIREBASE_CONFIG` is that `apiKey` becomes per-front-end while every other field
+stays shared, so the secret holds either two configs or one config plus an override. Decide that when
+the second key exists, not before.
+
 The security rules themselves belong in the repository as `firebase/database.rules.json`, deployed
 from there, never pasted into the console where they are unversioned and untested. See
 [Testing](#testing) for why the emulator earns its keep on exactly this file.
