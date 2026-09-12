@@ -1,6 +1,6 @@
 # Design: Correspondence play — the link courier, then the cloud courier
 
-**Status:** Phases 1 and 2 **done and live-verified in a running window**. Phase 3's backend is **live and verified end to end** — europe-west1 instance, deployed rules, anonymous auth — and its browser client has a **walking skeleton passing against the emulator** (anonymous auth, seat claim, turn gate and push, in two browser contexts) plus config plumbing in CI; what is not written is the wiring into `Play.razor`; phases 4-5 not started. The cloud courier is **the browser first, then Android** (see [Scope](#scope-the-browser-first-then-android)) — the native half puts back the `ILobby` extraction and the second API key that a browser-only scope had struck out. See [Phasing](#phasing). **Repo scope:** almost entirely **chess**; one
+**Status:** Phases 1 and 2 **done and live-verified in a running window**. Phase 3's backend is **live and verified end to end** — europe-west1 instance, deployed rules, anonymous auth — and **a cloud game is playable in the browser**, joined by a `#c=<id>` link and verified in two browser contexts end to end; what remains of 3a is the lobby (posting and browsing open games) and the README wording; phases 4-5 not started. The cloud courier is **the browser first, then Android** (see [Scope](#scope-the-browser-first-then-android)) — the native half puts back the `ILobby` extraction and the second API key that a browser-only scope had struck out. See [Phasing](#phasing). **Repo scope:** almost entirely **chess**; one
 *optional* sibling cleanup is called out as the last phase and nothing here is blocked on a sibling
 release. Both capabilities the link half leans on already ship and are already in chess's package
 graph as of the DIR.Lib 8.8 repin: `SharpAstro.AppShell`'s `InstanceGate` (arrives transitively under
@@ -489,6 +489,62 @@ The security rules themselves belong in the repository as `firebase/database.rul
 from there, never pasted into the console where they are unversioned and untested. See
 [Testing](#testing) for why the emulator earns its keep on exactly this file.
 
+## The couriers hand off through the same link
+
+A cloud game still wants a link — "here, play me" has to travel through a messenger somehow, and the
+lobby only helps people who are looking for a stranger rather than for *you*. So a cloud game gets
+one, in the same grammar: `#c=<gameId>` names a game the database is carrying, where `#g=…` carries
+the game itself.
+
+Both are `GameLinkCodec`'s format, parsed by the same reduction (`ExtractBody`), and the difference
+is one key. That buys three things worth having:
+
+- **One address bar and one parser.** No second link shape to recognise, and no front-end grows its
+  own — `TryExtractCloudId` sits beside `TryDecode` for the same reason everything else in that file
+  does.
+- **A link that never goes stale and never grows.** A link game's URL is rewritten after every ply,
+  because the URL *is* the game; the same link sent twice is two different games. A cloud link is a
+  dozen bytes that mean the same thing on move 3 and move 300, so it can be pinned, bookmarked, or
+  left in a chat window.
+- **Graceful degradation by construction.** Unknown keys are ignored, so a build that predates cloud
+  play sees a link with no `g` — which is exactly right, because it cannot play that game. Nothing
+  had to be versioned to get that.
+
+The join is a sequence of *writes*, not a read, and that falls out of the read rule being
+`you hold a seat`:
+
+| | |
+|---|---|
+| `create` succeeds | the game was absent; we are its White player |
+| `create` fails, `claim` succeeds | it existed with a seat free, now ours |
+| both fail | it is full **or** we already sit there — the subscription settles it: a row we can read means a seat, `null` means refused |
+
+Asking first would need a read the rules correctly refuse, since "no such game" and "not your game"
+are the same answer to anyone without a seat. Writing first asks the only question the database can
+answer.
+
+### Two checks the client makes that the rules cannot
+
+The append-only rule is a *string* test — `newData.val().beginsWith(data.val())` — and the ply gate
+is arithmetic on `n`. Neither can read chess, which is the whole point, but it means two things are
+the client's to check:
+
+- **`n` must match the row's own decoded ply count.** The rules cannot count moves in a string, so a
+  row whose `n` disagrees with its move log is one the server had no way to reject.
+- **An incoming row must be a continuation in PLIES, not merely a string extension.**
+  `GameLinkCodec.IsContinuationOf` already exists for the link courier and already says why: a
+  string prefix test is sensitive to the variable-length promotion token and to reserved params,
+  neither of which is the game.
+
+Neither check has ever fired, and on the current encoding neither can: a promotion token is only
+legal where the 4-character form is not, so a suffix-extended move fails the replay anyway. They are
+cheap, they state the invariant the string rule stands in for, and they are what keeps that rule an
+optimisation rather than the definition.
+
+A refused append is not an error either. The server is the arbiter of whose turn it is, so a
+rejection means the local board is the one that is wrong, and it rolls back to the last row the
+server confirmed rather than leaving a phantom ply on screen.
+
 ## The schema is the link
 
 ```
@@ -501,6 +557,8 @@ from there, never pasted into the console where they are unversioned and unteste
 
 /open/{uid}                       <- the lobby: games with an empty seat, ONE PER HOST
     gameId, name, color, updated  <- also the peer table: self-expires via onDisconnect()
+
+                                  <- and #c={gameId} is the link that names one (see above)
 
 /invites/{to}/{from}              <- a targeted posting of the same thing, ONE PER SENDER PER TARGET
     gameId, name, color           <- written by {from}; deleting it is Cancel
@@ -770,7 +828,7 @@ that no one later reaches for a server-side "anti-cheat" that this architecture 
 |---|---|---|---|
 | 1 | **Link play in the GUI**, end to end and with no new plumbing: `args` on `Program.cs`, `StartupWizardOptions.LinkPlay` on `VkStartupMenu`, paste-a-link (Ctrl+V, `SDL.GetClipboardText`), the turn semantics above, and "copy reply link" (Ctrl+L, `SDL.SetClipboardText`) | chess | **Done** — live-verified, see below |
 | 2 | **The inbox:** multi-slot store (`GameInbox`) + a "your move" list + staleness, and the GUI picker over it | chess | **Done** — live-verified |
-| 3a | **Cloud courier in the browser:** Firebase JS SDK via `[JSImport]`, anonymous auth, the schema and rules above, lobby UI in `Play.razor`, the README wording | chess | Backend live; `wwwroot/js/firebase-cloud.js` + walking skeleton passing (emulator); `Play.razor` not wired |
+| 3a | **Cloud courier in the browser:** Firebase JS SDK via `[JSImport]`, anonymous auth, the schema and rules above, lobby UI in `Play.razor`, the README wording | chess | **Playable** — join by `#c=` link, 3 browser E2E tests; lobby + README wording outstanding |
 | 3b | **Cloud courier on Android:** REST + SSE in `Chess.Net`, the `ILobby` extraction + `ISessionConnection` rename, a second API key with no referrer restriction, a cloud lobby beside the LAN one in `MainActivity` | chess | Not started |
 | 4 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, building or reusing the drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | Not started |
 | 5 | *Optional cleanup:* a public, non-`DEBUG` per-iteration hook on `SdlEventLoop` so the drain stops living in a side-effecting predicate | SdlVulkan.Renderer | Not started |
