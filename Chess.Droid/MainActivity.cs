@@ -245,9 +245,15 @@ public sealed class MainActivity : SdlVulkanActivity
         // Android's back button/gesture: SDL traps it before the activity's onBackPressed and
         // delivers it as a key (AC_BACK -> InputKey.Escape), already on the SDL thread. Desktop Esc
         // semantics, staged: playback -> live game -> menu (state is saved move-by-move) -> launcher.
-        loop.OnKeyDown = (key, _) =>
+        // SdlVulkan.Renderer 7.33 hands the event over whole rather than (key, modifiers), which is
+        // what makes the repeat check below possible.
+        loop.OnKeyDown = keyEvent =>
         {
-            if (key != InputKey.Escape) return false;
+            if (keyEvent.Key != InputKey.Escape) return false;
+            // Back is a one-shot. Held, the OS repeats it, and each repeat would take another step
+            // down this ladder — a long press would walk playback, game and menu in one gesture and
+            // drop the player at the launcher, which is not what holding a button means.
+            if (keyEvent.Repeat) return true;
             if (_netLobby is not null)
             {
                 ShowMenu(); // leave the lobby (tears down discovery/sockets)
