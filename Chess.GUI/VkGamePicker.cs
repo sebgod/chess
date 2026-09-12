@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Chess.Lib.UI;
+using Chess.Net;
 using Chess.UCI;
 using DIR.Lib;
 using SdlVulkan.Renderer;
@@ -26,6 +27,10 @@ internal sealed class VkGamePicker : IWidget
 {
     private readonly string _dataDir;
     private readonly TimeProvider _time;
+
+    // The name rows call US by. It already exists for LAN play, so a player who set one there is not
+    // asked again; an empty one reads as "You", which is true and needs no prompt.
+    private readonly string _localName;
 
     private PixelMenuWidget<VulkanContext>? _menu;
     private List<InboxEntry> _rows = [];
@@ -56,6 +61,7 @@ internal sealed class VkGamePicker : IWidget
     {
         _dataDir = dataDir;
         _time = time;
+        _localName = LanProfile.Load(dataDir).Name;
         Reload();
     }
 
@@ -92,7 +98,7 @@ internal sealed class VkGamePicker : IWidget
 
         string[] items =
         [
-            .. _rows.Select(e => e.Summary(now)),
+            .. _rows.Select(e => e.Summary(now, _localName)),
             .. _hiddenCount > 0 ? new[] { $"Show {_hiddenCount} older game{(_hiddenCount == 1 ? "" : "s")}" } : [],
             "Back",
         ];

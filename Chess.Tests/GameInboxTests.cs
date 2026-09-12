@@ -302,12 +302,79 @@ public sealed class GameInboxTests : IDisposable
     // ── The row a picker shows ──────────────────────
 
     [Fact]
-    public void Summary_ANamedCorrespondenceGameWaitingOnYou()
+    public void Summary_NamesThePlayersAndWhenItBegan()
     {
+        // Correspondent is Black, so we are White and go first in the name.
         SaveLink("g", Side.Black, Now - TimeSpan.FromDays(2), "Ada", "e2e4", "e7e5");
 
-        GameInbox.TryLoad(_dir, "g")!.Value.Summary(Now)
-            .ShouldBe("Ada — your move · 1 move · 2 days ago");
+        GameInbox.TryLoad(_dir, "g")!.Value.Summary(Now, "Sebastian")
+            .ShouldBe("Sebastian – Ada (10 Sep) · your move · 2 days ago");
+    }
+
+    [Fact]
+    public void Title_PutsWhiteFirstWhicheverSideIsLocal()
+    {
+        SaveLink("white", Side.Black, Now, "Ada", "e2e4");  // we are White
+        SaveLink("black", Side.White, Now, "Ada", "e2e4");  // we are Black
+
+        GameInbox.TryLoad(_dir, "white")!.Value.Title("Me", Now).ShouldStartWith("Me – Ada");
+        GameInbox.TryLoad(_dir, "black")!.Value.Title("Me", Now).ShouldStartWith("Ada – Me");
+    }
+
+    [Fact]
+    public void Title_UnknownCorrespondent_HoldsTheSlotRatherThanGoingBlank()
+    {
+        // Link play carries no name. A blank there reads as something failed to load.
+        SaveLink("g", Side.Black, Now, "", "e2e4");
+
+        GameInbox.TryLoad(_dir, "g")!.Value.Title("Me", Now).ShouldStartWith("Me – ?");
+    }
+
+    [Fact]
+    public void Title_NoLocalNameSet_SaysYou()
+    {
+        // The LAN profile is optional, so the picker must read sensibly before anyone sets a name.
+        SaveLink("g", Side.Black, Now, "Ada", "e2e4");
+
+        GameInbox.TryLoad(_dir, "g")!.Value.Title("", Now).ShouldStartWith("You – Ada");
+    }
+
+    [Fact]
+    public void Title_ShowsTheYearOnlyWhenItIsNotThisOne()
+    {
+        SaveLink("thisYear", Side.Black, Now - TimeSpan.FromDays(5), "Ada", "e2e4");
+        SaveLink("older", Side.Black, Now - TimeSpan.FromDays(400), "Ada", "e2e4");
+
+        // A year on every row is noise; its absence on the recent ones is what makes an old game
+        // stand out at a glance.
+        GameInbox.TryLoad(_dir, "thisYear")!.Value.Title("Me", Now).ShouldEndWith("(7 Sep)");
+        GameInbox.TryLoad(_dir, "older")!.Value.Title("Me", Now).ShouldEndWith("(8 Aug 2025)");
+    }
+
+    [Fact]
+    public void Title_HotSeat_NamesNeitherPlayer()
+    {
+        // Both players are at this device, so calling one of them "Me" would be a claim about the
+        // other that is not true.
+        GameInbox.Save(_dir, "g", new Game(), Side.None, GameMode.PlayerVsPlayer, "", Now);
+
+        GameInbox.TryLoad(_dir, "g")!.Value.Title("Me", Now).ShouldBe("Hot seat (12 Sep)");
+    }
+
+    [Fact]
+    public void Started_DoesNotMoveWhenTheGameDoes()
+    {
+        // The start date is half the game's NAME, so a later save must not rename it.
+        var began = Now - TimeSpan.FromDays(30);
+        GameInbox.Save(_dir, "g", GameFromUci("e2e4"), Side.Black, GameMode.PlayByLink, "Ada", began);
+        var first = GameInbox.TryLoad(_dir, "g")!.Value.Started;
+
+        GameInbox.Save(_dir, "g", GameFromUci("e2e4", "e7e5"), Side.Black, GameMode.PlayByLink, "Ada",
+            Now, started: first);
+
+        var again = GameInbox.TryLoad(_dir, "g")!.Value;
+        again.Started.ToUnixTimeSeconds().ShouldBe(began.ToUnixTimeSeconds());
+        again.LastMove.ToUnixTimeSeconds().ShouldBe(Now.ToUnixTimeSeconds());
     }
 
     [Fact]
@@ -315,7 +382,7 @@ public sealed class GameInboxTests : IDisposable
     {
         SaveLink("g", Side.Black, Now, "Ada", "e2e4");
 
-        GameInbox.TryLoad(_dir, "g")!.Value.Summary(Now).ShouldContain("their move");
+        GameInbox.TryLoad(_dir, "g")!.Value.Summary(Now, "Me").ShouldContain("their move");
     }
 
     [Theory]
@@ -349,7 +416,7 @@ public sealed class GameInboxTests : IDisposable
     {
         SaveLink("g", Side.Black, Now - TimeSpan.FromDays(daysAgo), "Ada", "e2e4");
 
-        GameInbox.TryLoad(_dir, "g")!.Value.Summary(Now).ShouldEndWith(expected);
+        GameInbox.TryLoad(_dir, "g")!.Value.Summary(Now, "Me").ShouldEndWith(expected);
     }
 
     [Fact]
@@ -359,7 +426,7 @@ public sealed class GameInboxTests : IDisposable
         // not render as "-3 days ago".
         SaveLink("g", Side.Black, Now + TimeSpan.FromDays(3), "Ada", "e2e4");
 
-        GameInbox.TryLoad(_dir, "g")!.Value.Summary(Now).ShouldEndWith("just now");
+        GameInbox.TryLoad(_dir, "g")!.Value.Summary(Now, "Me").ShouldEndWith("just now");
     }
 
     [Fact]
@@ -367,15 +434,20 @@ public sealed class GameInboxTests : IDisposable
     {
         SaveLink("g", Side.Black, Now, "Ada", "f2f3", "e7e5", "g2g4", "d8h4");
 
-        GameInbox.TryLoad(_dir, "g")!.Value.Summary(Now).ShouldContain("finished");
+        GameInbox.TryLoad(_dir, "g")!.Value.Summary(Now, "Me").ShouldContain("finished");
     }
 
     [Fact]
-    public void Summary_CountsMovesNotPlies()
+    public void Started_FallsBackToTheLastMove_OnASaveFromBeforeTheFieldExisted()
     {
-        // Players count moves; the store counts plies. 3 plies is 2 moves, not 3 and not 1.
-        SaveLink("g", Side.Black, Now, "Ada", "e2e4", "e7e5", "g1f3");
+        // Written the way an older build would: a last-move stamp and no start date.
+        Directory.CreateDirectory(GameInbox.FolderFor(_dir));
+        GameStore.Save(Path.Combine(GameInbox.FolderFor(_dir), "old.uci"),
+            GameFromUci("e2e4"), Side.Black, GameMode.PlayByLink, null, "Ada", Now);
 
-        GameInbox.TryLoad(_dir, "g")!.Value.Summary(Now).ShouldContain("2 moves");
+        // Not the truth, but the closest thing on disk -- and it keeps the row nameable rather than
+        // dating every legacy game to 1970.
+        GameInbox.TryLoad(_dir, "old")!.Value.Started.ToUnixTimeSeconds()
+            .ShouldBe(Now.ToUnixTimeSeconds());
     }
 }

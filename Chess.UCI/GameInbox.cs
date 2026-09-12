@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 using Chess.Lib;
 using File = System.IO.File;
 
@@ -11,7 +12,8 @@ namespace Chess.UCI;
 /// <em>this device's copy</em> rather than about the game — which file it is, and when it last
 /// changed.
 /// </summary>
-public readonly record struct InboxEntry(string Id, SavedGame Saved, DateTimeOffset LastMove)
+public readonly record struct InboxEntry(
+    string Id, SavedGame Saved, DateTimeOffset LastMove, DateTimeOffset Started)
 {
     public Game Game => Saved.Game;
     public GameMode Mode => Saved.Mode;
@@ -62,20 +64,58 @@ public readonly record struct InboxEntry(string Id, SavedGame Saved, DateTimeOff
     };
 
     /// <summary>
+    /// What to call this game: who is playing it, White first, and when it began — "Ada – ? (12 Sep)".
+    ///
+    /// <para>Names and a start date rather than a move count, because those are what tell two games
+    /// APART. A correspondence player with three link games open sees three rows, and "2 moves" is
+    /// the one fact about them that is neither stable nor distinctive; the date a game began never
+    /// changes and is how people actually refer to them.</para>
+    ///
+    /// <para>Link play exchanges no names, so an unknown opponent shows as <c>?</c> — it holds the
+    /// slot, where a blank reads as something failed to load. The link format could carry one: its
+    /// body ignores unknown <c>key=value</c> pairs (only the reserved <c>f=</c> is rejected), so a
+    /// future <c>n=</c> would be understood by old builds as absent rather than as broken.</para>
+    /// </summary>
+    public string Title(string localName, DateTimeOffset now)
+    {
+        var me = string.IsNullOrWhiteSpace(localName) ? "You" : localName.Trim();
+        var them = string.IsNullOrEmpty(Opponent)
+            ? (Mode is GameMode.PlayByLink ? "?" : OpponentLabel)
+            : Opponent;
+
+        // Hot-seat has no local side, so naming one player "You" would be a lie about the other.
+        var (white, black) = LocalSide switch
+        {
+            Side.White => (me, them),
+            Side.Black => (them, me),
+            _ => (OpponentLabel, ""),
+        };
+
+        var pair = string.IsNullOrEmpty(black) ? white : $"{white} – {black}";
+        return $"{pair} ({Began(now)})";
+    }
+
+    /// <summary>
     /// The one-line description a picker shows. Canonical here rather than in each front-end, for the
     /// same reason <c>GameUI.StatusLine</c> is: three hosts will want this row and three hand-written
     /// versions would drift on exactly the details that matter — whose turn it is, and how long ago.
     /// </summary>
-    public string Summary(DateTimeOffset now)
+    public string Summary(DateTimeOffset now, string localName = "")
     {
-        var moves = (Game.PlyCount + 1) / 2;
         var state = Game.IsFinished ? "finished"
             : IsWaitingOnYou ? "your move"
             : Mode is GameMode.PlayByLink ? "their move"
             : Game.CurrentSide is Side.Black ? "black to move" : "white to move";
 
-        return $"{OpponentLabel} — {state} · {moves} {(moves == 1 ? "move" : "moves")} · {Ago(now)}";
+        return $"{Title(localName, now)} · {state} · {Ago(now)}";
     }
+
+    /// <summary>The start date, with the year only when it is not this one — a year on every row is
+    /// noise, and its absence on an old game is exactly what makes the old game stand out.</summary>
+    private string Began(DateTimeOffset now) =>
+        Started.Year == now.Year
+            ? Started.ToString("d MMM", CultureInfo.InvariantCulture)
+            : Started.ToString("d MMM yyyy", CultureInfo.InvariantCulture);
 
     /// <summary>How long ago this game last changed, in the coarsest unit that still says something.
     /// A correspondence game is measured in days, so hours are noise and seconds are a lie.</summary>
@@ -165,15 +205,17 @@ public static class GameInbox
     /// its last-changed time. Best-effort, exactly like <see cref="GameStore.Save"/>: a failed write
     /// must never take down the game it was trying to preserve.
     /// </summary>
+    /// <param name="started">When the game began. Defaults to <paramref name="now"/>, which is right
+    /// for a new game; a resumed one must pass its own, or every save would rename it.</param>
     public static void Save(
         string directory, string id, Game game, Side computerSide, GameMode mode,
-        string opponent, DateTimeOffset now, Action<string>? log = null)
+        string opponent, DateTimeOffset now, Action<string>? log = null, DateTimeOffset? started = null)
     {
         try
         {
             Directory.CreateDirectory(FolderFor(directory));
             GameStore.Save(PathFor(directory, id), game, computerSide, mode, log,
-                opponent: opponent, lastMove: now);
+                opponent: opponent, lastMove: now, started: started ?? now);
         }
         catch (Exception ex)
         {
@@ -225,7 +267,7 @@ public static class GameInbox
             // abandoned game look fresh.
             var played = new DateTimeOffset(File.GetLastWriteTimeUtc(legacy), TimeSpan.Zero);
             Save(directory, NewId(now), saved.Game, saved.ComputerSide, saved.Mode, saved.Opponent,
-                played, log);
+                played, log, started: played);
             File.Delete(legacy);
             log?.Invoke("[inbox] migrated the legacy save");
         }
@@ -248,6 +290,9 @@ public static class GameInbox
         var lastMove = saved.LastMove
             ?? new DateTimeOffset(File.GetLastWriteTimeUtc(path), TimeSpan.Zero);
 
-        return new InboxEntry(Path.GetFileNameWithoutExtension(path), saved, lastMove);
+        // A save from before the start date existed falls back to its last move: not the truth, but
+        // the closest thing on disk, and it keeps the row nameable rather than dated 1970.
+        return new InboxEntry(
+            Path.GetFileNameWithoutExtension(path), saved, lastMove, saved.Started ?? lastMove);
     }
 }

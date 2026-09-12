@@ -17,6 +17,11 @@ public readonly record struct SavedGame(Game Game, Side ComputerSide, GameMode M
     /// a caller should read as "unknown", not as the epoch, since the difference decides whether a
     /// game looks stale.</summary>
     public DateTimeOffset? LastMove { get; init; }
+
+    /// <summary>When the game was first saved. Distinct from <see cref="LastMove"/> on purpose: the
+    /// start date names a game ("the one I began on the 12th") and never changes, where the last move
+    /// is activity and changes constantly. Null on a save written before the field existed.</summary>
+    public DateTimeOffset? Started { get; init; }
 }
 
 /// <summary>
@@ -87,6 +92,9 @@ public static class GameStore
                 LastMove = ReadToken(header, LastMoveKey) is { } at && long.TryParse(at, out var unix)
                     ? DateTimeOffset.FromUnixTimeSeconds(unix)
                     : null,
+                Started = ReadToken(header, StartedKey) is { } st && long.TryParse(st, out var began)
+                    ? DateTimeOffset.FromUnixTimeSeconds(began)
+                    : null,
             };
         }
         catch (Exception ex)
@@ -103,7 +111,7 @@ public static class GameStore
     /// </summary>
     public static void Save(
         string path, Game game, Side computerSide, GameMode mode, System.Action<string>? log = null,
-        string opponent = "", DateTimeOffset? lastMove = null)
+        string opponent = "", DateTimeOffset? lastMove = null, DateTimeOffset? started = null)
     {
         try
         {
@@ -114,6 +122,7 @@ public static class GameStore
             var line1 = $"{computerSide} {mode}";
             if (!string.IsNullOrEmpty(opponent)) line1 += $" {OpponentKey}={Encode(opponent)}";
             if (lastMove is { } at) line1 += $" {LastMoveKey}={at.ToUnixTimeSeconds()}";
+            if (started is { } began) line1 += $" {StartedKey}={began.ToUnixTimeSeconds()}";
 
             var text = $"{line1}\n{moves}";
 
@@ -148,6 +157,9 @@ public static class GameStore
 
     /// <summary>Line-1 token holding unix seconds when the save last changed.</summary>
     private const string LastMoveKey = "at";
+
+    /// <summary>Line-1 token holding unix seconds when the game was first saved.</summary>
+    private const string StartedKey = "start";
 
     /// <summary>The value of a <c>key=value</c> token on line 1, or null when absent. Positional
     /// tokens (the computer side, the mode) carry no '=' and so can never be mistaken for one.</summary>

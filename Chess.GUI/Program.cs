@@ -67,6 +67,9 @@ var currentGameId = "";
 // game to glance at it would report it as freshly played and keep it alive forever.
 var currentGameLastMove = DateTimeOffset.MinValue;
 var currentGamePlyAtOpen = 0;
+// When the running game began. Never changes once set, because it is half of the game's NAME
+// ("Ada - You (12 Sep)") and a name that moves is not a name.
+var currentGameStarted = DateTimeOffset.MinValue;
 // The opponent's display name, when we have one. Link play does not exchange names (nothing in the
 // fragment carries one), so it stays empty and the picker falls back to describing the mode.
 var currentOpponent = "";
@@ -100,7 +103,8 @@ void SaveCurrentGame()
     // already said.
     var stamp = g.PlyCount > currentGamePlyAtOpen ? TimeProvider.System.GetUtcNow() : currentGameLastMove;
 
-    GameInbox.Save(dataDir, currentGameId, g, currentComputerSide, currentGameMode, currentOpponent, stamp);
+    GameInbox.Save(dataDir, currentGameId, g, currentComputerSide, currentGameMode, currentOpponent,
+        stamp, started: currentGameStarted);
 }
 
 // A link waiting to become a game — handed over on argv at boot, or pasted mid-game. Declared up here
@@ -117,12 +121,14 @@ var statusPly = -1;
 // Builds the display and the loop for ONE game and starts it. Extracted because there are now two
 // ways in: the wizard's dispatch below, and a link, which has no wizard to come through at all.
 void StartGame(GameMode gameMode, Side computerSide, Side sideToMove, Difficulty difficulty,
-    Game? resumeGame, string? resumeId = null, DateTimeOffset? resumeLastMove = null)
+    Game? resumeGame, string? resumeId = null, DateTimeOffset? resumeLastMove = null,
+    DateTimeOffset? resumeStarted = null)
 {
     // A resumed game keeps its id so it saves back over itself; a fresh one gets a new slot.
     currentGameId = resumeId ?? GameInbox.NewId(TimeProvider.System.GetUtcNow());
     currentGamePlyAtOpen = resumeGame?.PlyCount ?? 0;
     currentGameLastMove = resumeLastMove ?? TimeProvider.System.GetUtcNow();
+    currentGameStarted = resumeStarted ?? TimeProvider.System.GetUtcNow();
     currentGameIsNetwork = false;
     currentComputerSide = computerSide;
     currentGameMode = gameMode;
@@ -482,7 +488,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                 currentOpponent = chosen.Opponent;
                 picker = null;
                 StartGame(resumedMode, chosen.ComputerSide, chosen.Game.CurrentSide, Difficulty.Normal,
-                    chosen.Game, chosen.Id, chosen.LastMove);
+                    chosen.Game, chosen.Id, chosen.LastMove, chosen.Started);
             }
             else if (picker.IsAborted)
             {
