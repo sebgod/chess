@@ -298,4 +298,84 @@ public sealed class GameInboxTests : IDisposable
         string.CompareOrdinal(earlier, later).ShouldBeLessThan(0);
         GameInbox.NewId(Now).ShouldNotBe(GameInbox.NewId(Now)); // same instant, still distinct
     }
+
+    // ── The row a picker shows ──────────────────────
+
+    [Fact]
+    public void Summary_ANamedCorrespondenceGameWaitingOnYou()
+    {
+        SaveLink("g", Side.Black, Now - TimeSpan.FromDays(2), "Ada", "e2e4", "e7e5");
+
+        GameInbox.TryLoad(_dir, "g")!.Value.Summary(Now)
+            .ShouldBe("Ada — your move · 1 move · 2 days ago");
+    }
+
+    [Fact]
+    public void Summary_WhenItIsTheirTurn()
+    {
+        SaveLink("g", Side.Black, Now, "Ada", "e2e4");
+
+        GameInbox.TryLoad(_dir, "g")!.Value.Summary(Now).ShouldContain("their move");
+    }
+
+    [Theory]
+    [InlineData(GameMode.PlayByLink, "Link game")]
+    [InlineData(GameMode.PlayerVsComputer, "vs Computer")]
+    [InlineData(GameMode.NetworkGame, "LAN game")]
+    [InlineData(GameMode.AcrossTheTable, "Across the table")]
+    [InlineData(GameMode.PlayerVsPlayer, "Hot seat")]
+    public void OpponentLabel_FallsBackToTheMode_WhenNobodyIsNamed(GameMode mode, string expected)
+    {
+        GameInbox.Save(_dir, "g", new Game(), Side.Black, mode, "", Now);
+
+        GameInbox.TryLoad(_dir, "g")!.Value.OpponentLabel.ShouldBe(expected);
+    }
+
+    [Fact]
+    public void OpponentLabel_PrefersTheNameOverTheMode()
+    {
+        SaveLink("g", Side.Black, Now, "Ada", "e2e4");
+
+        GameInbox.TryLoad(_dir, "g")!.Value.OpponentLabel.ShouldBe("Ada");
+    }
+
+    [Theory]
+    [InlineData(0, "today")]
+    [InlineData(1, "yesterday")]
+    [InlineData(5, "5 days ago")]
+    [InlineData(21, "3 weeks ago")]
+    [InlineData(90, "3 months ago")]
+    public void Summary_AgesInTheCoarsestUsefulUnit(int daysAgo, string expected)
+    {
+        SaveLink("g", Side.Black, Now - TimeSpan.FromDays(daysAgo), "Ada", "e2e4");
+
+        GameInbox.TryLoad(_dir, "g")!.Value.Summary(Now).ShouldEndWith(expected);
+    }
+
+    [Fact]
+    public void Summary_AClockThatWentBackwards_DoesNotPrintNegativeDays()
+    {
+        // A save stamped in the future (clock correction, a file copied from another machine) must
+        // not render as "-3 days ago".
+        SaveLink("g", Side.Black, Now + TimeSpan.FromDays(3), "Ada", "e2e4");
+
+        GameInbox.TryLoad(_dir, "g")!.Value.Summary(Now).ShouldEndWith("just now");
+    }
+
+    [Fact]
+    public void Summary_FinishedGame_SaysSoRatherThanNamingATurn()
+    {
+        SaveLink("g", Side.Black, Now, "Ada", "f2f3", "e7e5", "g2g4", "d8h4");
+
+        GameInbox.TryLoad(_dir, "g")!.Value.Summary(Now).ShouldContain("finished");
+    }
+
+    [Fact]
+    public void Summary_CountsMovesNotPlies()
+    {
+        // Players count moves; the store counts plies. 3 plies is 2 moves, not 3 and not 1.
+        SaveLink("g", Side.Black, Now, "Ada", "e2e4", "e7e5", "g1f3");
+
+        GameInbox.TryLoad(_dir, "g")!.Value.Summary(Now).ShouldContain("2 moves");
+    }
 }

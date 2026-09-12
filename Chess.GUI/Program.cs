@@ -19,11 +19,16 @@ sdlWindow.GetSizeInPixels(out var w, out var h);
 var ctx = VulkanContext.Create(sdlWindow.Instance, sdlWindow.Surface, (uint)w, (uint)h);
 var renderer = new VkRenderer(ctx, (uint)w, (uint)h);
 
-// Continue-game save file (shared Chess.UCI.GameStore format) in the user's local app-data.
-var savePath = Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-    "SharpAstro.Chess", "game.uci");
-Directory.CreateDirectory(Path.GetDirectoryName(savePath)!);
+// Saved games (shared Chess.UCI format) in the user's local app-data. A DIRECTORY of them since
+// phase 2: correspondence play means several games can be in flight at once, and the old single
+// slot silently evicted one when you started another.
+var dataDir = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SharpAstro.Chess");
+Directory.CreateDirectory(dataDir);
+
+// One-time move of any pre-inbox game.uci into the inbox. Idempotent, so it costs one File.Exists
+// on every later launch and nothing else.
+GameInbox.MigrateLegacySave(dataDir, TimeProvider.System.GetUtcNow());
 
 // Where a copied reply link points. The web app, deliberately — see CopyReplyLink.
 const string LinkShareBaseUrl = "https://sebgod.github.io/chess/";
@@ -52,13 +57,32 @@ var currentComputerSide = Side.None;
 // can't say which mode to resume into.
 var currentGameMode = GameMode.PlayerVsPlayer;
 
+// Which inbox entry the running game is saved as. Minted per game by StartGame, or carried over
+// from the picker when resuming, so every save of one game overwrites that game rather than
+// accumulating a new file per move.
+var currentGameId = "";
+// When the running game last actually MOVED, and how many plies it had when we opened it. Saving
+// must not restamp a game just because it was looked at: "last move" drives both the picker's
+// "today / 3 weeks ago" and the staleness that eventually retires a game, so opening an abandoned
+// game to glance at it would report it as freshly played and keep it alive forever.
+var currentGameLastMove = DateTimeOffset.MinValue;
+var currentGamePlyAtOpen = 0;
+// The opponent's display name, when we have one. Link play does not exchange names (nothing in the
+// fragment carries one), so it stays empty and the picker falls back to describing the mode.
+var currentOpponent = "";
+
+// The game picker sits between the menu and the game while the user chooses which save to resume.
+VkGamePicker? picker = null;
+
 // The LAN lobby sits between the menu and the game while the user picks/invites a peer.
 VkLanLobby? lobby = null;
 // A LAN game can't be resumed later (no peer to reconnect), so it's never written to the save.
 var currentGameIsNetwork = false;
 
-// A resumable save = present AND not already finished (a finished game isn't worth resuming).
-bool CanContinue() => GameStore.TryLoad(savePath) is { } s && !s.Game.IsFinished;
+// Anything in the inbox is worth offering, finished games included: the picker labels them, and
+// reviewing a game you just lost is a reason to open it. Staleness (not this) is what eventually
+// stops a game being listed.
+bool CanContinue() => GameInbox.Load(dataDir).Count > 0;
 
 // Persist the in-progress game so "Continue" can resume it later. Nothing worth resuming is
 // dropped: an empty game is skipped, and a finished one deletes any stale save (game over).
@@ -68,12 +92,15 @@ void SaveCurrentGame()
     if (currentGameIsNetwork) return; // LAN games aren't resumable — never persist them
     var g = display.UI.Game;
     if (g.PlyCount == 0) return;
-    if (g.IsFinished)
-    {
-        try { System.IO.File.Delete(savePath); } catch { /* best-effort */ }
-        return;
-    }
-    GameStore.Save(savePath, g, currentComputerSide, currentGameMode);
+
+    // A finished game is KEPT now, where the single-slot store deleted it. With one slot that was
+    // the only way to stop a dead game blocking the next one; with an inbox it would throw away the
+    // record of a game you might want to look at, and staleness already retires it in time.
+    // Stamp "now" only if a ply was actually committed this session; otherwise keep what the entry
+    // already said.
+    var stamp = g.PlyCount > currentGamePlyAtOpen ? TimeProvider.System.GetUtcNow() : currentGameLastMove;
+
+    GameInbox.Save(dataDir, currentGameId, g, currentComputerSide, currentGameMode, currentOpponent, stamp);
 }
 
 // A link waiting to become a game — handed over on argv at boot, or pasted mid-game. Declared up here
@@ -89,8 +116,13 @@ var statusPly = -1;
 
 // Builds the display and the loop for ONE game and starts it. Extracted because there are now two
 // ways in: the wizard's dispatch below, and a link, which has no wizard to come through at all.
-void StartGame(GameMode gameMode, Side computerSide, Side sideToMove, Difficulty difficulty, Game? resumeGame)
+void StartGame(GameMode gameMode, Side computerSide, Side sideToMove, Difficulty difficulty,
+    Game? resumeGame, string? resumeId = null, DateTimeOffset? resumeLastMove = null)
 {
+    // A resumed game keeps its id so it saves back over itself; a fresh one gets a new slot.
+    currentGameId = resumeId ?? GameInbox.NewId(TimeProvider.System.GetUtcNow());
+    currentGamePlyAtOpen = resumeGame?.PlyCount ?? 0;
+    currentGameLastMove = resumeLastMove ?? TimeProvider.System.GetUtcNow();
     currentGameIsNetwork = false;
     currentComputerSide = computerSide;
     currentGameMode = gameMode;
@@ -317,7 +349,10 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             display.PageHistory(inputKey == InputKey.PageUp ? -1 : 1);
             return true; // display.HasPendingUpdate (set by PageHistory) drives the redraw
         }
-        IWidget activeWidget = menu is { IsComplete: false } ? menu : lobby is not null ? lobby : player;
+        IWidget activeWidget = menu is { IsComplete: false } ? menu
+            : lobby is not null ? lobby
+            : picker is not null ? picker
+            : player;
         return activeWidget.HandleInput(keyEvent);
     },
 
@@ -350,7 +385,10 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
         {
             return true;
         }
-        IWidget target = menu is { IsComplete: false } ? menu : lobby is not null ? lobby : player;
+        IWidget target = menu is { IsComplete: false } ? menu
+            : lobby is not null ? lobby
+            : picker is not null ? picker
+            : player;
         return target.HandleInput(evt);
     },
 
@@ -358,7 +396,8 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
         display?.OnResize((int)rw, (int)rh),
 
     CheckNeedsRedraw = () =>
-        display is { HasPendingUpdate: true } || gameTask is { IsCompleted: true } || lobby is not null,
+        display is { HasPendingUpdate: true } || gameTask is { IsCompleted: true }
+        || lobby is not null || picker is not null,
 
     OnRender = () =>
     {
@@ -429,6 +468,35 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                 lobby.Render(renderer);
             }
         }
+        else if (picker is not null)
+        {
+            if (picker.Picked is { } chosen)
+            {
+                // The entry carries everything the loop needs: the replayed game, whose colour the
+                // other player has, and the mode it was started in. A resumed custom game is already
+                // set up, so it continues as a normal game rather than re-entering piece placement.
+                var resumedMode = chosen.Mode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard
+                    ? (chosen.ComputerSide == Side.None ? GameMode.PlayerVsPlayer : GameMode.PlayerVsComputer)
+                    : chosen.Mode;
+
+                currentOpponent = chosen.Opponent;
+                picker = null;
+                StartGame(resumedMode, chosen.ComputerSide, chosen.Game.CurrentSide, Difficulty.Normal,
+                    chosen.Game, chosen.Id, chosen.LastMove);
+            }
+            else if (picker.IsAborted)
+            {
+                picker = null;
+                menu = new VkStartupMenu(CanContinue());
+                // Paint the fresh menu in THIS frame — same reason as the lobby's abort path: once
+                // picker is null the redraw predicate goes false and SDL parks until the next input.
+                menu.Render(renderer);
+            }
+            else
+            {
+                picker.Render(renderer);
+            }
+        }
         else if (menu is { IsComplete: true } && gameTask is null)
         {
             var (gameMode, computerSide, sideToMove, difficulty) = menu.Result;
@@ -438,35 +506,20 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                 // Hand off to the LAN lobby; the game starts once a peer connects (handled above).
                 // ComputerSide is the remote peer's colour, so our preferred colour is the opposite.
                 var preferredColor = computerSide == Side.White ? Side.Black : Side.White;
-                lobby = new VkLanLobby(renderer, Path.GetDirectoryName(savePath)!, preferredColor);
+                lobby = new VkLanLobby(renderer, dataDir, preferredColor);
+                menu = null;
+            }
+            else if (gameMode is GameMode.Continue)
+            {
+                // Which save to resume is now a choice, so it gets a screen of its own rather than
+                // the wizard silently loading the only slot there used to be.
+                picker = new VkGamePicker(dataDir, TimeProvider.System);
                 menu = null;
             }
             else
             {
                 menu = null;
-
-                // Continue: the save (not the wizard) defines the real mode and computer side; load it
-                // and hand the loaded game to the loop so its full history drives both display and engine.
-                Game? resumeGame = null;
-                if (gameMode is GameMode.Continue)
-                {
-                    if (GameStore.TryLoad(savePath) is { } saved)
-                    {
-                        resumeGame = saved.Game;
-                        computerSide = saved.ComputerSide;
-                        sideToMove = saved.Game.CurrentSide;
-                        // The save carries the mode; a resumed custom game is already set up, so it
-                        // continues as a normal game against the engine rather than re-entering setup.
-                        gameMode = saved.Mode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard
-                            ? (saved.ComputerSide == Side.None ? GameMode.PlayerVsPlayer : GameMode.PlayerVsComputer)
-                            : saved.Mode;
-                    }
-                    else
-                    {
-                        gameMode = GameMode.PlayerVsPlayer; // nothing to resume -> plain hot-seat
-                    }
-                }
-                StartGame(gameMode, computerSide, sideToMove, difficulty, resumeGame);
+                StartGame(gameMode, computerSide, sideToMove, difficulty, resumeGame: null);
             }
         }
     },
@@ -518,6 +571,7 @@ bus.Subscribe<RequestResetSignal>(_ =>
 PixelWidgetBase<VulkanContext>? ActiveInspectorWidget() =>
     display is not null ? display
     : lobby is not null ? lobby.InspectorWidget
+    : picker is not null ? picker.InspectorWidget
     : menu?.InspectorWidget;
 using var inspector = DebugInspector.Attach(loop, new DebugInspectorOptions
 {
@@ -527,7 +581,15 @@ using var inspector = DebugInspector.Attach(loop, new DebugInspectorOptions
     GetLayout = () => ActiveInspectorWidget()?.GetCapturedLayout() ?? [],
     AppState = s =>
     {
-        s.Set("screen", display is not null ? "game" : lobby is not null ? "lobby" : "menu");
+        s.Set("screen",
+            display is not null ? "game"
+            : lobby is not null ? "lobby"
+            : picker is not null ? "picker"
+            : "menu");
+        if (picker is not null)
+        {
+            s.Set("pickerRows", picker.RowCount);
+        }
         if (lobby is not null)
         {
             s.Set("lobbyState", lobby.State.ToString());

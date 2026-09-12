@@ -46,6 +46,53 @@ public readonly record struct InboxEntry(string Id, SavedGame Saved, DateTimeOff
 
     /// <summary>Whether this entry has sat untouched longer than <see cref="GameInbox.StaleAfter"/>.</summary>
     public bool IsStale(DateTimeOffset now) => now - LastMove > GameInbox.StaleAfter;
+
+    /// <summary>
+    /// Who this game is against — the opponent's name when there is one, otherwise what the mode
+    /// makes them. A saved game always has a describable opponent, even if it is "nobody".
+    /// </summary>
+    public string OpponentLabel => !string.IsNullOrEmpty(Opponent) ? Opponent : Mode switch
+    {
+        GameMode.PlayByLink => "Link game",
+        GameMode.PlayerVsComputer => "vs Computer",
+        GameMode.NetworkGame => "LAN game",
+        GameMode.AcrossTheTable => "Across the table",
+        GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard => "Custom game",
+        _ => "Hot seat",
+    };
+
+    /// <summary>
+    /// The one-line description a picker shows. Canonical here rather than in each front-end, for the
+    /// same reason <c>GameUI.StatusLine</c> is: three hosts will want this row and three hand-written
+    /// versions would drift on exactly the details that matter — whose turn it is, and how long ago.
+    /// </summary>
+    public string Summary(DateTimeOffset now)
+    {
+        var moves = (Game.PlyCount + 1) / 2;
+        var state = Game.IsFinished ? "finished"
+            : IsWaitingOnYou ? "your move"
+            : Mode is GameMode.PlayByLink ? "their move"
+            : Game.CurrentSide is Side.Black ? "black to move" : "white to move";
+
+        return $"{OpponentLabel} — {state} · {moves} {(moves == 1 ? "move" : "moves")} · {Ago(now)}";
+    }
+
+    /// <summary>How long ago this game last changed, in the coarsest unit that still says something.
+    /// A correspondence game is measured in days, so hours are noise and seconds are a lie.</summary>
+    private string Ago(DateTimeOffset now)
+    {
+        var days = (int)(now - LastMove).TotalDays;
+
+        return days switch
+        {
+            < 0 => "just now", // a clock that moved backwards must not print "-3 days ago"
+            0 => "today",
+            1 => "yesterday",
+            < 14 => $"{days} days ago",
+            < 60 => $"{days / 7} weeks ago",
+            _ => $"{days / 30} months ago",
+        };
+    }
 }
 
 /// <summary>
