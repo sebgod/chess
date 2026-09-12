@@ -114,25 +114,57 @@ Consequences:
    no props change anywhere downstream. Record it as a "later in X.Y" note appended to
    that version's existing changelog entry.
 
-2. **Write the changelog entry in the same commit as the bump.** Each workflow's
-   `env:` block carries a comment block, newest entry last, that is the de-facto
-   release notes; it lives in the yml because entries contain `--`, which XML forbids
-   inside a comment. Say what changed, what is NOT included, which pins moved, and
-   flag any behaviour change explicitly (`BEHAVIOUR CHANGE`) — a consumer left on a
-   default whose meaning changed has no other warning.
+2. **Write the changelog entry in the same commit as the bump.** Release notes live in
+   **`CHANGELOG.md` at the repo root**, one `## Major.Minor` section per release,
+   **newest first**, with a preamble stating that the version NUMBER is not in this file.
+   (They used to be a comment block in the workflow's `env:` block; every repo has moved
+   them out — "the release notes were 90% of a CI file, so move them out". If a repo still
+   has them in the yml, it has not been migrated yet, not that this is the convention.)
+   Say what changed, what is NOT included, which pins moved, and flag any behaviour change
+   explicitly (`BEHAVIOUR CHANGE`) — a consumer left on a default whose meaning changed has
+   no other warning.
+
+   Read the upstream changelog before writing yours. A repin entry that says only "rebuild
+   against X" is worth little; the useful entry names what the crossed minors actually
+   bring, and whether any of them is flagged. DIR.Lib 8.13 (the text baseline moving onto
+   the FACE) is the live example: crossing it silently moves every vertically-centred run.
 
    Write it **before the first push**, not after. Remembering it later means either an
    extra commit or amending an already-pushed `main`; the amend route force-pushes a
    published commit and burns a second build-counter publish for the same X.Y.
 
-3. **Build and test** the library locally. **The solution is not always under `src/`** — a bare
-   `cd <repo>/src && dotnet test` fails with `MSB1003: Specify a project or solution file`
-   in DIR.Lib, whose solution sits at the repo ROOT. Pass the solution explicitly:
+3. **Build and test** the library locally. **Every repo keeps its solution at the ROOT**,
+   never under `src/` — DIR.Lib is not the exception, it is the rule (verified across all
+   seven, 2026-09-12). `cd <repo>/src && dotnet test` fails with `MSB1003: Specify a project
+   or solution file` everywhere. Note the mixed `.sln`/`.slnx` extensions:
    ```bash
-   cd <repo> && dotnet test DIR.Lib.sln        # DIR.Lib: solution at the repo root
-   cd <repo>/src && dotnet test                # Console.Lib, SdlVulkan.Renderer, WebGl.Renderer
-   cd <repo>/src && dotnet test TianWen.slnx   # tianwen (see the note further down)
+   cd <repo> && dotnet test DIR.Lib.sln              # DIR.Lib
+   cd <repo> && dotnet test Console.Lib.sln          # Console.Lib
+   cd <repo> && dotnet test SdlVulkan.Renderer.sln   # SdlVulkan.Renderer
+   cd <repo> && dotnet test WebGl.Renderer.slnx      # WebGl.Renderer
+   cd <repo> && dotnet test LAN.Lib.slnx             # LAN.Lib
+   cd <repo> && dotnet test SharpAstro.Fonts.slnx    # Fonts.Lib
+   cd <repo> && dotnet test Codecs.sln               # Codecs
+   cd ../../sharpastro/tianwen/src && dotnet test TianWen.slnx   # tianwen (see below)
    ```
+
+   **Run it TWICE, and `-c Release` is the one that matches CI.** Every library auto-detects
+   sibling working copies, so a default `dotnet test` (Debug, local project references) and
+   CI (Release, NuGet packages) compile *different code from different sources*:
+
+   ```bash
+   dotnet test <sln>                                  # Debug + local sibling projects
+   dotnet test <sln> -c Release -p:UseLocalDirLib=false   # what CI actually does
+   ```
+
+   **The trap that looks like a broken pin and is not:** `DIR.Lib.Diagnostics`
+   (`DebugInspectorCore`, `IDebugInspectorHost`, …) is wrapped in `#if DEBUG`, so it is
+   absent from the published Release package. A **Debug** build against the PACKAGE therefore
+   fails with `CS0234: the namespace 'Diagnostics' does not exist in 'DIR.Lib'` plus a wall of
+   `CS0246`s — which reads exactly like the repin being wrong. It is not: CI builds Release,
+   where the backend's own inspector is compiled out too and the dependency disappears. Always
+   pass `-c Release` when testing against the pin. (Test counts differ for the same reason:
+   SdlVulkan 83 in Debug vs 47 in Release, Console.Lib 551 vs 521.)
 
    **Never pipe it through `tail`/`head`.** A pipeline's exit code is the LAST command's, so
    `dotnet test | tail -40` reports success for a failed run, and the truncation drops the
@@ -166,7 +198,10 @@ Consequences:
    place those five fixes are ever described to a consumer.
 
 5. **Wait for NuGet publication** - CI builds, packs, and publishes to nuget.org.
-   Poll the flat container, which is authoritative and updates within seconds:
+   Poll the flat container. It is authoritative but **not instant** — observed still listing
+   the previous version minutes after a run whose publish step had already logged
+   "Your package was pushed" (CDN lag). Treat the publish log as ground truth and the flat
+   container as eventual:
    ```bash
    curl -s https://api.nuget.org/v3-flatcontainer/<packageid-lowercase>/index.json
    ```
@@ -297,37 +332,52 @@ Two verification traps specific to chess:
 
 - **`chess-mcp` locks its own exe.** If the MCP server is registered in the running
   session, `dotnet build Chess.sln` fails with `MSB3027`/`MSB3021` copying `apphost.exe`
-  over `bin/Release/net10.0/chess-mcp.exe`. The copy runs *after* `CoreCompile`, so this
-  is not a compile failure and the pin is not implicated — `dotnet test` (which never
-  builds Chess.MCP) plus `dotnet build Chess.MCP -t:CoreCompile` covers it without
-  killing the server.
+  over `bin/Release/net10.0/chess-mcp.exe`, plus ~10 `MSB3026` retry warnings — all one
+  cause. The copy runs *after* `CoreCompile`, so this is not a compile failure and the pin
+  is not implicated. **Simplest fix, verified 2026-09-12: redirect the output** and the whole
+  solution builds clean with the server still running:
+  ```bash
+  dotnet build Chess.sln -c Release -p:UseLocalSiblings=false -p:BaseOutputPath=<scratch>/slnbuild/
+  ```
+  Do NOT disable the chess MCP to get around it — a dead chess MCP reads as a build break,
+  which trades a cosmetic problem for a confusing one.
 - **Three projects sit outside `Chess.sln`** — `Chess.Droid`, `Chess.Web.E2E.Tests` —
   and consume the same CPM pins, so a solution-wide build proves nothing about them.
   Build each explicitly. Chess.Droid's 4 SDL3-CS.Android warnings (16 KB page size,
   duplicate `libSDL3.so`) are pre-existing and unrelated to any pin move.
 
-## Building a backend against an UNPUBLISHED DIR.Lib: tianwen is the proxy
+## Every library auto-detects sibling working copies — under its OWN property name
 
-`SdlVulkan.Renderer`, `Console.Lib` and `WebGl.Renderer` have **no `UseLocalSiblings` wiring** — they
-consume DIR.Lib only as a NuGet package. So a DIR.Lib change that a backend must follow cannot be
-compiled in that backend until DIR.Lib is published, and the naive order ships a backend edit that has
-never been built.
+The old note here said the backends had **no** sibling wiring and consumed DIR.Lib only as a package.
+That is wrong, and believing it makes you mis-read every local build. All of them auto-detect a sibling
+checkout with `Exists(...)` and fall back to `PackageReference` when it is absent — which is what lets
+CI, with no siblings, restore from NuGet. The property name differs per repo, so a blanket
+`-p:UseLocalSiblings=false` (chess's name) silently does nothing in a library:
 
-**`tianwen` fills that gap for SdlVulkan.Renderer.** It DOES auto-detect local siblings and
-project-references both DIR.Lib and SdlVulkan.Renderer, so building tianwen compiles the renderer
-against the unpublished DIR.Lib, and its ~5250 tests exercise both:
+| Repo | Switch(es) | Falls back to |
+|---|---|---|
+| DIR.Lib | `UseLocalFontsLib`, `UseLocalShapingLib`, `UseLocalLalrCc` | SharpAstro.Fonts, … |
+| Console.Lib | `UseLocalDirLib`, `UseLocalSharpAstroCodecs` | DIR.Lib, SharpAstro.Codecs |
+| SdlVulkan.Renderer | `UseLocalDirLib`, `UseLocalAppShell` | DIR.Lib, SharpAstro.AppShell |
+| WebGl.Renderer | `UseLocalDirLib` | DIR.Lib |
+| LAN.Lib | none — it has no siblings | — |
+| chess | `UseLocalSiblings` (all five at once) | all |
+
+Two consequences:
+
+- **A green default `dotnet test` in a library proves nothing about the pin you just edited.** It
+  compiled DIR.Lib from source. Re-run with the repo's own switch set to `false` (and `-c Release`, per
+  step 3) to exercise what CI will do.
+- **A backend CAN be compiled against an unpublished DIR.Lib**, locally, just by having the sibling
+  checked out. The naive-order worry the old note described does not arise.
+
+`tianwen` remains useful, but for a different reason than "it is the only way to compile": it is the
+largest *consumer* of the renderer, so its ~5250 tests exercise VkRenderer end-to-end in a way
+SdlVulkan.Renderer's own 47–83 cannot.
 
 ```bash
-cd ../../sharpastro/tianwen/src && dotnet build TianWen.slnx -c Debug   # compiles the local renderer
-cd ../../sharpastro/tianwen/src && dotnet test  TianWen.slnx -c Debug   # ~11 min, do not pipe to tail
+cd ../../sharpastro/tianwen/src && dotnet test TianWen.slnx -c Debug   # ~11 min, do not pipe to tail
 ```
-
-This is the ONLY pre-release check available for a renderer change, and it is worth the eleven minutes:
-it is what caught that a VkRenderer edit compiled at all before 8.13 went out.
-
-**WebGl.Renderer has no equivalent proxy** — nothing local builds it against an unpublished DIR.Lib. Say
-so plainly rather than implying it was verified; it gets its first build after the DIR.Lib publish, when
-you repin it.
 
 ## A behaviour change in DIR.Lib text/layout: check for INVERTED copies first
 
