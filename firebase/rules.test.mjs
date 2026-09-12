@@ -155,6 +155,76 @@ test('a player may only write their own profile', async () => {
   await assertFails(set(ref(dbFor(MALLORY), `players/${ALICE}`), { name: 'not Alice' }));
 });
 
+// ── Invites: the cloud handshake, shaped like LAN's ────────────────
+
+test('an invite goes to the invitee, and only in your own name', async () => {
+  await assertSucceeds(
+    set(ref(dbFor(ALICE), `invites/${BOB}/${ALICE}`), { gameId: 'g1', name: 'Alice', color: 'w' }));
+
+  // Mallory cannot invite Bob while pretending to be Alice.
+  await assertFails(
+    set(ref(dbFor(MALLORY), `invites/${BOB}/${ALICE}`), { gameId: 'g9', name: 'Alice', color: 'w' }));
+});
+
+test('the invitee reads their inbox; nobody else reads it', async () => {
+  await assertSucceeds(
+    set(ref(dbFor(ALICE), `invites/${BOB}/${ALICE}`), { gameId: 'g1', name: 'Alice', color: 'w' }));
+
+  await assertSucceeds(get(ref(dbFor(BOB), `invites/${BOB}`)));
+  await assertFails(get(ref(dbFor(MALLORY), `invites/${BOB}`)));
+
+  // The inviter can still read their OWN row -- that is how Declined gets back to them.
+  await assertSucceeds(get(ref(dbFor(ALICE), `invites/${BOB}/${ALICE}`)));
+});
+
+test('the invitee may decline, and that is the ONLY thing they may change', async () => {
+  await assertSucceeds(
+    set(ref(dbFor(ALICE), `invites/${BOB}/${ALICE}`), { gameId: 'g1', name: 'Alice', color: 'w' }));
+
+  await assertSucceeds(set(ref(dbFor(BOB), `invites/${BOB}/${ALICE}/declined`), true));
+
+  // Not the game it points at, not the colour, and not the row itself.
+  await assertFails(set(ref(dbFor(BOB), `invites/${BOB}/${ALICE}/gameId`), 'g2'));
+  await assertFails(set(ref(dbFor(BOB), `invites/${BOB}/${ALICE}/color`), 'b'));
+  await assertFails(set(ref(dbFor(BOB), `invites/${BOB}/${ALICE}`), null));
+});
+
+test('the inviter may cancel their own invite', async () => {
+  await assertSucceeds(
+    set(ref(dbFor(ALICE), `invites/${BOB}/${ALICE}`), { gameId: 'g1', name: 'Alice', color: 'w' }));
+
+  await assertSucceeds(set(ref(dbFor(ALICE), `invites/${BOB}/${ALICE}`), null));
+});
+
+test('an invite is not a pastebin either', async () => {
+  await assertFails(
+    set(ref(dbFor(ALICE), `invites/${BOB}/${ALICE}`),
+        { gameId: 'g1', name: 'Alice', color: 'w', payload: 'x'.repeat(1000) }));
+
+  // And it must actually be an invite.
+  await assertFails(set(ref(dbFor(ALICE), `invites/${BOB}/${ALICE}`), { name: 'Alice' }));
+});
+
+test('accepting an invite is claiming the seat it points at', async () => {
+  // The whole point of shaping the cloud handshake like LAN's: Accept is not a new mechanism, it is
+  // the seat claim the rules already gate. Alice posts a game with only her seat filled, invites Bob,
+  // and Bob's Accept is a write to the empty seat.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await set(ref(ctx.database(), 'games/g1'), { g: '', n: 0, w: { uid: ALICE, name: 'Alice' } });
+  });
+  await assertSucceeds(
+    set(ref(dbFor(ALICE), `invites/${BOB}/${ALICE}`), { gameId: 'g1', name: 'Alice', color: 'w' }));
+
+  // Bob cannot read the game before accepting -- he holds no seat yet.
+  await assertFails(get(ref(dbFor(BOB), 'games/g1')));
+
+  await assertSucceeds(set(ref(dbFor(BOB), 'games/g1/b'), { uid: BOB, name: 'Bob' }));
+  await assertSucceeds(get(ref(dbFor(BOB), 'games/g1')));
+
+  // A third party invited nowhere still cannot take the seat that is now taken.
+  await assertFails(set(ref(dbFor(MALLORY), 'games/g1/b'), { uid: MALLORY, name: 'M' }));
+});
+
 // ── The lobby ─────────────────────────────────────────────────────
 
 test('an open game is keyed by its host, which caps them at one each', async () => {

@@ -326,10 +326,11 @@ The correction is not a small widening. Browser-only struck five things out; And
 
 - **The `ILobby` extraction — the design risk of the whole phase — is back on.** `Chess.Droid` already
   has a LAN lobby (`StartLobby`/`RenderLobby`/`HandleLobbyTap` in `MainActivity.cs`, hand-rendered
-  menus and all), so a cloud lobby beside it forks that UI unless both sit behind one interface. The
-  wrinkle named [below](#what-chessnet-already-gives-us-and-the-one-thing-it-doesnt) is the real work:
-  LAN's *invite → accept* and the cloud's *post → claim a seat* are not one state machine, and
-  `LobbyState` currently encodes the LAN one.
+  menus and all), so a cloud lobby beside it forks that UI unless both sit behind one interface. What
+  looked like the phase's design risk — LAN's *invite → accept* against the cloud's *post → claim a
+  seat* — turned out not to be one: give the cloud invites and the handshakes are the same, so
+  `LobbyState` needs no new members. See
+  [The cloud handshake is LAN's handshake](#the-cloud-handshake-is-lans-handshake).
 - **The `ILanConnection` → `ISessionConnection` rename** comes back with it, for the same reason.
 - **The hand-rolled REST + SSE client** comes back, because a .NET Android head cannot use the JS SDK,
   and binding the Firebase Android SDK would cost more than the REST surface it wraps. The sections
@@ -499,7 +500,11 @@ from there, never pasted into the console where they are unversioned and unteste
     updated  <server timestamp>
 
 /open/{uid}                       <- the lobby: games with an empty seat, ONE PER HOST
-    gameId, name, color, updated
+    gameId, name, color, updated  <- also the peer table: self-expires via onDisconnect()
+
+/invites/{to}/{from}              <- a targeted posting of the same thing, ONE PER SENDER PER TARGET
+    gameId, name, color           <- written by {from}; deleting it is Cancel
+    declined  true                <- the one field {to} may write
 
 /players/{uid}
     name                          <- the only thing stored about a person
@@ -611,17 +616,97 @@ line-oriented ASCII ("the same *UCI token you replay through the rules engine* s
 | `LanPlayStack` | Cloud needs a sibling `CloudPlayStack`; the "open and tear down as a unit" shape carries over |
 
 So the one genuine refactor courier 2 forces is **extracting an `ILobby`** (state, joinable list, an
-action, a `NetworkSession` comes out) so the front-ends' lobby widgets don't fork per courier. That
-extraction has one real wrinkle worth naming now rather than discovering later: LAN's handshake is
-*invite -> accept/decline* between two present peers, while the cloud's is *post an open game ->
-someone claims the seat*. These are not the same state machine, and `LobbyState` currently encodes the
-LAN one (`Inviting`, `IncomingInvite`, `Declined`). The interface has to be drawn above that
-difference or it will leak; that is the design risk in this phase, and it is a small one.
+action, a `NetworkSession` comes out) so the front-ends' lobby widgets don't fork per courier.
+
+An earlier version of this section named a wrinkle as the design risk of the whole phase: LAN's
+handshake is *invite → accept/decline* between two present peers, while the cloud's is *post an open
+game → someone claims the seat*, so `LobbyState` (`Inviting`, `IncomingInvite`, `Declined`) encodes
+only the LAN one and the interface would have to be drawn above the difference. **That comparison was
+wrong**: it measured LAN's *handshake* against the cloud's *discovery*, which are different layers.
+Give the cloud invites and the handshakes are the same one — see
+[The cloud handshake is LAN's handshake](#the-cloud-handshake-is-lans-handshake). `ILobby` is then
+`LanLobby`'s existing surface with `Peers` typed over an abstract peer, not an abstraction invented
+above a divergence that was never there.
 
 A naming consequence: `ILanConnection`, `LanLobby`, `LanPlayStack` become partial lies. `Chess.Net` is
 not a published package and has no external consumers, so renaming `ILanConnection` to
 `ISessionConnection` is a free, mechanical change. Do it as part of this phase rather than leaving the
 next reader to wonder why the cloud opens a "LAN" connection.
+
+## The cloud handshake is LAN's handshake
+
+The user's suggestion, and it is the right one: rather than draw `ILobby` above two different
+handshakes, **give the cloud lobby the handshake LAN already has**. Every `LobbyState` member then
+has an exact counterpart, and the enum needs no new members:
+
+| `LobbyState` / call | LAN | Cloud |
+|---|---|---|
+| `Peers` | UDP beacon + peer table (`LanDiscovery`) | `/open/{uid}` — the same table, persisted; rows self-expire via `onDisconnect()` |
+| `Invite(peer)` | dial the peer over TCP, send INVITE | write `/invites/{them}/{me}` = `{gameId, name, color}` |
+| `Inviting` | waiting on the socket | waiting on our own invite row |
+| `IncomingInvite` | INVITE arrived on an inbound connection | a child appeared under `/invites/{me}` |
+| `Accept()` | reply ACCEPT, session opens | **claim the empty seat** in the invited game |
+| `Decline()` | reply DECLINE | set `declined: true` on the invite |
+| `Cancel()` | drop the pending connection | delete our own invite row |
+| `Connected` | both ends hold a `NetworkSession` | both seats filled |
+| `Failed` | peer unreachable / went away | see the asymmetry below |
+
+**`Accept` is not a new mechanism** — it is the seat claim the deployed rules already gate
+(`".write": "!data.exists()"` on `w`/`b`, plus "the uid must be your own"). That is the load-bearing
+part: the cloud's terminal transition was already built and tested before this idea, so shaping the
+handshake like LAN's adds a *notification*, not a protocol.
+
+The rules addition is one subtree, and it is additive — nothing already verified changed:
+
+```
+/invites/{to}/{from}
+    gameId, name, color      <- written by {from} only; {from} may also delete it (Cancel)
+    declined  true           <- the ONE field {to} may write
+```
+
+Why `declined` is a field rather than a deletion: if declining meant removing the row, the inviter
+could not tell a decline from the cleanup that follows an accept, and would race between reading "row
+gone" and "seat filled". One writable boolean makes the signal unambiguous and still gives the invitee
+no power over the game the invite points at. Verified in the emulator (22 tests, 6 of them here): an
+invite can only be sent in your own name, only the invitee reads the inbox, the invitee may set
+`declined` but may not touch `gameId`/`color` or delete the row, the inviter may cancel, unknown
+fields are rejected, and accept-by-seat-claim works while a third party's claim on the same seat does
+not.
+
+**Colour follows LAN's rule unchanged:** the inviter's chosen colour stands and the invitee takes the
+opposite — which in the cloud is literally true, because the invitee claims the seat the inviter left
+empty.
+
+**Post → claim does not go away; it becomes the same path with the invite step skipped.** Claiming
+straight from the `/open` list is `Accept()` with no prior `Invite()`. That is also what LAN already
+does at the discovery layer: a peer's UDP beacon is a standing "I am here and playable" broadcast, and
+`/open/{uid}` is that beacon persisted. So the couriers differ in **discovery**, not in handshake.
+
+### The one real asymmetry is durability, not shape
+
+LAN's `Inviting` is ephemeral: it lives in a socket, and an unanswered invite means the peer walked
+away, so failing after a short timeout is correct. A cloud invite is a **row that outlives the
+connection**, and an invite answered four hours later is not a failure — it is correspondence play
+working as intended.
+
+So `ILobby` exposes the same states, and the two implementations differ in policy:
+
+- the LAN lobby times `Inviting` out; the cloud one does not, and prunes stale invites on open (the
+  same Spark-compatible sweep [presence](#presence-without-cloud-functions) already needs, since there
+  are no Cloud Functions to expire them server-side);
+- the cloud lobby can **re-enter `Inviting` on next launch** by reading `/invites` back, which LAN
+  cannot and should not.
+
+Invites deliberately get no `onDisconnect()` cleanup for this reason: self-expiry is right for a
+presence row and wrong for an invite.
+
+**What this does not fix** is lobby spam, which stays exactly where [it was](#spam-and-the-one-thing-rules-cannot-do):
+anonymous identities are free, so invites can be sent by a script. `/invites/{to}/{from}` keys the row
+by sender, so one identity can hold at most one pending invite per target — the same "cap by path"
+trick as `/open/{uid}` — and the payload is capped and closed to unknown fields. That makes spam
+targeted rather than broadcast, which is a change in kind worth stating plainly: a public lobby row is
+ignorable, an inbox is not. If it ever bites, the answer is the same as before — require a Google
+identity to invite, while anonymous users may still post and claim.
 
 ## A native client needs no SDK
 
