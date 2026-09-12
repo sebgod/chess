@@ -12,9 +12,11 @@ defects; these are planned changes.
   clipboard already exist. The cloud courier then carries the same bytes for people who don't already
   share a messenger, on a free tier that caps rather than bills. They share a spine (a multi-slot
   `GameStore`, one `TryDecode` path, one minimized-safe drain), which is why they are one plan and not
-  two. *Phase 1 (link play in the GUI) is **done** — unit-tested and live-verified through the SDL
-  inspector: argv link skips the wizard, the board orients to the local side, the one-move gate refuses
-  the other colour, and Ctrl+L / Ctrl+V carry the game out and back. Phases 2-6 not started.*
+  two. *Phases 1 and 2 are **done**, unit-tested and live-verified through the SDL inspector — link
+  play in the GUI (argv link skips the wizard, the board orients to the local side, the one-move gate
+  refuses the other colour, Ctrl+L / Ctrl+V carry the game out and back) and the inbox behind it
+  (several games at once, "waiting on you" first, stale hidden not deleted, legacy save migrated).
+  Phases 3-6 not started.*
 - [**Content→device transform**](docs/content-transform.md) — DPI and rotation unified as one
   constrained affine map, which is what the Android "across the table" flip is built on. *Phases 1a and
   2 done; WebGL compose and the CPU backend pending.*

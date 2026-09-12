@@ -571,11 +571,18 @@ that no one later reaches for a server-side "anti-cheat" that this architecture 
 | Phase | Scope | Where | Status |
 |---|---|---|---|
 | 1 | **Link play in the GUI**, end to end and with no new plumbing: `args` on `Program.cs`, `StartupWizardOptions.LinkPlay` on `VkStartupMenu`, paste-a-link (Ctrl+V, `SDL.GetClipboardText`), the turn semantics above, and "copy reply link" (Ctrl+L, `SDL.SetClipboardText`) | chess | **Done** — live-verified, see below |
-| 2 | **The spine:** multi-slot `GameStore` (inbox) + a "your move" list + the per-iteration drain in `CheckNeedsRedraw` with a `RequestRedraw()` poke | chess | Not started |
+| 2 | **The inbox:** multi-slot store (`GameInbox`) + a "your move" list + staleness, and the GUI picker over it | chess | **Done** — live-verified |
 | 3 | **Cloud courier, desktop:** RTDB over REST + SSE (no new package), anonymous auth, the schema and rules above, `ILobby` extraction + `CloudLobby`/`CloudPlayStack`, `ILanConnection` rename | chess | Not started |
 | 4 | **Cloud courier, browser:** the same client if REST + SSE works under WASM, otherwise the Firebase JS SDK via `[JSImport]`; lobby UI in `Play.razor`; the README wording | chess | Not started |
 | 5 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, reusing phase 2's drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | Not started |
 | 6 | *Optional cleanup:* a public, non-`DEBUG` per-iteration hook on `SdlEventLoop` so the drain stops living in a side-effecting predicate | SdlVulkan.Renderer | Not started |
+
+**The drain is not phase 2's**, though an earlier version of this table put it there. It has no
+producer until a payload can arrive from off-thread, which is phase 3 (a cloud push) or phase 5 (an
+`InstanceGate` hand-off) — so building it with the inbox would be plumbing with nothing flowing
+through it, which is the same objection this document raises against doing the gate early. Whichever
+of those two lands first builds it; the other consumes it. The [spine](#one-drain) said so all along
+and the table was the half that was wrong.
 
 **Phase 1 is done except for being watched.** What landed: `GameLinkCodec.ExtractBody` (one reduction
 for a page URL / `chess://` / bare fragment / bare body, folded into `TryDecode` so no host parses) and
