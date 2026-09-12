@@ -1,6 +1,6 @@
 # Design: Correspondence play — the link courier, then the cloud courier
 
-**Status:** Phase 1 code-complete and unit-tested, **not yet live-verified**; phases 2-6 not started (see [Phasing](#phasing)). **Repo scope:** almost entirely **chess**; one
+**Status:** Phases 1 and 2 **done and live-verified in a running window**. Phase 3's backend is **live and verified end to end** — europe-west1 instance, deployed rules, anonymous auth — with its transport and lobby not yet written; phases 4-6 not started (see [Phasing](#phasing)). **Repo scope:** almost entirely **chess**; one
 *optional* sibling cleanup is called out as the last phase and nothing here is blocked on a sibling
 release. Both capabilities the link half leans on already ship and are already in chess's package
 graph as of the DIR.Lib 8.8 repin: `SharpAstro.AppShell`'s `InstanceGate` (arrives transitively under
@@ -606,7 +606,7 @@ that no one later reaches for a server-side "anti-cheat" that this architecture 
 |---|---|---|---|
 | 1 | **Link play in the GUI**, end to end and with no new plumbing: `args` on `Program.cs`, `StartupWizardOptions.LinkPlay` on `VkStartupMenu`, paste-a-link (Ctrl+V, `SDL.GetClipboardText`), the turn semantics above, and "copy reply link" (Ctrl+L, `SDL.SetClipboardText`) | chess | **Done** — live-verified, see below |
 | 2 | **The inbox:** multi-slot store (`GameInbox`) + a "your move" list + staleness, and the GUI picker over it | chess | **Done** — live-verified |
-| 3 | **Cloud courier, desktop:** RTDB over REST + SSE (no new package), anonymous auth, the schema and rules above, `ILobby` extraction + `CloudLobby`/`CloudPlayStack`, `ILanConnection` rename | chess | **Rules done and tested**; transport and lobby not started |
+| 3 | **Cloud courier, desktop:** RTDB over REST + SSE (no new package), anonymous auth, the schema and rules above, `ILobby` extraction + `CloudLobby`/`CloudPlayStack`, `ILanConnection` rename | chess | **Backend live and verified**; transport and lobby not started |
 | 4 | **Cloud courier, browser:** the same client if REST + SSE works under WASM, otherwise the Firebase JS SDK via `[JSImport]`; lobby UI in `Play.razor`; the README wording | chess | Not started |
 | 5 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, building or reusing the drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | Not started |
 | 6 | *Optional cleanup:* a public, non-`DEBUG` per-iteration hook on `SdlEventLoop` so the drain stops living in a side-effecting predicate | SdlVulkan.Renderer | Not started |
