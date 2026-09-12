@@ -1,11 +1,11 @@
 # Design: Correspondence play — the link courier, then the cloud courier
 
-**Status:** Phases 1 and 2 **done and live-verified in a running window**. Phase 3's backend is **live and verified end to end** — europe-west1 instance, deployed rules, anonymous auth — with its client not yet written; phases 4-5 not started. The cloud courier is **browser-only** (see [Scope](#scope-the-cloud-courier-is-the-browsers-and-that-deletes-most-of-it)), which deleted the riskiest part of it. See [Phasing](#phasing). **Repo scope:** almost entirely **chess**; one
+**Status:** Phases 1 and 2 **done and live-verified in a running window**. Phase 3's backend is **live and verified end to end** — europe-west1 instance, deployed rules, anonymous auth — with its client not yet written; phases 4-5 not started. The cloud courier is **the browser first, then Android** (see [Scope](#scope-the-browser-first-then-android)) — the native half puts back the `ILobby` extraction and the second API key that a browser-only scope had struck out. See [Phasing](#phasing). **Repo scope:** almost entirely **chess**; one
 *optional* sibling cleanup is called out as the last phase and nothing here is blocked on a sibling
 release. Both capabilities the link half leans on already ship and are already in chess's package
 graph as of the DIR.Lib 8.8 repin: `SharpAstro.AppShell`'s `InstanceGate` (arrives transitively under
 SdlVulkan.Renderer) and `SdlVulkanWindow : IActivatableWindow` (SdlVulkan.Renderer 7.23). The cloud
-half needs **no new package at all** on the desktop — see [The desktop needs no SDK](#the-desktop-needs-no-sdk).
+half needs **no new package at all** on the native side either — see [A native client needs no SDK](#a-native-client-needs-no-sdk).
 
 > **This file was `desktop-link-play.md`.** It was renamed rather than joined by a second plan because
 > the two were one plan: see [Why these are one plan](#why-these-are-one-plan).
@@ -315,31 +315,47 @@ needs a real LAN authority because someone must deal, and per-seat hidden state 
 design is unsound there. Nothing in this plan generalises to a hidden-information game, and it should
 not be written as though it does.
 
-## Scope: the cloud courier is the browser's, and that deletes most of it
+## Scope: the browser first, then Android
 
-Decided after the backend was standing up, and it removes more than it defers. The desktop keeps link
-play; only Chess.Web gets cloud play. What that strikes out:
+Scoped to the browser while the backend was standing up, and corrected within the day: **Android is in
+scope too.** A phone is where a game that takes days to finish actually gets played, so shipping
+correspondence play to every front-end except that one would have been the wrong omission.
 
-- **The `ILobby` extraction — the design risk of the whole phase.** It existed so a desktop with BOTH a
-  LAN lobby and a cloud lobby would not fork its lobby UI. Browser-only means the web has no LAN lobby
-  to share with and the desktop has no cloud lobby, so there is nothing to unify: LAN's
-  *invite → accept* and the cloud's *post → claim a seat* never have to fit one state machine.
-- **The `ILanConnection` → `ISessionConnection` rename**, which was only tidying up after that.
-- **The hand-rolled REST + SSE client.** It was the price of keeping `Chess.Net` AOT-clean and free of
-  packages. The browser instead uses the Firebase JS SDK through `[JSImport]` — an established pattern
-  here (WebGl.Renderer's command buffer, `wwwroot/js/chess-canvas.js`) — which also brings
-  reconnection, token refresh and push for free rather than as three things to get right by hand.
-- **The second API key.** A referrer-restricted key refuses the desktop, so a native client needed its
-  own; with no native client, the browser key is the only key and `FIREBASE_CONFIG` stays one config.
-- **The minimized-window drain**, which is an `SdlEventLoop` problem with no browser analogue. It
-  belongs to the `chess://` hand-off now, and only to that.
+The correction is not a small widening. Browser-only struck five things out; Android, being a
+**native** front-end that already runs a lobby, puts four of them back:
 
-What stays is everything already built and verified: the schema, the rules, anonymous auth, the
-instance. None of that was desktop-specific.
+- **The `ILobby` extraction — the design risk of the whole phase — is back on.** `Chess.Droid` already
+  has a LAN lobby (`StartLobby`/`RenderLobby`/`HandleLobbyTap` in `MainActivity.cs`, hand-rendered
+  menus and all), so a cloud lobby beside it forks that UI unless both sit behind one interface. The
+  wrinkle named [below](#what-chessnet-already-gives-us-and-the-one-thing-it-doesnt) is the real work:
+  LAN's *invite → accept* and the cloud's *post → claim a seat* are not one state machine, and
+  `LobbyState` currently encodes the LAN one.
+- **The `ILanConnection` → `ISessionConnection` rename** comes back with it, for the same reason.
+- **The hand-rolled REST + SSE client** comes back, because a .NET Android head cannot use the JS SDK,
+  and binding the Firebase Android SDK would cost more than the REST surface it wraps. The sections
+  below describe that road as one not currently taken; it is taken now.
+- **The second API key** comes back: an HTTP-referrer restriction refuses a request that sends no
+  `Referer` — measured against the live key, 403 — and `HttpClient` on Android sends none. See
+  [One key per front-end](#one-key-per-front-end-because-a-referrer-restriction-excludes-a-native-client).
 
-The sections below that describe a desktop cloud client — the REST + SSE transport, what `Chess.Net`
-would have contributed — are kept rather than deleted, because the reasoning stands if the desktop ever
-wants this. They describe a road not currently taken, not the plan.
+What stays struck out is **the minimized-window drain**, for a reason that survives the correction: it
+exists because `SdlEventLoop` excludes a minimized desktop window from `anyNeedsRedraw`. Android is an
+SDL host, but it has no minimized window, and it already drains off-thread arrivals the obvious way —
+`_pendingLobbyStart` and its siblings are volatile flags named in the redraw predicate and consumed in
+`Render`. A cloud arrival adds one more flag to that predicate. The drain stays phase 4's, owned by
+the `chess://` hand-off alone.
+
+**The browser still goes first**, because the JS SDK reaches a working two-tab game in an afternoon and
+proves the deployed rules from our own code rather than from `curl`. Android is the client that pays
+for the shared plumbing, so it should not also be the one discovering that the backend is wrong.
+
+**Chess.GUI and Chess.Console stay out of scope, but the gap narrows to almost nothing.** Once
+`Chess.Net` carries the transport and `ILobby` exists, the GUI's remaining cost is a `VkCloudLobby`
+beside `VkLanLobby`. Whether to spend that is a separate call, worth making when the Android client
+works rather than now.
+
+Everything already built and verified was never front-end specific: the schema, the rules, anonymous
+auth, the instance.
 
 ## Which free tier, and why the cap matters more than the quota
 
@@ -432,29 +448,37 @@ A related correction to a natural assumption: **API key restrictions do not prot
 Firebase is explicit that restricting a key does not secure Realtime Database or Auth — rules and App
 Check do. The rules are the boundary; the key is a project identifier.
 
-### One key per front-end, because a referrer restriction excludes the desktop
+### One key per front-end, because a referrer restriction excludes a native client
 
 The browser key is restricted to `sebgod.github.io/*` and `localhost:*`. That is worth having for the
 same reason the config is a secret — a fork deployed on another domain cannot use it — and for nothing
 more; it guards an origin, not the data.
 
-**The trap it sets is for the desktop, and it is not theoretical.** An HTTP-referrer restriction
-matches on the `Referer` header, and a request that sends none is refused outright. Chess.GUI calling
-Identity Toolkit through `HttpClient` sends none. Measured against the live key:
+**The trap it sets is for every native front-end, and it is not theoretical.** An HTTP-referrer
+restriction matches on the `Referer` header, and a request that sends none is refused outright. A
+`HttpClient` calling Identity Toolkit sends none — from Chess.GUI, and equally from Chess.Droid, which
+is the one that matters now. Measured against the live key:
 
 ```
 no Referer                            -> 403  "Requests from referer <empty> are blocked"
 Referer: https://sebgod.github.io/... -> 200  token issued
 ```
 
-So the restriction that protects the web would make the desktop courier fail at sign-in, and fail in
+So the restriction that protects the web would make a native courier fail at sign-in, and fail in
 the shape of a broken auth implementation rather than a key policy — which is a long way to debug from
 the symptom.
 
 Hence **two keys**: the browser key restricted as above, and a second key for the native front-ends
 with no referrer restriction (API restrictions to Identity Toolkit and Realtime Database are still
 worth setting, since those narrow what a leaked key can reach without depending on a header the caller
-cannot send). Mint the second one when the desktop transport lands.
+cannot send). Mint the second one when the Android transport lands, in phase 3b.
+
+Android has one restriction option the desktop does not — *Android apps*, keyed on package name plus
+signing-certificate SHA-1 — but it is worth knowing what it is before leaning on it: it is satisfied by
+two request headers (`X-Android-Package`, `X-Android-Cert`), not by attestation, so any client that
+chooses to send them passes. It is the same class of control as the referrer restriction, and deserves
+the same weight: it keeps the key from being casually reused elsewhere, and it is not a boundary. The
+rules are the boundary.
 
 The consequence for `FIREBASE_CONFIG` is that `apiKey` becomes per-front-end while every other field
 stays shared, so the secret holds either two configs or one config plus an override. Decide that when
@@ -599,9 +623,10 @@ not a published package and has no external consumers, so renaming `ILanConnecti
 `ISessionConnection` is a free, mechanical change. Do it as part of this phase rather than leaving the
 next reader to wonder why the cloud opens a "LAN" connection.
 
-## The desktop needs no SDK
+## A native client needs no SDK
 
-There is no good Firebase .NET client for this: the options are not AOT-friendly, and `Chess.Net` is
+This is phase 3b's transport, and Chess.Droid is its first consumer. There is no good Firebase .NET
+client for this: the options are not AOT-friendly, and `Chess.Net` is
 `IsAotCompatible` with — deliberately — **zero** packages beyond LAN.Lib ("Sockets come from the BCL
 ... so no extra packages").
 
@@ -660,15 +685,18 @@ that no one later reaches for a server-side "anti-cheat" that this architecture 
 |---|---|---|---|
 | 1 | **Link play in the GUI**, end to end and with no new plumbing: `args` on `Program.cs`, `StartupWizardOptions.LinkPlay` on `VkStartupMenu`, paste-a-link (Ctrl+V, `SDL.GetClipboardText`), the turn semantics above, and "copy reply link" (Ctrl+L, `SDL.SetClipboardText`) | chess | **Done** — live-verified, see below |
 | 2 | **The inbox:** multi-slot store (`GameInbox`) + a "your move" list + staleness, and the GUI picker over it | chess | **Done** — live-verified |
-| 3 | **Cloud courier, browser only:** Firebase JS SDK via `[JSImport]`, anonymous auth, the schema and rules above, lobby UI in `Play.razor`, the README wording | chess | Backend live and verified; client not started |
+| 3a | **Cloud courier in the browser:** Firebase JS SDK via `[JSImport]`, anonymous auth, the schema and rules above, lobby UI in `Play.razor`, the README wording | chess | Backend live and verified; client not started |
+| 3b | **Cloud courier on Android:** REST + SSE in `Chess.Net`, the `ILobby` extraction + `ISessionConnection` rename, a second API key with no referrer restriction, a cloud lobby beside the LAN one in `MainActivity` | chess | Not started |
 | 4 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, building or reusing the drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | Not started |
 | 5 | *Optional cleanup:* a public, non-`DEBUG` per-iteration hook on `SdlEventLoop` so the drain stops living in a side-effecting predicate | SdlVulkan.Renderer | Not started |
 
 **The drain belongs to phase 4 alone**, though an earlier version of this table put it in phase 2 and a
 later one had it shared with the cloud. It has no producer until a payload can arrive from off-thread
-in an **SDL** host, and a browser-only cloud courier is not one: the minimized-window problem it exists
-to solve is `SdlEventLoop` excluding minimized windows from `anyNeedsRedraw`, which has no browser
-analogue. That leaves the `InstanceGate` hand-off as its only producer. Building it before then would
+in an **SDL** host *whose window can be minimized*, and neither cloud client is one. The problem the
+drain exists to solve is `SdlEventLoop` excluding minimized windows from `anyNeedsRedraw`: the browser
+has no such window, and Android — an SDL host, but one with no minimized state — already drains
+off-thread arrivals through volatile flags named in its own redraw predicate. That leaves the
+`InstanceGate` hand-off as the drain's only producer. Building it before then would
 be plumbing with nothing flowing through it — the same objection this document raises against doing the
 gate early.
 
@@ -706,13 +734,13 @@ Two orderings inside that are less obvious:
   *scheme* exists, because a scheme is what spawns a fresh process per click — the only problem the
   gate solves. It was phase 2 when this was a link-only plan; the cloud work outranks it because the
   cloud adds a capability and the scheme adds convenience to one that already works.
-- **The cloud courier is browser-only**, which is the counter-argument this list used to note winning
-  outright: the browser is where the players are, and it is the only front-end with neither LAN play
-  nor any other way to meet a stranger. The desktop keeps link play, which is cross-platform — a
-  desktop player and a browser player can already play each other by swapping links. So the split
-  reads: **the desktop gets the courier that needs no account, the browser gets the one that needs no
-  messenger**, and the only gap left is a desktop player meeting a stranger, which LAN covers for the
-  same room and links cover for anyone reachable by message.
+- **The cloud courier goes to the browser first and Android second**, and the browser's turn is first
+  on cost rather than on merit: the JS SDK is an afternoon, and it proves the deployed rules from our
+  own code before Android pays for the shared plumbing. Android is where correspondence play is
+  actually used, so it is not a follow-up to be quietly dropped. Chess.GUI and Chess.Console keep link
+  play, which is cross-platform — a desktop player and a browser player can already play each other by
+  swapping links — so the gap left open is a *desktop* player meeting a stranger, which LAN covers for
+  the same room and links cover for anyone reachable by message.
 
 ## Open questions
 
