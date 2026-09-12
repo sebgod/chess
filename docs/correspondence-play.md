@@ -446,9 +446,17 @@ the trade Spark buys, and it is the right one here.
 Operationally there is also a kill switch: pasting deny-all rules in the console makes the whole
 database inert in seconds, with no deploy and nothing to roll back.
 
-The `beginsWith` rule should be verified against current rule syntax before it is relied on in the
-phasing; the design does not collapse without it (each client can reject a non-extending log locally,
-which it must do anyway) but it is much better enforced once, centrally.
+**`beginsWith` is verified, not assumed** (2026-09-12). The rules live at `firebase/database.rules.json`
+with 16 tests in `firebase/rules.test.mjs`, run against the Firebase emulator: a write that *extends*
+the log is accepted, and writes that *rewrite* or *truncate* it are rejected by the server. The turn
+gate, the race-free seat claim, the unknown-field rejection and the size caps are pinned there too.
+
+Two things about running them. They need **no Firebase account, project or login** — a `demo-`
+prefixed project id makes the emulator run fully offline, which is why this step can be done long
+before any console setup. And they need **Java 21+**, while this repo's Android head pins **JDK 17**
+(a newer JDK breaks the SDL3-CS.Android build). Do not reconcile that by changing the machine's
+`JAVA_HOME`: firebase-tools reads `java` from `PATH` and ignores `JAVA_HOME`, so put a 21+ JDK on
+`PATH` for that one command and leave Android's alone.
 
 Identity is **Anonymous Auth** (free to 50k monthly active users, no payment method) — enough to get a
 uid to pin writes to, with no email, no password and no personal data stored beyond a display name the
@@ -572,9 +580,9 @@ that no one later reaches for a server-side "anti-cheat" that this architecture 
 |---|---|---|---|
 | 1 | **Link play in the GUI**, end to end and with no new plumbing: `args` on `Program.cs`, `StartupWizardOptions.LinkPlay` on `VkStartupMenu`, paste-a-link (Ctrl+V, `SDL.GetClipboardText`), the turn semantics above, and "copy reply link" (Ctrl+L, `SDL.SetClipboardText`) | chess | **Done** — live-verified, see below |
 | 2 | **The inbox:** multi-slot store (`GameInbox`) + a "your move" list + staleness, and the GUI picker over it | chess | **Done** — live-verified |
-| 3 | **Cloud courier, desktop:** RTDB over REST + SSE (no new package), anonymous auth, the schema and rules above, `ILobby` extraction + `CloudLobby`/`CloudPlayStack`, `ILanConnection` rename | chess | Not started |
+| 3 | **Cloud courier, desktop:** RTDB over REST + SSE (no new package), anonymous auth, the schema and rules above, `ILobby` extraction + `CloudLobby`/`CloudPlayStack`, `ILanConnection` rename | chess | **Rules done and tested**; transport and lobby not started |
 | 4 | **Cloud courier, browser:** the same client if REST + SSE works under WASM, otherwise the Firebase JS SDK via `[JSImport]`; lobby UI in `Play.razor`; the README wording | chess | Not started |
-| 5 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, reusing phase 2's drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | Not started |
+| 5 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, building or reusing the drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | Not started |
 | 6 | *Optional cleanup:* a public, non-`DEBUG` per-iteration hook on `SdlEventLoop` so the drain stops living in a side-effecting predicate | SdlVulkan.Renderer | Not started |
 
 **The drain is not phase 2's**, though an earlier version of this table put it there. It has no

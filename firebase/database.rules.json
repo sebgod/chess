@@ -1,0 +1,61 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "players": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null && auth.uid === $uid",
+        "name": { ".validate": "newData.isString() && newData.val().length <= 32" },
+        "$other": { ".validate": false }
+      }
+    },
+
+    "open": {
+      ".read": "auth != null",
+
+      "$uid": {
+        ".write": "auth != null && auth.uid === $uid",
+        ".validate": "!newData.exists() || newData.hasChildren(['gameId', 'name', 'color'])",
+
+        "gameId": { ".validate": "newData.isString() && newData.val().length <= 64" },
+        "name":   { ".validate": "newData.isString() && newData.val().length <= 32" },
+        "color":  { ".validate": "newData.isString() && (newData.val() === 'w' || newData.val() === 'b')" },
+        "$other": { ".validate": false }
+      }
+    },
+
+    "games": {
+      "$gameId": {
+        ".read": "auth != null && (data.child('w/uid').val() === auth.uid || data.child('b/uid').val() === auth.uid)",
+
+        ".write": "auth != null && (!data.exists() || data.child('w/uid').val() === auth.uid || data.child('b/uid').val() === auth.uid)",
+
+        ".validate": "newData.hasChildren(['g', 'n']) && (!data.exists() || newData.child('n').val() === data.child('n').val() || (newData.child('n').val() === data.child('n').val() + 1 && ((data.child('n').val() % 2 === 0 && auth.uid === data.child('w/uid').val()) || (data.child('n').val() % 2 === 1 && auth.uid === data.child('b/uid').val()))))",
+
+        "g": { ".validate": "newData.isString() && newData.val().length <= 24576 && (!data.exists() || newData.val().beginsWith(data.val()))" },
+
+        "n": { ".validate": "newData.isNumber() && newData.val() >= 0 && (!data.exists() || newData.val() >= data.val())" },
+
+        "w": {
+          ".write": "auth != null && !data.exists()",
+          ".validate": "newData.hasChildren(['uid'])",
+          "uid":  { ".validate": "newData.isString() && newData.val() === auth.uid" },
+          "name": { ".validate": "newData.isString() && newData.val().length <= 32" },
+          "$other": { ".validate": false }
+        },
+
+        "b": {
+          ".write": "auth != null && !data.exists()",
+          ".validate": "newData.hasChildren(['uid'])",
+          "uid":  { ".validate": "newData.isString() && newData.val() === auth.uid" },
+          "name": { ".validate": "newData.isString() && newData.val().length <= 32" },
+          "$other": { ".validate": false }
+        },
+
+        "$other": { ".validate": false }
+      }
+    }
+  }
+}
