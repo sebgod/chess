@@ -1,0 +1,24 @@
+# This repository stores LF, and every working tree should too.
+#
+# Until this file existed the convention was held only by habit. Git for Windows sets
+# core.autocrlf=true in its SYSTEM config (C:/Program Files/Git/etc/gitconfig), so a fresh
+# clone checks text files out as CRLF and git announces the intent on every command:
+# "LF will be replaced by CRLF the next time Git touches it". The stored blobs stayed LF
+# regardless, because nothing had yet written one back through that conversion -- which is
+# luck, not a policy, and the kind of luck that ends with one Windows checkout committing a
+# whole file as CRLF and burying a one-line change in a 200-line diff.
+#
+# eol=lf settles it for everyone, and beats asking each developer to set core.autocrlf,
+# because it travels with the repository. Adding it changed nothing: `git add --renormalize .`
+# reported no modified file, which is the check worth repeating if this line is ever edited.
+#
+# No CRLF exceptions. Nothing tracked here needs them -- the one .ps1 reads LF fine, and there
+# are no .bat/.cmd, which are the formats with a real claim to CRLF.
+* text=auto eol=lf
+
+# Binary: never converted, never diffed as text. `text=auto` above already detects these, so
+# this is belt-and-braces for the types actually tracked, where a stray conversion would
+# corrupt the file rather than merely churn the diff.
+*.png binary
+*.ico binary
+*.ttf binary
