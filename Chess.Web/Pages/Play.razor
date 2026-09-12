@@ -1022,9 +1022,9 @@
             _cloudError = "That game already has two players.";
             _cloudGameId = null;
             _cloudJoining = false;
-            _status = _cloudError;
             _screen = Screen.Menu;
             ShowWizardStep();
+            _status = _cloudError; // after ShowWizardStep, which writes the wizard's own prompt there
             await RenderMenuAsync();
             StateHasChanged();
             return;
