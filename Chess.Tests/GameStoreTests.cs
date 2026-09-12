@@ -160,4 +160,55 @@ public class GameStoreTests
         }
         finally { File.Delete(path); }
     }
+
+    // ── Finished games ──────────────────────────────
+
+    [Fact]
+    public void SaveThenLoad_AGameEndedByCheckmate_StillReplays()
+    {
+        // Regression. The start position used to be derived from CurrentSide and ply parity, but
+        // Game repurposes CurrentSide once a game ends -- after checkmate it holds the WINNER (see
+        // Game.Winner). Fool's mate ends on ply 4, an EVEN count, so the old derivation read Black
+        // and wrote "standard board, Black to move" as the replay origin; the reload then rejected
+        // White's f2f3 as illegal and threw the whole save away.
+        var path = TempPath();
+        try
+        {
+            var game = GameFromUci("f2f3", "e7e5", "g2g4", "d8h4");
+            game.IsFinished.ShouldBeTrue("fool's mate should end the game");
+            game.CurrentSide.ShouldBe(Side.Black, "CurrentSide holds the winner after checkmate");
+
+            GameStore.Save(path, game, Side.Black, GameMode.PlayerVsComputer);
+            var loaded = GameStore.TryLoad(path);
+
+            loaded.ShouldNotBeNull();
+            loaded.Value.Game.PlyCount.ShouldBe(4);
+            loaded.Value.Game.IsFinished.ShouldBeTrue();
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void SaveThenLoad_AGameEndedByStalemate_StillReplays()
+    {
+        // The other ending, which breaks the old derivation differently: stalemate sets CurrentSide
+        // to Side.None, so the parity branch produced a side that is not a side at all.
+        var path = TempPath();
+        try
+        {
+            // King+queen smothering the black king into stalemate from a custom position.
+            var board = Board.FromFenPlacement("7k/8/8/8/8/8/5Q2/7K");
+            var game = new Game(board, Side.White, []);
+            game.TryMove(UciMove.Parse("f2f7")).IsMoveOrCapture().ShouldBeTrue();
+            game.GameStatus.ShouldBe(GameStatus.Stalemate);
+
+            GameStore.Save(path, game, Side.Black, GameMode.CustomGameStandardBoard);
+            var loaded = GameStore.TryLoad(path);
+
+            loaded.ShouldNotBeNull();
+            loaded.Value.Game.PlyCount.ShouldBe(1);
+            loaded.Value.Game.GameStatus.ShouldBe(GameStatus.Stalemate);
+        }
+        finally { File.Delete(path); }
+    }
 }
