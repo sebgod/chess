@@ -16,9 +16,9 @@ namespace Chess.Web.E2E.Tests;
 /// feature.</para>
 ///
 /// <para>What is compared is whole PNGs rather than decoded pixels. It needs no decoder, and it is a
-/// stronger claim than "something is different": the frame with the pointer over the board must differ
-/// from the frame without it, AND moving off the board must return the canvas to byte-identically the
-/// frame it started from. Noise cannot do that; only a ghost that appears and is cleanly removed can.</para>
+/// stronger claim than "something is different": the frame with the pointer over a square must differ
+/// from the frame without it, AND returning the pointer to that square must reproduce the frame
+/// byte-identically. Noise cannot do that; only a ghost that is drawn and then cleanly removed can.</para>
 ///
 /// <para>Playwright captures a WebGL canvas through the compositor, not the drawing buffer, so this
 /// works even though <c>webgl-renderer.js</c> creates its context without <c>preserveDrawingBuffer</c>
@@ -107,13 +107,27 @@ public sealed class SetupDragGhostTests(ChessWebFixture fixture)
     }
 
     /// <summary>
-    /// Off the board the ghost hides, and the canvas returns to exactly the frame it had before the
-    /// pointer moved. Byte-identical is the point: it shows the ghost was removed CLEANLY rather than
-    /// leaving the pixels it had been drawn over, which is the failure a repaint-the-region approach
-    /// would produce and a whole-frame repaint would not.
+    /// Off the board the ghost keeps being carried, and coming back to a square it has already been on
+    /// reproduces that frame exactly. Byte-identical on the return leg is the point: it shows the ghost
+    /// is removed CLEANLY from wherever it has been — including from over the history panel and the
+    /// captured piles, which it is now allowed to cross — rather than leaving the pixels it was drawn
+    /// over.
+    ///
+    /// <para>The return leg goes back to <b>d5, not b1</b>. Before the first motion there is no ghost
+    /// at all (<c>DragPoint</c> is null until the pointer moves), so the opening frame has an ordinary
+    /// knight on an undimmed b1 — not a translucent ghost over a dimmed origin. Comparing against it
+    /// would be comparing two different states and calling the difference a leak.</para>
+    ///
+    /// <para>This test used to assert the opposite, that moving off the board HID the ghost. That was
+    /// the phase-1 decision, and it was deliberately reversed in <c>079decd</c> when the captured area
+    /// became a bin: once there is an off-board place where a release does something, a piece that
+    /// blinks out is both a bad way to say "this does nothing" and silent about the place where it
+    /// does. The feedback moved to the target — the bin lights up. The test was not updated with it
+    /// and sat red for two weeks, which nothing noticed because this suite is outside
+    /// <c>Chess.sln</c> and CI does not run it.</para>
     /// </summary>
     [Fact]
-    public async Task PointerMove_OffTheBoard_HidesTheGhostAgain()
+    public async Task PointerMove_OffTheBoard_KeepsCarryingTheGhost()
     {
         var page = await EnterSetupAsync();
         var box = await PickUpTheKnightAsync(page);
@@ -125,15 +139,28 @@ public sealed class SetupDragGhostTests(ChessWebFixture fixture)
         await page.WaitForTimeoutAsync(250);
         var withGhost = await Board(page).ScreenshotAsync();
 
-        // The history panel, well right of the board.
+        // The captured gutter, well right of the board — which is also the bin, so this leg exercises
+        // the ghost crossing chrome it is drawn over rather than clipped by.
         await page.Mouse.MoveAsync(box.X + box.Width - 40, box.Y + box.Height / 2);
         await page.WaitForTimeoutAsync(250);
         var offBoard = await Board(page).ScreenshotAsync();
 
-        Assert.False(offBoard.AsSpan().SequenceEqual(withGhost), "the frame did not change when the pointer left the board");
-        Assert.True(offBoard.AsSpan().SequenceEqual(inHand), "the board did not return to its pre-drag frame");
+        Assert.False(offBoard.AsSpan().SequenceEqual(withGhost),
+            "the frame did not change when the pointer left the board");
+        Assert.False(offBoard.AsSpan().SequenceEqual(inHand),
+            "the ghost was not carried off the board — the frame matches the one before any motion");
 
-        // And the piece is still in hand — a release out there would be a no-op, and so is leaving.
+        // Back to d5. Same ghost, same dimmed origin, same unlit bin — so anything the trip through
+        // the gutter left behind shows up here as a difference.
+        await page.Mouse.MoveAsync(dx, dy);
+        await page.WaitForTimeoutAsync(250);
+        var backOnTheBoard = await Board(page).ScreenshotAsync();
+
+        Assert.True(backOnTheBoard.AsSpan().SequenceEqual(withGhost),
+            "returning to d5 did not reproduce that frame — something was left behind off the board");
+
+        // And the piece is still in hand throughout: a release out there would be a no-op, and so is
+        // simply leaving.
         await Expect(Status(page)).ToContainTextAsync("moving White Knight from b1");
     }
 }

@@ -318,8 +318,11 @@ none of which a unit test can show:
 1. the ghost is drawn **off-grid**, straddling squares, held at the offset it was grabbed by rather
    than snapped to a centre;
 2. the origin square keeps a **dimmed** knight under the picked-up tint — lifted, not deleted;
-3. moving the pointer off the board **hides the ghost and restores b1 to full strength**, with the
+3. moving the pointer off the board **hid the ghost and restored b1 to full strength**, with the
    status line still reading "moving White Knight from b1" — the piece is still in hand.
+
+**Point 3 stopped being true on 2026-08-30** (`079decd`), and this list is left as the record of what
+was verified at the time rather than rewritten. See the reversal below.
 
 Chess.Droid takes the same route in the same commit but has **not** been run on a device; it is
 compiled only.
@@ -425,12 +428,22 @@ decorative. The GPU hosts would happily accept wrong rects for ever, because the
   contact point by an offset. That would break the honest grab-offset behaviour on precisely the hosts
   where the ghost matters most, and it interacts with the four-square bound (an offset ghost can
   straddle a different 2×2). Worth deciding when Droid/Web are wired, not before.
-- ~~**Should the ghost show while the pointer is off the board?**~~ **Decided in phase 1: it hides.**
-  That keeps the four-square bound absolute, stops the piece drawing over the history panel and the
-  captured piles, and truthfully signals the release semantics — a release off the board is already a
-  no-op that leaves the piece in hand. The cost, accepted, is that the piece appears to vanish rather
-  than be carried. Reversing it means changing one line in `HandlePointerMove` and re-reading the
-  bound, since a ghost over the chrome is no longer bounded by squares at all.
+- ~~**Should the ghost show while the pointer is off the board?**~~ **Decided in phase 1: it hides.
+  REVERSED on 2026-08-30 in `079decd` — it always follows.** The original reasoning was that hiding
+  it signalled the release semantics ("a release here does nothing") while keeping the four-square
+  bound absolute. What the bin changed is that the premise stopped holding: once the captured area
+  accepts a release, there IS an off-board place where a release does something, and a ghost that
+  blinks out is both a bad way to say "this does nothing" — it reads as having dropped the piece you
+  are still holding — and silent about the one place that does. The feedback moved to the target
+  instead: the bin lights up (`BinIsHot`). The accepted cost is the one the phase-1 decision was
+  avoiding — the ghost draws over the history panel and the captured piles — and the damage model
+  pays for it by reporting "repaint the frame" whenever a rect leaves `ContentRect`.
+
+  **This entry was stale for two weeks, and so was the browser test that encoded it**
+  (`SetupDragGhostTests.PointerMove_OffTheBoard_HidesTheGhostAgain`, red since 079decd). That suite
+  is outside `Chess.sln` and is not run by CI — deliberately, since it needs a browser and a dev
+  server — so nothing said so. Worth remembering the next time a decision is reversed: the test that
+  pins the old one does not fail anywhere anybody is looking.
 - ~~**Does the terminal's partial-render path stay partial here?**~~ **Answered from the code in phase
   2: yes.** `RenderFrame` falls back to a full frame when `TrayIsStale`, and that is a comparison of
   `(ply index, Mode)` (`ConsoleGameDisplayBase.cs:405-411`). A setup drag changes neither — no ply is
