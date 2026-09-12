@@ -33,6 +33,11 @@
 
         <button class="chip @(_panel == Panel.LinkPlay ? "active" : null)"
                 @onclick="() => TogglePanel(Panel.LinkPlay)">Play by link</button>
+        @if (_cloudConfigured)
+        {
+            <button class="chip @(_panel == Panel.CloudPlay ? "active" : null)"
+                    @onclick="() => TogglePanel(Panel.CloudPlay)">Play online</button>
+        }
         <button class="chip @(_panel == Panel.UnderTheHood ? "active" : null)"
                 @onclick="() => TogglePanel(Panel.UnderTheHood)">Under the hood</button>
     </div>
@@ -158,7 +163,47 @@
                             replayed through the chess rules when opened: only legal games can
                             travel, and a mangled link is rejected rather than mis-played. Opening a
                             link means it's your turn — the link carries no identity, so play fair:
-                            it's honour-system chess.
+                            it's honour-system chess. (Online play is the opposite bargain: a server
+                            holds the seats and enforces the turns. See <em>Play online</em>.)
+                        </p>
+                    }
+                    else if (_panel == Panel.CloudPlay)
+                    {
+                        @* The other correspondence mode. It exists as its own panel rather than a
+                           paragraph in the link one because almost every sentence differs: there IS
+                           a server, the link means something else, and the honour-system caveat
+                           stops applying. *@
+                        <p>
+                            The same correspondence chess, except the game is delivered
+                            <strong>for you</strong>. Post a game in the lobby and someone can take
+                            the other seat — now, or tomorrow — and every move after that arrives on
+                            its own, whether the game takes five minutes or five days.
+                        </p>
+                        <ol>
+                            <li>Choose <em>Network game</em> from the menu and pick your colour.</li>
+                            <li>
+                                Join a game somebody has posted, or post one of your own and wait.
+                            </li>
+                            <li>
+                                To play a particular person instead, <strong>Copy</strong> the link
+                                and send it. It <em>names</em> the game rather than carrying it, so
+                                it stays short and stays valid for the whole game — one link, not
+                                one per move.
+                            </li>
+                        </ol>
+                        <p>
+                            <strong>No sign-up and no password.</strong> You become an anonymous
+                            player the moment you open the lobby; there is no email to give and no
+                            account to recover. The only things stored are the moves and which two
+                            players hold the seats.
+                        </p>
+                        <p>
+                            Unlike a link game, this one is <strong>not honour-system</strong>: the
+                            seats are held, and the move list can only ever be <em>extended</em>, so
+                            nobody can play your turn for you or quietly rewind to a position they
+                            liked better. The server still has no idea what chess is — it never
+                            checks a move; both sides do that, with the same rules engine that runs
+                            everything else here.
                         </p>
                     }
                     else
@@ -168,8 +213,10 @@
                         <p>
                             The full chess engine (<code>Chess.Lib</code>) compiled to WebAssembly —
                             board, rules, and the negamax AI all running
-                            <em>entirely in this tab</em>. There is no back end at all: the same code
-                            powers the desktop and terminal builds.
+                            <em>entirely in this tab</em> — the same code that powers the desktop and
+                            terminal builds. Nothing here needs a back end; online play is the single
+                            exception, and even then the server only keeps a list of moves and two
+                            seat holders. It has no chess in it, and it never sees a position.
                         </p>
                         <p>
                             Every pixel is ours too: the board, the pieces and the text are drawn by
@@ -196,7 +243,7 @@
     // The two explainers, opened from the titlebar chips over the board. They used to be <details>
     // panels below it; there is no below any more (the app is the viewport), and putting the
     // renderer detail behind a deliberate click is the point of the exercise.
-    enum Panel { None, LinkPlay, UnderTheHood }
+    enum Panel { None, LinkPlay, CloudPlay, UnderTheHood }
 
     // The canvas shows one of three things: the startup wizard, board setup (custom game), or a
     // live game.
@@ -935,7 +982,12 @@
 
     void ClosePanel() => _panel = Panel.None;
 
-    string PanelTitle => _panel == Panel.LinkPlay ? "How \"Play by Link\" works" : "Under the hood";
+    string PanelTitle => _panel switch
+    {
+        Panel.LinkPlay => "How \"Play by Link\" works",
+        Panel.CloudPlay => "How online play works",
+        _ => "Under the hood",
+    };
 
     void OnPanelKeyDown(KeyboardEventArgs e)
     {
