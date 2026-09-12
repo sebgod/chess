@@ -336,7 +336,8 @@ account, ever.** Attaching one silently converts the cap into a bill.
 
 ## Operational setup (the account, and what it constrains)
 
-The project exists: **`chess-app-bce7a`**, Firebase console, **Spark plan, no billing account**. Three
+The project exists — Firebase console, **Spark plan, no billing account**. Its id, instance and web
+config are deliberately NOT written here; see [Why the config is a secret](#why-the-config-is-a-secret). Three
 facts about it are load-bearing enough to belong in the design rather than in a setup guide.
 
 **Spark means no billing account, and that is the whole safety model.** A Google Cloud *free trial*
@@ -350,10 +351,8 @@ that fire after the spend, not enforcement. Spark's refusal is the only real cei
 instance, and its location cannot be changed after provisioning. The three choices are `us-central1`,
 `europe-west1` and `asia-southeast1`; **`europe-west1` (Belgium) is the pick**, and *not* on latency
 grounds — see below. The consequence for the client is that the database URL
-(`chess-app-bce7a-default-rtdb.europe-west1.firebasedatabase.app`) is fixed, public, and belongs in
-checked-in config — Firebase documents that web API keys and database URLs are identifiers, not
-secrets, so **no part of this needs a CI secret**. There is no server-side deploy: Pages serves static
-files and the client talks straight to the database.
+is fixed and ends up in the shipped client either way. There is no server-side deploy: Pages serves
+static files and the client talks straight to the database.
 
 **Latency is not what picks the region, and assuming it does picks the wrong one.** A ply is one small
 write and the opponent is thinking for minutes or hours; even in live mode a ~300 ms antipodean round
@@ -363,8 +362,35 @@ European as anything else — and **data residency**: the rows hold a display na
 which is minimal but not nothing, and keeping EU players' rows in the EU sidesteps the transfer
 question rather than deferring it. Belgium wins on both; nearness to the author wins on neither.
 
-That has one consequence worth deciding early: a fork of this repository points at *this* database and
-*this* 100-connection ceiling. The config wants an override so a fork can aim elsewhere.
+### Why the config is a secret
+
+The obvious reading is that it needn't be: Firebase documents web API keys and database URLs as
+identifiers rather than secrets, and it is right — the config is downloaded into every visitor's
+browser and compiled into every desktop binary, so nothing about publishing the app keeps it private.
+By that argument a checked-in config costs nothing.
+
+That argument answers the wrong question. The risk is not a *visitor* reading the key, it is a **fork**
+inheriting the backend: clone, build, run, and now someone else's app is writing to this database and
+spending its 100 connections, without anyone intending it. The database URL is what does that, not the
+key. Keeping the config out of the source means a fork builds and runs perfectly well and simply points
+nowhere, which is the correct default for somebody else's project.
+
+So the config lives in a **`FIREBASE_CONFIG` repo secret**, injected at deploy time, with **no
+checked-in fallback**. Consequences to build to:
+
+- **Absence is a supported state, not a failure.** A build with no config must run with cloud play
+  unavailable and everything else working — link play needs no account, LAN play needs no internet,
+  and neither should break because a backend was not configured.
+- **Local development uses the emulator**, which needs no config, no project and no login at all.
+- **A real secret, when one appears.** Deploying rules from CI would need a service-account credential,
+  which is secret in the ordinary sense; that is the case where a repo secret is protecting something
+  rather than reducing discoverability.
+
+Discoverability is the honest word for what this buys. The identifiers appeared in this document's
+earlier revisions and remain in git history, so it is a deterrent rather than a boundary. The boundary
+is, as ever, the [security rules](#what-the-rules-can-enforce-without-knowing-chess) — which are
+deployed and tested — plus an HTTP-referrer restriction pinning browser use of the key to
+`sebgod.github.io/*`.
 
 **App Check cannot cover the desktop, and that caps how much abuse protection is available.** App
 Check is the only real lever against a scripted client, but its built-in attestation providers are
