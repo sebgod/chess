@@ -627,15 +627,7 @@
         _busy = false;
         _display.StatusOverride = null;
         await LeaveLobbyAsync();
-        if (_cloudGameId is { } leaving)
-        {
-            // Stop the subscription before anything else: a row arriving after we have left would
-            // put a board back on screen behind the menu.
-            CloudCourier.Unwatch(leaving);
-            _cloudGameId = null;
-            _cloudRow = null;
-            _cloudJoining = false;
-        }
+        LeaveCloudGame();
         if (_linkPlay)
         {
             // Leaving a link game: scrub the fragment so the address bar doesn't keep offering
@@ -1023,6 +1015,15 @@
         _cloudJoining = true;
         _cloudError = null;
 
+        // Put the game in the address bar, the same promise link play makes: the URL you are looking
+        // at is the game you are playing, so it can be bookmarked or copied without hunting for a
+        // share button. Unlike a link game's fragment this is written ONCE -- it names the game, so
+        // no move ever changes it. Seeding _lastAppliedFragment stops our own write coming back
+        // through LocationChanged as if someone had pasted it.
+        var fragment = GameLinkCodec.EncodeCloudFragment(gameId);
+        _lastAppliedFragment = fragment;
+        await JS.InvokeVoidAsync("chessCanvas.replaceStateFragment", fragment);
+
         if (!await CloudCourier.CreateAsync(gameId, "w", CloudPlayerName)
             && !await CloudCourier.ClaimAsync(gameId, "b", CloudPlayerName))
         {
@@ -1283,6 +1284,16 @@
         await RenderMenuAsync();
     }
 
+    // Stop the subscription before anything else: a row arriving after we have left would put a
+    // board back on screen behind the menu.
+    void LeaveCloudGame()
+    {
+        if (_cloudGameId is { } leaving) CloudCourier.Unwatch(leaving);
+        _cloudGameId = null;
+        _cloudRow = null;
+        _cloudJoining = false;
+    }
+
     Task LeaveLobbyAsync()
     {
         CloudCourier.UnwatchOpen();
@@ -1392,7 +1403,18 @@
 
             await InvokeAsync(async () =>
             {
-                if (await TryApplyFragmentAsync(fragment))
+                // A cloud link names a game rather than carrying one, so it is a different move:
+                // leave whatever we are in and join that game instead.
+                if (GameLinkCodec.TryExtractCloudId(fragment, out var cloudId))
+                {
+                    if (cloudId != _cloudGameId)
+                    {
+                        await LeaveLobbyAsync();
+                        LeaveCloudGame();
+                        await JoinCloudGameAsync(cloudId);
+                    }
+                }
+                else if (await TryApplyFragmentAsync(fragment))
                 {
                     _incomingFragment = fragment;
                     await PersistFragmentAsync();
