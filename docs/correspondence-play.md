@@ -1,0 +1,656 @@
+# Design: Correspondence play — the link courier, then the cloud courier
+
+**Status:** Phase 1 code-complete and unit-tested, **not yet live-verified**; phases 2-6 not started (see [Phasing](#phasing)). **Repo scope:** almost entirely **chess**; one
+*optional* sibling cleanup is called out as the last phase and nothing here is blocked on a sibling
+release. Both capabilities the link half leans on already ship and are already in chess's package
+graph as of the DIR.Lib 8.8 repin: `SharpAstro.AppShell`'s `InstanceGate` (arrives transitively under
+SdlVulkan.Renderer) and `SdlVulkanWindow : IActivatableWindow` (SdlVulkan.Renderer 7.23). The cloud
+half needs **no new package at all** on the desktop — see [The desktop needs no SDK](#the-desktop-needs-no-sdk).
+
+> **This file was `desktop-link-play.md`.** It was renamed rather than joined by a second plan because
+> the two were one plan: see [Why these are one plan](#why-these-are-one-plan).
+
+## Why
+
+The README's feature list reads:
+
+> **Play by Link**: serverless correspondence chess **(browser)** — the whole game travels in the URL…
+
+That parenthesis is the whole gap. The desktop app cannot consume a game link at all — not from the
+command line, not from the clipboard, not from a `chess://` click. Someone playing correspondence
+chess with the native app has to open a browser to make each move, which makes the native app the
+worse client for the one mode that has no server to depend on.
+
+The gap is much smaller than it looks, because everything *chess-specific* already exists and is
+already in the right assembly. What is missing is an entry point.
+
+The second gap is the one a link cannot close: **two people who don't already have each other's
+messenger open cannot start a game.** A link is a courier the *user* carries. Nothing in the product
+carries it for them, so there is no way to sit down and play a stranger, and no way for a move to
+arrive while the app is shut.
+
+## Why these are one plan
+
+The naive reading is that these are two features — "paste a link" and "play online" — sharing a
+neighbourhood. They are not. They are **two couriers for one payload**, and the payload, the receive
+semantics, the storage and the delivery drain are all the same code. Four things make the folding
+concrete, and each is a thing that would otherwise be built twice:
+
+**1. The payload is already the same bytes.** `GameLinkCodec.EncodeFragment` produces
+`g=e2e4.e7e5.g1f3` — a replay log, deliberately not a position snapshot, because castling and
+en-passant rights are derived from ply *history*. "Store players + their games" in a cloud database
+means storing exactly that string. The cloud row **is** the link. Get this right and the two couriers
+interoperate for free: a cloud game exports as a link the moment the other player's client breaks, and
+a link game is adoptable into the cloud when both players want push. Get it wrong — invent a second
+server-side game format — and you own a migration between two encodings of the same thing.
+
+**2. The receive semantics are the same three lines.** A link means "it's your turn"; so does a push.
+Both end in the block in [The turn semantics](#the-turn-semantics-stated-once). One implementation.
+
+**3. Both need an inbox, and chess has one save slot.** `GameStore` is a single fixed path
+(`LocalApplicationData/SharpAstro.Chess/game.uci`) and "Continue" resumes it. That is already the
+first thing that feels wrong about desktop link play against two opponents — it was an *open question*
+when this was a link-only plan. The cloud makes it **mandatory**, because the entire point of a server
+is that several games can be waiting on you at once. Solving it once, in the spine, is the difference
+between a plan and two plans that both edit `GameStore`.
+
+**4. Both need a delivery drain that runs while the window is minimized**, and that drain is the
+single hardest piece of research in this document (see [Where the drain goes](#where-the-drain-goes--the-non-obvious-part)).
+An `InstanceGate` hand-off and an inbound cloud move are the same problem — a payload arriving from
+off-thread at a moment when `OnRender` is not running — and they have the same answer.
+
+There is also a semantic reason, which is the one that actually settles it. Chess already has a *live*
+courier: `Chess.Net`'s LAN play, where both players are present and `GameLoop` pulls moves on its own
+thread. The link is a purely *asynchronous* courier — you close the app between moves. **The cloud is
+the first courier that is both**, and it needs the async spine that link play was going to build
+anyway plus the live session model LAN already has. Planning it apart from link play means designing
+the async half twice and discovering the collision at integration.
+
+What folding does **not** mean is that the cloud half is load-bearing for the link half. The phasing
+below keeps them orderable: phases 1–2 ship a complete, account-free feature and can be the end of it.
+
+**Three couriers, and none of them replaces another.** This is worth stating flatly because "add
+online play" is exactly the kind of plan that quietly deprecates what came before:
+
+| Courier | Infrastructure | Players present | Status |
+|---|---|---|---|
+| **Link** | none — no account, no server, no network code | no | the default, and it stays the default |
+| **LAN** (`Chess.Net`) | none — UDP discovery + TCP on your own network | yes | ships today, untouched by this plan |
+| **Cloud** | a free-tier database | either | the new one, and opt-in |
+
+Link play must keep working with no Google project in existence, on a machine with no network at all
+beyond a clipboard — that is the whole point of encoding the game into the URL. LAN play must keep
+working on a network with no internet. The cloud earns its place only by covering the case neither
+can: two people who share neither a room nor an already-open messenger.
+
+## The spine
+
+Three pieces, shared by both couriers, none of which exist today.
+
+### An inbox, not a save slot
+
+`GameStore` grows from one path to a directory keyed by game id, each entry carrying what
+`SavedGame` carries now (moves, computer side, mode) plus: **who the opponent is**, **which side I
+play**, **when it last changed**, and — for a cloud game — **the remote id**. The "your move" list is
+then a filter over the inbox (`game.CurrentSide == mySide`), which is the same predicate the link
+courier uses to decide whether to show "copy reply link".
+
+Backward compatibility matters here exactly as it did for the mode field: an existing `game.uci`
+must still load, as the one unnamed entry.
+
+**The timestamp goes in the entry, never in the link.** `lastMoveDate` is metadata about *this
+device's copy* of the game, not about the game, and putting it in the payload would cost three things
+at once: the link stops being a pure function of the moves (so the web's `_lastAppliedFragment` echo
+guard and every "is this the same game?" comparison break), the URL grows for no gain, and the link
+starts telling anyone who sees it when you were playing. The same split already exists in
+`GameStore`: the file holds the moves, plus local facts about them. For a cloud game the server's
+`updated` field plays the same role and is the better clock, because it is server time — a device
+clock can be wrong or deliberately lied to.
+
+**Stale entries are hidden, not deleted.** A correspondence game with no move for ~120 days is almost
+certainly over, and an inbox that lists it forever is an inbox nobody reads. But it is still a valid
+game, and someone who went on sabbatical mid-game should get it back — so the rule is that the
+default list filters on recency while the entry stays on disk behind a "show older games". Deleting
+on a timer is the one version of this that is hard to forgive, because the whole premise of the
+feature is that a correspondence game may legitimately take months.
+
+That same staleness rule is what the cloud's abandoned-game sweep needs (see
+[Presence without Cloud Functions](#presence-without-cloud-functions)) — one policy, two couriers,
+which is the pattern this whole plan keeps running into.
+
+### One inbound path
+
+Every way a payload can arrive reduces to one call before anything touches the UI:
+
+```
+argv  ·  clipboard paste  ·  chess:// hand-off  ·  drop file  ·  cloud push
+                              ↓
+              GameLinkCodec.TryDecode(body, out game, out error)
+                              ↓
+              apply turn semantics · write the inbox entry · repaint
+```
+
+**No courier may grow its own parser.** `TryDecode` replays every ply through `Game.TryMove`, so the
+rules engine is the parser's watchdog and a tampered, truncated or hostile payload cannot produce an
+illegal position; `MaxPlies = 4096` bounds the replay it can demand; and the reserved `f=`
+custom-start key is *explicitly rejected* so this version can never mis-play a future custom-start
+link as a standard-start game. Every one of those properties is lost by a second implementation — and
+a cloud courier is precisely where a second implementation would be tempting, because the bytes
+arrive over a socket instead of a clipboard.
+
+### One drain
+
+See [Where the drain goes](#where-the-drain-goes--the-non-obvious-part). Whichever of the cloud push
+or the `chess://` hand-off lands first builds it; the other one consumes it.
+
+---
+
+# Courier 1 — the link
+
+No accounts, no server, no infrastructure. This is the half that must keep working exactly as it does
+today, and it is the whole feature for anyone who already has a messenger open.
+
+## What already exists, and what genuinely doesn't
+
+| Piece | Where | State |
+|---|---|---|
+| Link codec | `Chess.UCI/GameLinkCodec.cs` — `EncodeFragment(Game)` / `TryDecode(fragment, out game, out error)` | **Exists**, and Chess.GUI already references Chess.UCI |
+| Who-plays-what rule | `Chess.Web/Pages/Play.razor` — `TryApplyFragmentAsync` (~934-960) | **Exists** — to be mirrored verbatim, see below |
+| Wizard menu item | `StartupWizardOptions.LinkPlay` on the shared `Chess.Lib.UI.StartupWizard` (offers "Play by Link" at `StartupWizard.cs:87`) | **Exists** — the GUI simply doesn't pass the flag (`VkStartupMenu.cs:21-22`) |
+| Clipboard | `SDL.GetClipboardText` / `SetClipboardText` / `HasClipboardText` in SDL3-CS, which Chess.GUI references **directly** | **Exists** — no backend wrapper needed |
+| Window activation | `SdlVulkanWindow : IActivatableWindow`, raised via `WindowActivation.Activate(window)` | **Exists** (SdlVulkan.Renderer 7.23) |
+| Single-instance gate | `SharpAstro.AppShell.InstanceGate` — `ChannelFor`, `TryClaim`, `TryHandOff`, `TryDequeue` | **Exists** in the graph; needs an explicit `PackageReference` if used directly |
+| Drop target | `SdlEventLoop.OnDropFile` | **Exists**, unused by chess |
+| Command-line arguments | `Chess.GUI/Program.cs` | **Missing entirely** — top-level statements go straight to `SdlVulkanWindow.Create`; there is no `args` |
+| URL scheme | — | **Missing** |
+
+`StartupWizardOptions.LinkPlay`'s own doc comment already anticipates this: *"Only front-ends that can
+produce and consume game links show it (today Chess.Web)."*
+
+## The link format is already portable
+
+`GameLinkCodec` encodes `#g=e2e4.e7e5.g1f3`, and the body parses as `&`-separated `key=value` pairs
+with **the leading `#` optional**. A query string is therefore the same grammar, which means all three
+shapes a desktop app can receive reduce to one call with no new parsing:
+
+| Received | Reduce to | Then |
+|---|---|---|
+| `https://sebgod.github.io/chess/#g=e2e4.e7e5` | everything after the first `#` | `TryDecode` |
+| `chess://play?g=e2e4.e7e5` | everything after the first `?` | `TryDecode` |
+| bare `g=e2e4.e7e5` | as-is | `TryDecode` |
+
+This is also why the cloud row can be the same string: it is a fourth row in this table whose
+"received" column is an HTTP response body.
+
+## The turn semantics, stated once
+
+Mirror `Play.razor`'s `TryApplyFragmentAsync` exactly — an arriving payload means **"it's your turn"**:
+
+```csharp
+if (GameLinkCodec.TryDecode(fragment, out var game, out var error) != GameLinkResult.Ok) { /* show error */ }
+
+localSide = game.CurrentSide;              // the receiver plays whoever is to move
+ui.MoveLockSide = localSide;               // the turn gate for link play (NOT the LAN gate)
+ui.FlipBoard = localSide == Side.Black;    // orient to the receiving player
+```
+
+Two consequences worth writing down because they look like bugs otherwise. An **unstarted** game
+encodes as `#g=` — that is the start link a Black-playing creator sends so their opponent opens as
+White, so an empty payload is valid input, not an error. And on the web a game link **skips the wizard
+entirely** (`Play.razor:323`); the desktop should do the same when a link arrives on the command line,
+or the user is asked to pick a mode for a game that already has one.
+
+`MoveLockSide` is the *asynchronous* turn gate. It is deliberately **not** the LAN turn gate — LAN
+gates by handing `GameLoop` a `NetworkPlayer` in the engine-shaped slot, which only works while both
+players are present. A cloud game uses **both**, and which one depends on the mode it is in; see
+[Live and correspondence are the same store](#live-and-correspondence-are-the-same-store).
+
+## Single instance: claim always, hand off only with a payload
+
+This is the load-bearing design decision, because the obvious reading ("register a gate, become a
+single-instance app") is a **regression**. Two instances on one machine is a scenario chess supports on
+purpose — `Chess.Net/LanProfile.cs:13`:
+
+> Persisting it was exactly what made two instances on one machine — sharing one `lan.txt` — load the
+> same id and then silently ignore each other as their own echo.
+
+The peer id is minted per process *specifically* so two local windows discover each other for LAN play,
+and the SDL/TUI inspector workflows want fresh instances too. So the policy is:
+
+- **Always `TryClaim`.** Owning the pipe is what makes this instance reachable. Cost is one named pipe.
+- **`TryClaim` returning `null` is not a reason to exit.** Somebody else owns the channel; this process
+  carries on and opens its own window. Two plain windows, LAN intact.
+- **Hand off only when there is a payload.** A launch carrying a link tries `TryHandOff` and exits on
+  success; a bare launch never hands off. This single rule is what keeps the feature and LAN compatible.
+- **A failed hand-off is never fatal.** Fall through and open the link in this process — an extra window
+  is a poor outcome, a click that does nothing is an unacceptable one. `InstanceGate` is built for this:
+  every failure path returns `false`/`null` rather than throwing.
+
+Channel identity: `InstanceGate.ChannelFor("sharpastro-chess")` — one gate for the whole app. The
+per-folder mode (`NormalizePathIdentity`) buys nothing here; a link is not a file in a directory.
+
+## Where the drain goes — the non-obvious part
+
+The AppShell README's frame-loop sketch (`while (gate.TryDequeue(out var r)) { … }` once per frame)
+does **not** transplant into `SdlEventLoop` as written, and getting this wrong makes the feature fail in
+exactly the case it exists for.
+
+`SdlEventLoop.Run` computes `anyNeedsRedraw` **excluding minimized windows** and then parks in
+`WaitEventTimeout(out evt, 16)`. A minimized window therefore never renders, so `OnRender` /
+`OnBeforeFrame` / `OnPostFrame` never run — and a minimized window is precisely the state a hand-off
+is meant to rescue. Draining in the render path means the link is applied whenever the user next
+happens to click the app, i.e. never, from the user's point of view.
+
+**This generalises to the cloud courier unchanged**, and is the reason the drain is spine work rather
+than link work: a move pushed by an absent opponent arrives on a background reader thread at a moment
+when the window is, by assumption, not being looked at.
+
+What does run every iteration, minimized or not, is the per-window external redraw check —
+`CheckNeedsRedraw`. That is the only *public* per-iteration hook in a Release build:
+`SdlEventLoop.OnLoopIteration` (which the debug inspector uses for exactly this purpose) is `internal`
+**and** `#if DEBUG`, so it is compiled out of the shipping loop.
+
+Two further details:
+
+- **The gate has no `HasPending`.** `TryDequeue` is the only reader, so the drain must dequeue and
+  *stash* the payload; a "peek in the predicate, apply in the render" split is not expressible.
+- **Wake the loop from the accept thread.** `SdlEventLoop.RequestRedraw()` (and the per-view
+  `SdlWindowView.RequestRedraw()`) are public, and the latter is exactly what the debug inspector's
+  `Poke()` calls from its own server thread — so the precedent for a cross-thread poke is already set
+  in the library. Without it the hand-off waits up to one `WaitEventTimeout` tick: survivable at 16 ms,
+  but the poke is free and matches existing practice.
+
+So the shape is: the producer thread (AppShell's accept thread, or the cloud reader) enqueues →
+chess's drain (in `CheckNeedsRedraw`) dequeues into a `pendingLink` field, calls
+`WindowActivation.Activate(sdlWindow)`, and returns `true` → the next frame applies `pendingLink`.
+Activation itself is already correct in the backend: restore **only** when actually minimized (two
+applications independently got this wrong as restore-then-raise, which knocks a maximised window back
+to its floating size), and `TryHandOff` spends the `AllowSetForegroundWindow` grant on the target
+before sending, because Windows will not let a background process pull itself forward.
+
+## Registering the scheme
+
+Chess ships as a published folder, not an installer, so registration has to be an explicit action —
+**never a silent write on first run.** A `--register-protocol` / `--unregister-protocol` pair on
+Chess.GUI, echoed by a menu item, keeps it visible and reversible.
+
+| Platform | Mechanism | Notes |
+|---|---|---|
+| Windows | `HKCU\Software\Classes\chess` with an empty `URL Protocol` value + `shell\open\command` | Per-user, no admin. `Microsoft.Win32.Registry` is AOT-safe |
+| Linux | `~/.local/share/applications/*.desktop` with `MimeType=x-scheme-handler/chess;` then `update-desktop-database` | Per-user |
+| macOS | `CFBundleURLTypes` in `Info.plist` | Needs a real `.app` bundle, which chess does not produce — **out of scope** until it does |
+
+The web page should also learn to *offer* the desktop app (an "open in the app" affordance next to
+"Copy link"), but that is a Chess.Web change and deliberately not part of this plan — the scheme has to
+exist first.
+
+---
+
+# Courier 2 — the cloud
+
+## It is not storage, it is a database with push
+
+The instinct to reach for "free cloud storage" is half right: the thing to store is small, and there
+is a free tier that covers it. But **object storage is the wrong primitive and its free tier is not
+close**. Cloud Storage's always-free allowance is 5,000 Class A and 50,000 Class B operations *per
+month*; two clients polling a game object every 2 s burn ~1,800 Class B ops in one 30-minute game.
+That is about 27 games a month before the polling alone exhausts the quota, and polling is also the
+worst possible experience — a move you already made sits invisible for a couple of seconds.
+
+The right primitive gives persistence **and** the delivery channel from the same write, which is
+exactly what "just store players + their games" is reaching for without naming it.
+
+## Why chess can use a dumb store at all
+
+Chess is a **perfect-information** game. Both clients already hold the whole truth, and every ply is
+validated locally by `Board.EvaluateAction`. This is the same property `GameLinkCodec` is built on:
+
+> Replaying through `Game.TryMove` also validates every ply, making the rules engine the parser's
+> watchdog — a corrupted or hand-tampered link cannot produce an illegal position.
+
+So the server never needs to know the rules, never needs to be trusted, and never needs to run our
+code. That is a genuinely unusual position to be in, and it is what makes a free tier viable — and it
+is **specific to chess**. `docs/game-library.md` records the contrast for the second-game work: Skat
+needs a real LAN authority because someone must deal, and per-seat hidden state means a relay-the-move
+design is unsound there. Nothing in this plan generalises to a hidden-information game, and it should
+not be written as though it does.
+
+## Which free tier, and why the cap matters more than the quota
+
+| | Firebase Realtime Database (Spark) | Firestore (always-free) |
+|---|---|---|
+| Allowance | 100 simultaneous connections, 1 GB stored, 10 GB/month down | 50k reads / 20k writes / 20k deletes per day, 1 GiB |
+| In chess terms | **50 concurrent games** | ~80 writes/game → **~250 games/day** |
+| Push | WebSocket (and REST + SSE), sub-second | listeners, but each delivered document is a billed read |
+| Over the limit | **capped** | **billed**, if the project has billing attached |
+
+**Take Realtime Database on the Spark plan, and the deciding property is not the quota — it is that
+Spark has no payment method attached, so exceeding a limit refuses service instead of invoicing.** A
+public chess app is an open write endpoint on the internet; for a hobby project that distinction is
+the whole risk model, and it outranks the fact that Firestore's daily write allowance is generous.
+Firestore's read accounting is also the wrong shape for a lobby, where every client watching a
+20-player waiting list re-reads all 20 rows on each change.
+
+Non-negotiable operational rule that follows: **keep it in a Google Cloud project with no billing
+account, ever.** Attaching one silently converts the cap into a bill.
+
+## Operational setup (the account, and what it constrains)
+
+The project exists: **`chess-app-bce7a`**, Firebase console, **Spark plan, no billing account**. Three
+facts about it are load-bearing enough to belong in the design rather than in a setup guide.
+
+**Spark means no billing account, and that is the whole safety model.** A Google Cloud *free trial*
+project is not the same thing and must not be used: a trial has a billing account attached, so it is
+a Blaze project whose two exits are "deleted after 90 days" and "you clicked Upgrade and now it
+bills". Neither is a home for a service meant to run indefinitely for free. The common alternative
+advice — Blaze plus a budget alert — is worse than it sounds, because budget alerts are notifications
+that fire after the spend, not enforcement. Spark's refusal is the only real ceiling.
+
+**The database region is permanent and there is only one of them.** Spark allows a single database
+instance, and its location cannot be changed after provisioning. The three choices are `us-central1`,
+`europe-west1` and `asia-southeast1`; **`europe-west1` (Belgium) is the pick**, and *not* on latency
+grounds — see below. The consequence for the client is that the database URL
+(`chess-app-bce7a-default-rtdb.europe-west1.firebasedatabase.app`) is fixed, public, and belongs in
+checked-in config — Firebase documents that web API keys and database URLs are identifiers, not
+secrets, so **no part of this needs a CI secret**. There is no server-side deploy: Pages serves static
+files and the client talks straight to the database.
+
+**Latency is not what picks the region, and assuming it does picks the wrong one.** A ply is one small
+write and the opponent is thinking for minutes or hours; even in live mode a ~300 ms antipodean round
+trip is invisible in a game with no real-time input. The two things that do distinguish the regions
+are **where the players are** — the browser app sits on a public URL, so strangers are as likely to be
+European as anything else — and **data residency**: the rows hold a display name and an anonymous uid,
+which is minimal but not nothing, and keeping EU players' rows in the EU sidesteps the transfer
+question rather than deferring it. Belgium wins on both; nearness to the author wins on neither.
+
+That has one consequence worth deciding early: a fork of this repository points at *this* database and
+*this* 100-connection ceiling. The config wants an override so a fork can aim elsewhere.
+
+**App Check cannot cover the desktop, and that caps how much abuse protection is available.** App
+Check is the only real lever against a scripted client, but its built-in attestation providers are
+reCAPTCHA Enterprise (web), Play Integrity (Android) and DeviceCheck/App Attest (Apple). There is no
+desktop provider, and the custom-provider route needs a backend to mint tokens — which Spark cannot
+host, because Cloud Functions are Blaze-only. **Enabling App Check enforcement on the database would
+therefore reject Chess.GUI and Chess.Console outright.** So the choice is: enforcement off (App Check
+in monitor mode for the web at most), with security rules and hard per-field size caps doing the real
+work. Design the rules on the assumption that *any* client can reach the database, because on the free
+tier that is true.
+
+A related correction to a natural assumption: **API key restrictions do not protect the database.**
+Firebase is explicit that restricting a key does not secure Realtime Database or Auth — rules and App
+Check do. The rules are the boundary; the key is a project identifier.
+
+The security rules themselves belong in the repository as `firebase/database.rules.json`, deployed
+from there, never pasted into the console where they are unversioned and untested. See
+[Testing](#testing) for why the emulator earns its keep on exactly this file.
+
+## The schema is the link
+
+```
+/games/{gameId}
+    g        "e2e4.e7e5.g1f3"     <- exactly GameLinkCodec's payload, nothing else
+    n        3                    <- ply count, so the rules can gate turns (below)
+    w        { uid, name }        <- seats
+    b        { uid, name }
+    updated  <server timestamp>
+
+/open/{uid}                       <- the lobby: games with an empty seat, ONE PER HOST
+    gameId, name, color, updated
+
+/players/{uid}
+    name                          <- the only thing stored about a person
+```
+
+A 200-ply game is ~1.2 KB. The 1 GB allowance is not a constraint anyone will ever feel; the 100
+simultaneous connections is the one that binds.
+
+## What the rules can enforce without knowing chess
+
+Realtime Database security rules are the only server-side logic the Spark plan offers, and they turn
+out to be enough for everything the store actually owes us:
+
+- **Append-only history.** `newData.val().beginsWith(data.val())` on `g` — a write may only *extend*
+  the move log, never rewrite or truncate it. One line, no chess knowledge, and it removes the entire
+  class of "opponent rolled the game back to a position they liked".
+- **Turn gating.** With `n` stored alongside, `n` must increase by exactly 1 per write, and the writer
+  must be `w.uid` when `n` is even, `b.uid` when odd. That is a real turn gate expressed in arithmetic
+  — the rules still have no idea what chess is.
+- **Race-free seat claim.** `".write": "!data.exists()"` on a seat makes joining an open game atomic
+  with no transaction: the first writer wins, the second is rejected.
+- **Hard size caps on every field**, plus `"$other": { ".validate": false }` to reject any key that
+  was not named here. Without these the project is a free 1 GB pastebin for whoever finds it. A move
+  is 5 characters at most, `g` is bounded by `MaxPlies`, a display name 32.
+
+### Spam, and the one thing rules cannot do
+
+There is no secret to leak — the API key identifies the project, not the caller — so none of the above
+depends on concealment. What it does depend on is that every write is *attributable* (`auth != null`,
+and the uid must hold a seat) and *shaped* (capped fields, no unknown keys). Together those make abuse
+pointless: there is nothing to read worth reading and nowhere to put anything.
+
+The vector they do not close is **lobby spam**. Anonymous auth is free and unlimited, so a script can
+mint uids in a loop and post junk open games, and rules cannot count — "at most three games per user"
+is not expressible. Two structural answers carry most of the weight:
+
+- **Key open games by uid, not by game id.** `/open/{uid}` makes "one open game per identity" a
+  property of the path rather than something to count: a second post overwrites the first. This is why
+  the schema above is shaped that way, and it is the single cheapest anti-spam measure available.
+- **`onDisconnect()` makes a lobby slot cost a connection.** A mint-and-disconnect loop leaves nothing
+  behind, and connections are capped at 100, so spam has to be *sustained* before it means anything.
+
+What remains unclosable is a sustained scripted client, because App Check — the lever built for exactly
+that — cannot cover the desktop front-ends (see above). The worst case is bounded and worth stating:
+the free tier is exhausted, the app stops working for a while, and **no bill is generated**. That is
+the trade Spark buys, and it is the right one here.
+
+Operationally there is also a kill switch: pasting deny-all rules in the console makes the whole
+database inert in seconds, with no deploy and nothing to roll back.
+
+The `beginsWith` rule should be verified against current rule syntax before it is relied on in the
+phasing; the design does not collapse without it (each client can reject a non-extending log locally,
+which it must do anyway) but it is much better enforced once, centrally.
+
+Identity is **Anonymous Auth** (free to 50k monthly active users, no payment method) — enough to get a
+uid to pin writes to, with no email, no password and no personal data stored beyond a display name the
+player typed. The web API key is public by design; the rules are the security boundary, not the key.
+
+## Presence without Cloud Functions
+
+**The Spark plan has no Cloud Functions** — they require Blaze. So there is no server-side cron, and
+anything that expires has to expire some other way. Two answers, and the first is better than it
+sounds:
+
+- **Lobby entries expire by themselves.** RTDB's `onDisconnect()` is part of the database protocol,
+  not a Cloud Function, so it works on the free plan: a client registers "delete my `/open` row when
+  my connection drops" *at the server* when it arrives. That is precisely the semantic LAN.Lib's
+  self-expiring peer table gives on the LAN, and it means a crashed client does not leave a ghost
+  opponent in the lobby.
+- **Finished and abandoned games need a client-driven sweep.** Delete on game end, and let any client
+  opening the lobby prune rows older than N days. Ugly but adequate, and the alternative is a billing
+  account.
+
+## Live and correspondence are the same store
+
+The same rows serve both, and this is where courier 2 meets the spine:
+
+- **Both players present** -> the remote side is a `NetworkPlayer` in `GameLoop`'s engine-shaped slot,
+  exactly as LAN play works today. `NetworkSession`'s queue-drain shape (`TryDequeueMove`) is already
+  transport-agnostic.
+- **Opponent absent** -> you make your move, it is written, you close the app. That is the link
+  courier's semantics — `MoveLockSide`, the inbox entry, the "your move" list — with the network
+  doing the carrying.
+
+The store does not distinguish them. Only the session lifetime differs, which is why the inbox has to
+exist before this phase, not after it.
+
+## What Chess.Net already gives us, and the one thing it doesn't
+
+Most of the LAN stack is courier-agnostic already, because `SessionProtocol` was written as plain
+line-oriented ASCII ("the same *UCI token you replay through the rules engine* spirit as
+`GameLinkCodec`/`GameStore`"), and because the transport sits behind an interface for testability:
+
+| Type | Cloud reuse |
+|---|---|
+| `SessionProtocol` | **Verbatim.** `CHESSLAN 1 MOVE e2e4` is already the right size and shape for a DB write |
+| `NetworkSession` | **Verbatim.** It owns an `ILanConnection` and a queue; neither is TCP-specific |
+| `NetworkPlayer`, `NetworkGame`, `LocalNetworkPlayer` | **Verbatim.** `IEngineBasedPlayer` over a session |
+| `ISessionTransport` / `ILanConnection` | **Shape fits** — "dial, send lines, receive lines" describes a DB channel as well as a socket |
+| `LanLobby` | **Does not fit.** It takes a `LanDiscovery` in its constructor and `Peers => _discovery.PeersOf(...)` |
+| `LanPlayStack` | Cloud needs a sibling `CloudPlayStack`; the "open and tear down as a unit" shape carries over |
+
+So the one genuine refactor courier 2 forces is **extracting an `ILobby`** (state, joinable list, an
+action, a `NetworkSession` comes out) so the front-ends' lobby widgets don't fork per courier. That
+extraction has one real wrinkle worth naming now rather than discovering later: LAN's handshake is
+*invite -> accept/decline* between two present peers, while the cloud's is *post an open game ->
+someone claims the seat*. These are not the same state machine, and `LobbyState` currently encodes the
+LAN one (`Inviting`, `IncomingInvite`, `Declined`). The interface has to be drawn above that
+difference or it will leak; that is the design risk in this phase, and it is a small one.
+
+A naming consequence: `ILanConnection`, `LanLobby`, `LanPlayStack` become partial lies. `Chess.Net` is
+not a published package and has no external consumers, so renaming `ILanConnection` to
+`ISessionConnection` is a free, mechanical change. Do it as part of this phase rather than leaving the
+next reader to wonder why the cloud opens a "LAN" connection.
+
+## The desktop needs no SDK
+
+There is no good Firebase .NET client for this: the options are not AOT-friendly, and `Chess.Net` is
+`IsAotCompatible` with — deliberately — **zero** packages beyond LAN.Lib ("Sockets come from the BCL
+... so no extra packages").
+
+It doesn't need one. Realtime Database exposes a REST API where appending `.json` to a path reads or
+writes it, and where `Accept: text/event-stream` turns a GET into a **server-sent event stream** of
+`put`/`patch` events. That is `HttpClient` plus a line reader — which is exactly the surface
+`ILanConnection` already describes. Anonymous sign-in is likewise one HTTPS POST to the Identity
+Toolkit REST endpoint, returning a token passed as a query parameter on subsequent calls.
+
+The one caution is JSON: the payloads are tiny (a string, two names, an integer), but reflection-based
+`System.Text.Json` would break AOT and the assembly's no-reflection stance. Use a source-generated
+`JsonSerializerContext`, or hand-roll — at this size hand-rolling is genuinely defensible and matches
+how `SessionProtocol` already treats the wire.
+
+## The browser is the hard part
+
+Chess.Web is where the cloud pays off — it is the front-end with no LAN play, and the one a stranger
+can reach without installing anything — and it is also where the work is:
+
+- **It does not reference `Chess.Net` at all** today (only Chess.Lib and Chess.UCI, and Chess.UCI
+  "for `UciMove` + `GameLinkCodec` only"). Whether the browser takes a dependency on Chess.Net or the
+  session types move somewhere shared is a real decision, not a detail.
+- **WASM cannot open a TCP socket**, so the cloud courier is not merely the browser's best transport,
+  it is the only one it can ever have.
+- The natural client is the **Firebase JS SDK via JS interop**, a pattern the repo already has twice:
+  `wwwroot/js/chess-canvas.js` for the canvas blit, and WebGl.Renderer's `[JSImport]` command buffer.
+  A single-threaded WASM runtime also means the reader must not block — the same constraint the WebGL
+  work already documents.
+
+An alternative worth pricing before committing: the same REST + SSE path the desktop uses works in a
+browser too (`EventSource`), which would avoid the SDK and the extra payload entirely. If that holds,
+both front-ends share one client and the browser stops being the hard part.
+
+## The README's promise is at stake
+
+> Play by Link ... **No accounts, no server, no logins**
+
+That is currently a selling point, printed twice. Courier 2 adds an account and a server, so the
+wording has to change — and the change must keep the promise true for courier 1, which stays the
+default. Something like: *link play needs no account; online play with a stranger needs a one-tap
+anonymous sign-in.* Deciding this is part of the cloud phase, not an afterthought, because getting it
+wrong reads as a bait-and-switch to exactly the audience the feature was written for.
+
+## What this does not fix
+
+**Engine assistance.** A player running a strong engine alongside the app is undetectable by any
+backend design, free or paid, and nothing in this plan addresses it. Illegal moves are already handled
+(both clients validate, and the append-only rule stops history rewriting). Worth stating plainly so
+that no one later reaches for a server-side "anti-cheat" that this architecture cannot support.
+
+---
+
+## Phasing
+
+| Phase | Scope | Where | Status |
+|---|---|---|---|
+| 1 | **Link play in the GUI**, end to end and with no new plumbing: `args` on `Program.cs`, `StartupWizardOptions.LinkPlay` on `VkStartupMenu`, paste-a-link (Ctrl+V, `SDL.GetClipboardText`), the turn semantics above, and "copy reply link" (Ctrl+L, `SDL.SetClipboardText`) | chess | **Code complete, awaiting live verification** — see below |
+| 2 | **The spine:** multi-slot `GameStore` (inbox) + a "your move" list + the per-iteration drain in `CheckNeedsRedraw` with a `RequestRedraw()` poke | chess | Not started |
+| 3 | **Cloud courier, desktop:** RTDB over REST + SSE (no new package), anonymous auth, the schema and rules above, `ILobby` extraction + `CloudLobby`/`CloudPlayStack`, `ILanConnection` rename | chess | Not started |
+| 4 | **Cloud courier, browser:** the same client if REST + SSE works under WASM, otherwise the Firebase JS SDK via `[JSImport]`; lobby UI in `Play.razor`; the README wording | chess | Not started |
+| 5 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, reusing phase 2's drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | Not started |
+| 6 | *Optional cleanup:* a public, non-`DEBUG` per-iteration hook on `SdlEventLoop` so the drain stops living in a side-effecting predicate | SdlVulkan.Renderer | Not started |
+
+**Phase 1 is done except for being watched.** What landed: `GameLinkCodec.ExtractBody` (one reduction
+for a page URL / `chess://` / bare fragment / bare body, folded into `TryDecode` so no host parses) and
+`GameLinkCodec.IsContinuationOf` (the opponent's reply vs a different game — compares decoded plies,
+never the encoded string); `GameSession` handling `PlayByLink` (`LocalSide`, the `MoveLockSide` gate
+re-armed across reset, flip-to-local, and `CorrespondentSideFor` stating the turn rule once); the GUI
+wizard entry; a link on argv skipping the wizard; and Ctrl+L / Ctrl+V. No engine process is spawned for
+a link game, and `Continue` resumes one for free because `GameStore` already persists the mode and the
+correspondent's colour.
+
+**What is NOT verified: any of it on screen.** The GUI launches clean on every path, and the session
+behaviour is unit-tested, but the board orientation, the lock and the two clipboard keys have not been
+watched in a running window. The SDL debug inspector needs a **Debug** build against **local siblings**,
+and the local `SdlVulkan.Renderer` working copy is at an unreleased 7.33 whose `SdlEventLoop.OnKeyDown`
+has collapsed to a single `InputEvent.KeyDown` — so local builds fail while CI, pinned to `7.30.*`,
+stays green. Releasing 7.33, repinning, and migrating the call site is what unblocks the verification;
+it cannot be done in the other order, because migrating first breaks CI against the old pin.
+
+**Everything after phase 1 is reach.** That ordering is deliberate and worth
+defending: a link pasted into the app is already the whole of correspondence play, and it needs no
+registry, no scheme, no gate, no account and no Google project. **Phases 1-2 are a complete, shippable
+feature with no external dependency, and stopping there strands nothing.**
+
+Two orderings inside that are less obvious:
+
+- **The scheme is last among the chess phases, not second.** `InstanceGate` only earns its keep once a
+  *scheme* exists, because a scheme is what spawns a fresh process per click — the only problem the
+  gate solves. It was phase 2 when this was a link-only plan; the cloud work outranks it because the
+  cloud adds a capability and the scheme adds convenience to one that already works.
+- **Desktop cloud before browser cloud**, because the desktop path needs no new dependency and proves
+  the schema and rules against code that is already `IsAotCompatible` and already has an in-memory
+  test double. The counter-argument is real — the browser is where the players are — so if only one
+  of the two is ever built, build phase 4.
+
+## Open questions
+
+- **A link or push arriving mid-game.** Discard the current game, or prompt? The web has no equivalent
+  (a new link is a new tab), so this is a genuinely new decision. Suggested: prompt. With the phase-2
+  inbox the answer gets easier — a new game is a new entry, and nothing has to be discarded at all.
+- **Who is allowed to claim an open game?** Anyone, or only whoever has the game id? "Anyone" is a
+  lobby and is the point; it is also the abuse surface. A "private game" that only appears to whoever
+  holds the id is the cheap middle — and it is, again, a link.
+- **Rated / persistent identity.** Anonymous auth means a player is a fresh uid per browser profile,
+  and on a phone it is bound to the device: switch handsets and you are a new person with no games.
+  There is therefore no identity across devices, so no ratings and no history. That is almost
+  certainly the right trade for a free tier, but it should be a decision, not an accident — and it
+  is worth knowing that the escape hatch is not "add real accounts": Android's **Restore Credentials
+  API** carries a sign-in across a device transfer, which is the mechanism behind Google Play's
+  April 2027 Zero-Tap Sign-In requirement (a requirement chess is doubly clear of — games are exempt,
+  and Chess.Droid is not distributed through Play).
+- **Chess.Console.** Phase 1 applies almost unchanged (the wizard and codec are shared, and the TUI has
+  its own clipboard story), and the console already references `Chess.Net`, so phase 3 reaches it too.
+  Worth doing, not scoped here.
+- **Chess.Droid.** An Android intent filter for `chess://` is the natural analogue of phase 5, and
+  `Activate()` is already referenced on the android TFM. Separate plan.
+- **Drag and drop.** `OnDropFile` is already wired in the backend and unused, so dropping a saved
+  `.uci` game onto the window is nearly free — but nobody receives a correspondence game *as a file*,
+  so this is an extra, not a phase.
+
+## Testing
+
+- **Codec parity** is already covered by `Chess.Tests/GameLinkCodecTests.cs`; no courier adds a codec
+  and so none needs codec tests. What they need is a test that the *payload reduction* (`#` / `?` /
+  bare / HTTP body) hands `TryDecode` the same body for all four shapes.
+- **Turn semantics** — assert `MoveLockSide` / `FlipBoard` / `localSide` against a decoded payload, the
+  same assertions `Chess.Web.E2E.Tests/PlayByLinkTests.cs` makes in the browser.
+- **The cloud courier needs no cloud to test.** `Chess.Tests/Lan/FakeLanBus.cs` already stands in for
+  the whole LAN "so `LanLobby` can be tested with no real sockets (CI-safe)", wiring the node under
+  test exactly as `LanPlayStack` wires it. A fake DB behind `ISessionTransport` is the same trick in
+  the same file's pattern — a further argument for drawing `ILobby` so that both lobbies are testable
+  by one harness.
+- **The append-only rule deserves one test against a real database**, because it is the only piece of
+  logic that does not live in this repository. The Firebase emulator runs locally and free; a rules
+  test asserting that a truncating write is rejected is worth more than any amount of client-side care.
+- **The hand-off and the minimized push** are integration tests, not unit tests: launch instance A,
+  deliver a payload, assert A applied it. The SDL debug inspector can drive and screenshot A
+  headlessly, which is what makes this testable at all — and it is the one test that would catch the
+  minimized-window drain bug described above, so **minimize A first**.
