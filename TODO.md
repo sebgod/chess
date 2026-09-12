@@ -6,10 +6,15 @@ Each of these has a doc under `docs/` carrying its own **Status** header and **P
 are the source of truth for progress, not this list. The gaps below the line are unplanned known
 defects; these are planned changes.
 
-- [**Play by Link on the desktop**](docs/desktop-link-play.md) — the README's Play by Link feature says
-  "(browser)"; the native app can't consume a game link at all. Phase 1 (paste/argv + reply link) needs
-  no new plumbing — the codec, the wizard entry and the clipboard all already exist. Phase 2 adds a
-  `chess://` scheme with a single-instance hand-off. *Not started.*
+- [**Correspondence play**](docs/correspondence-play.md) — one payload, two couriers. The link
+  courier closes the README's "(browser)" gap: the native app can't consume a game link at all, and
+  phase 1 (paste/argv + reply link) needs no new plumbing — the codec, the wizard entry and the
+  clipboard already exist. The cloud courier then carries the same bytes for people who don't already
+  share a messenger, on a free tier that caps rather than bills. They share a spine (a multi-slot
+  `GameStore`, one `TryDecode` path, one minimized-safe drain), which is why they are one plan and not
+  two. *Phase 1 (link play in the GUI) is code-complete and unit-tested but NOT yet live-verified —
+  the SDL inspector needs a Debug local-siblings build, which the unreleased SdlVulkan 7.33
+  `OnKeyDown` change currently breaks. Phases 2-6 not started.*
 - [**Content→device transform**](docs/content-transform.md) — DPI and rotation unified as one
   constrained affine map, which is what the Android "across the table" flip is built on. *Phases 1a and
   2 done; WebGL compose and the CPU backend pending.*
@@ -22,6 +27,28 @@ defects; these are planned changes.
 - [**Second board game / game-library carve-out**](docs/game-library.md) — what would actually have to
   be extracted for a second game (Skat, Memory) to share this repo's turn model, wizard, frame and LAN
   lobby. *Design only.*
+
+## Google Play readiness (Chess.Droid)
+
+Two Play quality requirements land in 2027 and only bite if Chess.Droid is actually published there
+(today CI only builds it — no keystore, no AAB, no publish step).
+
+- **DEX optimization ≥ 25% coverage — February 2027. Currently NOT met.** Measured from the build:
+  `AndroidDexTool = d8` (so the app *does* ship a `classes.dex` — the Java host, `SdlVulkanActivity`
+  and the SDL3-CS bindings), but `AndroidLinkTool` is **empty**, i.e. R8 shrinking/optimization is
+  off entirely. `AndroidLinkMode = SdkOnly` is the *managed* trimmer and does not count; likewise
+  `RunAOTCompilation = true` helps startup and managed memory but is not what this metric measures.
+  **The metric is a build-configuration check, not a performance measurement** — being fast does not
+  exempt an app. The fix is `<AndroidLinkTool>r8</AndroidLinkTool>`, but it is not a blind flip:
+  R8 can strip Java classes that JNI reaches reflectively, and SDL's activity is exactly that shape,
+  so it needs `-keep` rules plus an on-device smoke test (the SDL3-CS.Android pin is already
+  version-fragile — see the 3.4.10.5 note).
+- **Zero-Tap Sign-In — April 2027.** Chess is clear twice over: games are exempt, and link/LAN play
+  has no sign-in at all. It would only ever apply if the cloud courier's anonymous auth shipped on
+  Android, and even then the exemption holds. Note the word "currently" in the exemption.
+- **Memory thresholds (anonymous RSS + swap, bitmap memory) — February 2027. Unmeasured.** This is
+  the half where a .NET app carries genuine risk, because the runtime baseline is not free. Needs a
+  real measurement on device (the Tab M8 is the rig) before anyone assumes it passes.
 
 ## Console Input
 
