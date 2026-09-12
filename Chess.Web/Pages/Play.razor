@@ -273,6 +273,15 @@
     bool _shareSupported;           // navigator.share feature detection (once, at boot)
     string? _linkError;             // last Invalid-link message from TryApplyFragmentAsync
 
+    // ---- Cloud play: the SAME correspondence session, with the database as the courier instead
+    // of the user. So it rides on _linkPlay rather than beside it — the turn semantics, the fixed
+    // local side and the one-local-move gate are identical, and the only differences are who
+    // carries the payload and what the address bar holds (a game id, not the game).
+    string? _cloudGameId;           // non-null for the whole cloud session
+    bool _cloudJoining;             // true until the first row tells us which seat we hold
+    CloudCourier.Row? _cloudRow;    // last row the server confirmed — what a refused move rolls back to
+    string? _cloudError;            // why cloud play is unavailable or stopped, shown on the menu
+
     // Must match PixelGameDisplay's internal background — the display's GameUI paints margins
     // with it, and the host clears the rest of the surface; a mismatch would band.
     static readonly RGBAColor32 Background = PixelGameDisplay<WebGlContext>.Background;
@@ -323,9 +332,19 @@
         _shareSupported = await JS.InvokeAsync<bool>("chessCanvas.isShareSupported");
 
         // A game link in the fragment skips the wizard entirely: the link means "it's your
-        // turn" — decode, replay, and put the board straight on screen.
+        // turn" — decode, replay, and put the board straight on screen. A CLOUD link (#c=…) names
+        // a game instead of carrying one, so it is the same hand-off with a database in the middle.
         var bootFragment = new Uri(Nav.Uri).Fragment;
-        if (await TryApplyFragmentAsync(bootFragment))
+        if (GameLinkCodec.TryExtractCloudId(bootFragment, out var bootCloudId))
+        {
+            if (!await JoinCloudGameAsync(bootCloudId))
+            {
+                ShowWizardStep();
+                _status = _cloudError ?? _status;
+                await RenderMenuAsync();
+            }
+        }
+        else if (await TryApplyFragmentAsync(bootFragment))
         {
             _incomingFragment = bootFragment;
             await PersistFragmentAsync(); // canonicalize the address bar (also seeds the dedupe)
@@ -567,6 +586,15 @@
     {
         _busy = false;
         _display.StatusOverride = null;
+        if (_cloudGameId is { } leaving)
+        {
+            // Stop the subscription before anything else: a row arriving after we have left would
+            // put a board back on screen behind the menu.
+            CloudCourier.Unwatch(leaving);
+            _cloudGameId = null;
+            _cloudRow = null;
+            _cloudJoining = false;
+        }
         if (_linkPlay)
         {
             // Leaving a link game: scrub the fragment so the address bar doesn't keep offering
@@ -723,7 +751,14 @@
                 // must not be rewritten because someone scrubbed back through the history.
                 if (tick.PlyCommitted && _linkPlay)
                 {
-                    await PersistFragmentAsync();
+                    if (_cloudGameId is not null)
+                    {
+                        await PushCloudMoveAsync();
+                    }
+                    else
+                    {
+                        await PersistFragmentAsync();
+                    }
                 }
 
                 // While placing pieces the status line is the setup instructions, not the side to
@@ -895,7 +930,8 @@
         _display.StatusOverride = _linkPlay ? _status : null;
     }
 
-    string StatusText() => _linkPlay ? LinkPlayStatusText() : PlainStatusText();
+    string StatusText() =>
+        _cloudGameId is not null ? CloudStatusText() : _linkPlay ? LinkPlayStatusText() : PlainStatusText();
 
     string PlainStatusText()
         => _game.GameStatus.ToMessage(_game.IsFinished ? _game.Winner : _game.CurrentSide);
@@ -911,6 +947,196 @@
         return _game.PlyCount == 0
             ? "Send the link to your opponent — they open it and play White."
             : "Move staged — copy, email, or share the link now.";
+    }
+
+    // ---- Cloud play: the database as courier -----------------------------------------------------
+
+    // The name a seat carries. A cloud game needs one to show "waiting for X", and the browser has
+    // no LanProfile to borrow it from, so this is a placeholder until the lobby introduces a real
+    // one — the rules cap it at 32 characters either way.
+    const string CloudPlayerName = "Player";
+
+    // Joining is a sequence of WRITES, not a read, because "the game does not exist" and "the game
+    // is not mine to read" are the same answer from a database whose read rule is "you hold a seat"
+    // — and that is the right rule, so the join works with it rather than around it:
+    //
+    //   create succeeds            -> the game was absent and we are its White player
+    //   create fails, claim works  -> it existed with an empty seat, now ours
+    //   both fail                  -> either it is full, or we are already sitting at it. The
+    //                                 subscription settles which: a row we can read means a seat,
+    //                                 and null means we were refused.
+    async Task<bool> JoinCloudGameAsync(string gameId)
+    {
+        _status = "Connecting…";
+        StateHasChanged();
+
+        if (!await CloudCourier.InitAsync(Http))
+        {
+            // Not an error: a build with no configured backend is a normal, working chess app.
+            _cloudError = "This build has no cloud backend, so online games can't be opened here. "
+                        + "Play by Link works without one.";
+            return false;
+        }
+
+        _cloudGameId = gameId;
+        _cloudJoining = true;
+        _cloudError = null;
+
+        if (!await CloudCourier.CreateAsync(gameId, "w", CloudPlayerName)
+            && !await CloudCourier.ClaimAsync(gameId, "b", CloudPlayerName))
+        {
+            // The creator may have taken Black, leaving White open.
+            await CloudCourier.ClaimAsync(gameId, "w", CloudPlayerName);
+        }
+
+        CloudCourier.Watch(gameId, OnCloudRow);
+        return true;
+    }
+
+    // The subscription callback arrives from JS, so it is marshalled onto Blazor's dispatcher
+    // before it touches component state. Nothing here may throw into JS: an exception crossing that
+    // boundary is swallowed by the browser, and the game would simply stop updating.
+    void OnCloudRow(string? json) => _ = InvokeAsync(async () =>
+    {
+        try
+        {
+            await ApplyCloudRowAsync(json);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[chess-web] cloud row handling failed: {ex}");
+        }
+    });
+
+    async Task ApplyCloudRowAsync(string? json)
+    {
+        if (_cloudGameId is null) return; // a row that arrived after we left
+
+        var row = CloudCourier.ParseRow(json);
+        if (row is null || row.SeatOf(CloudCourier.Uid) is not { } seat)
+        {
+            // No row, or a row whose seats both belong to other people. Only meaningful while
+            // joining — mid-game it would mean our own seat vanished, which the rules forbid.
+            if (!_cloudJoining) return;
+
+            _cloudError = "That game already has two players.";
+            _cloudGameId = null;
+            _cloudJoining = false;
+            _status = _cloudError;
+            _screen = Screen.Menu;
+            ShowWizardStep();
+            await RenderMenuAsync();
+            StateHasChanged();
+            return;
+        }
+
+        if (GameLinkCodec.TryDecodeMoves(row.Moves, out var incoming, out var error) != GameLinkResult.Ok)
+        {
+            // The row does not replay to a legal game. Nothing local can fix that, and playing on
+            // from our own copy would fork the game, so stop and say so.
+            _status = $"This game's move log is not valid ({error}).";
+            StateHasChanged();
+            return;
+        }
+
+        // `n` is what the rules gate turns on, and the move log is what a client plays. A row where
+        // the two disagree is one the server accepted on a test it cannot fully make — its
+        // append-only rule compares TEXT, not plies — so the client checks the thing the rule
+        // stands in for.
+        if (incoming!.PlyCount != row.PlyCount)
+        {
+            _status = "This game's move count doesn't match its moves — refusing to play it.";
+            StateHasChanged();
+            return;
+        }
+
+        if (_cloudJoining)
+        {
+            _cloudJoining = false;
+            _localSide = seat;
+            _cloudRow = row;
+            await InstallCloudGameAsync(incoming);
+            return;
+        }
+
+        // A row that does not advance the game is either our own write echoing back or a change to
+        // the SEATS -- and the second is the most important news a waiting player gets ("share the
+        // link" becomes "your move"), so it refreshes rather than returning silently.
+        if (incoming.PlyCount <= _game.PlyCount)
+        {
+            _cloudRow = row;
+            RefreshStatus();
+            await RenderBoardAsync();
+            StateHasChanged();
+            return;
+        }
+
+        // The server's rule guarantees the stored TEXT only ever grows. This is the same guarantee
+        // stated in plies — the one the local half already applies to an incoming link, and the one
+        // that actually means "the opponent moved".
+        if (!GameLinkCodec.IsContinuationOf(_game, incoming))
+        {
+            _status = "The game on the server diverged from this one — refusing to overwrite it.";
+            StateHasChanged();
+            return;
+        }
+
+        _cloudRow = row;
+        await InstallCloudGameAsync(incoming);
+    }
+
+    // Put a decoded cloud game on screen. Deliberately the same "rebuild the session from the
+    // decoded game" move that an incoming link makes (never patch the live board), with one
+    // difference that matters: the local side comes from the SEAT WE HOLD, not from whose turn it
+    // is. A link means "it is your turn"; a seat does not change hands.
+    async Task InstallCloudGameAsync(Game game)
+    {
+        _game = game;
+        _vsComputer = false;
+        BeginSession(); // resets the display, so the UI settings below must follow it
+        _linkPlay = true;
+        _linkError = null;
+        _incomingFragment = null; // no Undo in a cloud game: the move has already left
+        _incomingPlyCount = _game.PlyCount;
+        Ui.MoveLockSide = _localSide;
+        Ui.FlipBoard = _localSide == Side.Black;
+        _screen = Screen.Playing;
+        _busy = false;
+        RefreshStatus();
+        await RenderBoardAsync();
+        StateHasChanged();
+    }
+
+    // Hand the move to the courier. A refusal is not an exception: the server is the arbiter of
+    // whose turn it is, so a rejected append means OUR board is the one that is wrong, and the last
+    // row the server confirmed is what we roll back to.
+    async Task PushCloudMoveAsync()
+    {
+        if (await CloudCourier.AppendAsync(_cloudGameId!, GameLinkCodec.EncodeMoves(_game), _game.PlyCount))
+            return;
+
+        if (_cloudRow is { } row
+            && GameLinkCodec.TryDecodeMoves(row.Moves, out var server, out _) == GameLinkResult.Ok)
+        {
+            await InstallCloudGameAsync(server!);
+        }
+
+        _status = "The server refused that move — the board is back to the game as it stands there.";
+        StateHasChanged();
+    }
+
+    string CloudStatusText()
+    {
+        if (_cloudJoining) return "Connecting…";
+        if (_game.IsFinished) return PlainStatusText();
+
+        var opponent = _cloudRow?.NameOf(_localSide.ToOpposite());
+        if (opponent is null)
+            return $"Waiting for an opponent — share the link. You are {_localSide}.";
+
+        return _game.CurrentSide == _localSide
+            ? $"Your move ({_localSide})."
+            : $"Waiting for {opponent}…";
     }
 
     // ---- Play by Link: fragment plumbing --------------------------------------------------------
@@ -998,14 +1224,22 @@
     // The handoff affordances appear once the local move is staged (or the game just ended and
     // the final link still needs sending). While it's genuinely your turn there's nothing to
     // share yet — the row appearing IS the "now send it" cue.
-    bool ShowShareRow => _linkPlay && (_game.IsFinished || _game.CurrentSide != _localSide);
+    // In a cloud game the link is worth sharing from the first moment (it is an invitation, not a
+    // move), and it never goes stale — so the row is always up rather than only when it is the
+    // opponent's turn.
+    bool ShowShareRow => _cloudGameId is not null
+        || (_linkPlay && (_game.IsFinished || _game.CurrentSide != _localSide));
 
     // Undo is only offered while the staged local move hasn't notionally left this tab — it
     // re-parses the fragment as received, so even a move that just ended the game (a misclick
     // into stalemate) can be taken back before sending.
     bool CanUndo => _linkPlay && _incomingFragment is not null && _game.PlyCount > _incomingPlyCount;
 
-    string GameUrl => Nav.BaseUri + GameLinkCodec.EncodeFragment(_game); // BaseUri ends in '/'
+    // BaseUri ends in '/'. A cloud game's link names the game (a dozen characters, forever) rather
+    // than carrying it, which is the one place the two couriers produce different URLs.
+    string GameUrl => Nav.BaseUri + (_cloudGameId is { } id
+        ? GameLinkCodec.EncodeCloudFragment(id)
+        : GameLinkCodec.EncodeFragment(_game));
 
     // The entire body (URL included) is percent-encoded: '#' and '&' inside a mailto body value
     // would otherwise truncate the link in most mail clients.

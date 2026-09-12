@@ -14,6 +14,10 @@
     <IsPackable>false</IsPackable>
     <!-- A chess board doesn't need culture data; dropping ICU trims the payload. -->
     <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Required by the [JSImport] source generator (SYSLIB1074), which is what CloudCourier uses
+         to reach wwwroot/js/firebase-cloud.js. It generates the unsafe marshalling stubs; no
+         hand-written unsafe code lives in this project. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- Chess.Lib + the DIR.Lib managed rasterizer reach glyph/table data structurally;
          keep trimming conservative and root the assemblies below so nothing needed is cut. -->
     <TrimMode>partial</TrimMode>

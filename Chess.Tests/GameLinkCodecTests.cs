@@ -53,6 +53,60 @@ public class GameLinkCodecTests
         GameLinkCodec.EncodeFragment(game).ShouldEndWith(".b7a8q");
     }
 
+    // ── The cloud row: the same payload without the wrapper ─────────
+
+    [Fact]
+    public void EncodeMoves_IsTheFragmentWithoutTheWrapper()
+    {
+        var game = PlayMoves(DoMove(E2, E4), DoMove(E7, E5), DoMove(G1, F3));
+
+        GameLinkCodec.EncodeMoves(game).ShouldBe("e2e4.e7e5.g1f3");
+        GameLinkCodec.EncodeFragment(game).ShouldBe("#g=" + GameLinkCodec.EncodeMoves(game));
+    }
+
+    [Fact]
+    public void EncodeMoves_EveryPositionIsAStringPrefixOfTheNext()
+    {
+        // The property the cloud's append-only rule is built on: it enforces
+        // `newData.val().beginsWith(data.val())` against this exact string, which is only a correct
+        // statement of "a move was appended" while the encoding stays prefix-stable. A wrapper, or a
+        // trailing parameter after the moves, would break it silently -- every write after the first
+        // refused, with the rule still looking right.
+        var game = new Game();
+        var previous = GameLinkCodec.EncodeMoves(game);
+
+        foreach (var action in new[] { DoMove(E2, E4), DoMove(E7, E5), DoMove(G1, F3), DoMove(B8, C6) })
+        {
+            game.TryMove(action).IsMoveOrCapture().ShouldBeTrue();
+            var current = GameLinkCodec.EncodeMoves(game);
+            current.ShouldStartWith(previous);
+            previous = current;
+        }
+    }
+
+    [Fact]
+    public void TryDecodeMoves_RoundTripsAndValidatesLikeALink()
+    {
+        var game = PlayMoves(DoMove(E2, E4), DoMove(E7, E5), DoMove(G1, F3));
+
+        GameLinkCodec.TryDecodeMoves(GameLinkCodec.EncodeMoves(game), out var decoded, out var error)
+            .ShouldBe(GameLinkResult.Ok);
+        error.ShouldBeNull();
+        GameLinkCodec.EncodeMoves(decoded!).ShouldBe(GameLinkCodec.EncodeMoves(game));
+
+        // An illegal row is refused exactly as an illegal link is: the rules engine is the parser's
+        // watchdog on both couriers, which is what lets the server stay ignorant of chess.
+        GameLinkCodec.TryDecodeMoves("e2e4.e2e4", out _, out _).ShouldBe(GameLinkResult.Invalid);
+    }
+
+    [Fact]
+    public void TryDecodeMoves_EmptyRow_IsTheFreshGameAnOpenSeatOffers()
+    {
+        GameLinkCodec.TryDecodeMoves("", out var game, out _).ShouldBe(GameLinkResult.Ok);
+        game!.PlyCount.ShouldBe(0);
+        game.CurrentSide.ShouldBe(Side.White);
+    }
+
     // ── Decode: happy paths ────────────────────────────────────────
 
     [Fact]

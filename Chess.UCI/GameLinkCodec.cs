@@ -28,6 +28,18 @@ public static class GameLinkCodec
     public const string PlacementKey = "f";
 
     /// <summary>
+    /// A cloud game id, as in <c>#c=abc123</c> — a link that names a game the cloud courier is
+    /// carrying rather than carrying the game itself.
+    ///
+    /// <para>It is the same grammar on purpose. A cloud game still wants a link ("here, play me"),
+    /// and giving it one means the two couriers hand off to each other instead of being two
+    /// separate ways in: one address bar, one format, and a link that stays a handful of bytes no
+    /// matter how long the game runs. Old builds ignore the key (unknown keys are skipped) and see
+    /// a link with no <c>g</c>, which is exactly right — they cannot play it.</para>
+    /// </summary>
+    public const string CloudKey = "c";
+
+    /// <summary>
     /// Generous upper bound on plies a link may encode — bounds the replay work a hostile
     /// fragment can demand; no human game comes anywhere close.
     /// </summary>
@@ -42,13 +54,71 @@ public static class GameLinkCodec
     /// concatenation onto a base URL) for the game's played plies. An unstarted game encodes as
     /// "#g=" — the start link a Black-playing creator sends so their opponent opens as White.
     /// </summary>
-    public static string EncodeFragment(Game game)
+    public static string EncodeFragment(Game game) =>
+        $"#{GameKey}{KeyValueSeparator}{EncodeMoves(game)}";
+
+    /// <summary>The "#c=…" fragment naming a cloud game — the link that starts one.</summary>
+    public static string EncodeCloudFragment(string gameId) =>
+        $"#{CloudKey}{KeyValueSeparator}{gameId}";
+
+    /// <summary>
+    /// Pulls a cloud game id out of whatever shape a link arrived in, or returns false. Kept here
+    /// beside <see cref="ExtractBody"/> rather than in the browser app, for the reason this class
+    /// exists at all: one parser, however many front-ends.
+    /// </summary>
+    public static bool TryExtractCloudId(string? received, out string gameId)
+    {
+        gameId = "";
+
+        foreach (var pair in ExtractBody(received).Split(ParamSeparator, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var idx = pair.IndexOf(KeyValueSeparator);
+            if (idx < 0 || pair[..idx] != CloudKey) continue;
+
+            var value = pair[(idx + 1)..];
+            // A game id is ours to mint (see CloudCourier.NewGameId) and lands in a database path,
+            // so anything outside the alphabet it is minted from is a link to nothing -- reject it
+            // here rather than sending a malformed path to the database.
+            if (value.Length is 0 or > 64) return false;
+            foreach (var c in value)
+            {
+                if (!char.IsAsciiLetterOrDigit(c) && c != '-' && c != '_') return false;
+            }
+
+            gameId = value;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// The move list alone, with no fragment around it — what the cloud courier stores in a game
+    /// row's <c>g</c>. The same payload as <see cref="EncodeFragment"/>, minus a wrapper the
+    /// database has no use for.
+    ///
+    /// <para>It is a separate method rather than a caller stripping three characters, because the
+    /// cloud's append-only rule is a <em>string</em> test on this exact value
+    /// (<c>newData.val().beginsWith(data.val())</c>): only a string that is nothing but moves stays
+    /// prefix-stable when a ply is added. Put the '#g=' wrapper in the row and any future
+    /// '&amp;'-separated param would land after the moves, where appending a ply rewrites the
+    /// middle of the string and every subsequent write is refused.</para>
+    /// </summary>
+    public static string EncodeMoves(Game game)
     {
         // Shared move-list helper rebuilds each ply WITH its promotion piece (RecordedPly.Action
         // drops Promoted), so "e7e8q" doesn't degrade to "e7e8".
         var moves = UciMove.FormatMoves(game);
-        return $"#{GameKey}{KeyValueSeparator}{string.Join(MoveSeparator, moves)}";
+        return string.Join(MoveSeparator, moves);
     }
+
+    /// <summary>
+    /// Decodes a bare move list — a cloud row's <c>g</c> — through the same replay and validation
+    /// as a link. Exists so the cloud courier doesn't rebuild the format outside this file; the
+    /// whole point of the class is that no front-end grows its own parser.
+    /// </summary>
+    public static GameLinkResult TryDecodeMoves(string moves, out Game? game, out string? error) =>
+        TryDecode($"{GameKey}{KeyValueSeparator}{moves}", out game, out error);
 
     /// <summary>
     /// Reduces whatever shape a link arrived in to the body <see cref="TryDecode"/> parses. A game
