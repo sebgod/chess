@@ -53,6 +53,15 @@
     <AndroidAsset Include="..\Chess.Lib\Fonts\Merida.ttf" Link="Assets\Fonts\Merida.ttf" />
   </ItemGroup>
 
+  <!-- The cloud backend's config, bundled as an asset so MainActivity can read it at startup. Absent
+       from the repository on purpose, exactly as Chess.Web/wwwroot/firebase-config.json is: it names
+       a live project, and a fork must not inherit a pointer at somebody else's database. A build
+       without it matches this glob nothing and simply never offers "Online game" — which is the
+       normal state of every fork and PR build. CI writes it from the FIREBASE_CONFIG secret. -->
+  <ItemGroup>
+    <AndroidAsset Include="firebase-config.json" Link="Assets\firebase-config.json" Condition="Exists('firebase-config.json')" />
+  </ItemGroup>
+
   <!-- Renderer + DIR.Lib: sibling working copies for local iteration, NuGet otherwise (mirrors
        Chess.GUI). The renderer must be the multi-targeted build carrying the net10.0-android TFM. -->
   <ItemGroup Condition="'$(UseLocalSiblings)' == 'true'">

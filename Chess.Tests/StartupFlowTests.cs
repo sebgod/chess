@@ -103,6 +103,47 @@ public sealed class StartupFlowTests
         wizard.Result.ComputerSide.ShouldBe(Side.White); // I'm Black => peer is White
     }
 
+    /// <summary>
+    /// Android is the first host to offer both couriers at once, and they are not alternatives: one
+    /// finds somebody in the same room and plays them live, the other finds a stranger and may take
+    /// days over it. The browser used to borrow "Network game" for its cloud lobby, which was accurate
+    /// enough while it had only one — and a lie the moment a menu lists them side by side.
+    /// </summary>
+    [Fact]
+    public void Wizard_NetworkAndOnline_are_separate_entries_that_do_not_collide()
+    {
+        var wizard = new StartupWizard(StartupWizardOptions.NetworkPlay | StartupWizardOptions.OnlinePlay);
+        wizard.Current.Items[3].ShouldBe("Network game");
+        wizard.Current.Items[4].ShouldBe("Online game");
+
+        wizard.Confirm(4); // Online game
+        wizard.Current.Prompt.ShouldBe("Play as:"); // the same side question the other two use
+        wizard.Confirm(1); // I play Black
+
+        wizard.Result.Mode.ShouldBe(GameMode.OnlineGame);
+        wizard.Result.ComputerSide.ShouldBe(Side.White); // I'm Black => the remote player is White
+    }
+
+    /// <summary>All five optional entries at once — the arrangement no host ships, and exactly why
+    /// the index normalization is worth an assertion rather than a reading.</summary>
+    [Fact]
+    public void Wizard_EveryOptionalEntry_keeps_its_own_index()
+    {
+        var wizard = new StartupWizard(
+            StartupWizardOptions.Continue | StartupWizardOptions.AcrossTheTable
+            | StartupWizardOptions.LinkPlay | StartupWizardOptions.NetworkPlay
+            | StartupWizardOptions.OnlinePlay);
+
+        wizard.Current.Items.ShouldBe([
+            "Continue game", "Player vs Player", "Across the table", "Player vs Computer",
+            "Custom Game", "Play by Link", "Network game", "Online game"]);
+
+        wizard.Confirm(7); // Online game
+        wizard.Confirm(0); // I play White
+        wizard.Result.Mode.ShouldBe(GameMode.OnlineGame);
+        wizard.Result.ComputerSide.ShouldBe(Side.Black);
+    }
+
     [Fact]
     public void Wizard_ContinueAndNetwork_together_route_correctly()
     {

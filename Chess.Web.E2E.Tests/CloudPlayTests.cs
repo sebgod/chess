@@ -89,8 +89,8 @@ public sealed class CloudPlayTests(ChessWebFixture fixture)
     // The game-mode menu is drawn into the canvas, so there is nothing to read and nothing to click
     // by name: a digit selects and confirms the item at that position. The order comes from
     // StartupWizard.Current and is load-bearing — Player vs Player, Player vs Computer, Custom Game,
-    // Play by Link, Network game — so this constant moves if a new option is added before it.
-    private const string NetworkGameKey = "5";
+    // Play by Link, Online game — so this constant moves if a new option is added before it.
+    private const string OnlineGameKey = "5";
 
     private static async Task PressAsync(IPage page, string key)
     {
@@ -99,14 +99,14 @@ public sealed class CloudPlayTests(ChessWebFixture fixture)
         await page.WaitForTimeoutAsync(250);
     }
 
-    /// <summary>Wizard -> "Network game" -> "Play as White" -> the lobby.</summary>
+    /// <summary>Wizard -> "Online game" -> "Play as White" -> the lobby.</summary>
     private async Task<IPage> OpenLobbyAsync()
     {
         var page = await fixture.NewPageAsync();
         await page.GotoAsync(fixture.BaseUrl, new PageGotoOptions { WaitUntil = WaitUntilState.DOMContentLoaded });
         await Expect(Status(page)).ToContainTextAsync("Choose how", new() { Timeout = BootTimeout });
 
-        await PressAsync(page, NetworkGameKey);
+        await PressAsync(page, OnlineGameKey);
         await PressAsync(page, "1"); // Play as White
         return page;
     }
@@ -177,7 +177,7 @@ public sealed class CloudPlayTests(ChessWebFixture fixture)
 
         await page.ReloadAsync();
         await Expect(Status(page)).ToContainTextAsync("Choose how", new() { Timeout = BootTimeout });
-        await PressAsync(page, NetworkGameKey);
+        await PressAsync(page, OnlineGameKey);
         await PressAsync(page, "1");
 
         await Expect(page.Locator(".toolbar input[type=\"text\"]")).ToHaveValueAsync("Ada",

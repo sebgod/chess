@@ -26,6 +26,18 @@ public enum StartupWizardOptions
     /// <summary>"Across the table" — two humans opposite each other at a flat tablet; the frame
     /// turns to face the player to move (today Chess.Droid). Sits right after Player vs Player.</summary>
     AcrossTheTable = 8,
+
+    /// <summary>
+    /// "Online game" — correspondence play against anyone, carried by the cloud backend rather than
+    /// by a link or a local network. Offered only where there is a backend configured to reach.
+    ///
+    /// <para>Distinct from <see cref="NetworkPlay"/> because on Android <b>both</b> are real and they
+    /// are not alternatives: one finds somebody in the same room and plays them live, the other finds
+    /// a stranger and may take days over it. The browser has only this one (it cannot open a socket),
+    /// and used to borrow the "Network game" entry for it — accurate enough alone, and a lie the
+    /// moment a host offers the two side by side.</para>
+    /// </summary>
+    OnlinePlay = 16,
 }
 
 /// <summary>
@@ -42,8 +54,8 @@ public enum StartupWizardOptions
 /// HumanSide step assigns the computer the other colour (there is no custom PvP flow).</para>
 ///
 /// <para>Optional entries are opt-in per host via <see cref="StartupWizardOptions"/> (which see for
-/// what each means). "Play by Link" and "Network game" use the same PlayAs step as PvC, so the
-/// result's <c>ComputerSide</c> is the remote correspondent's/peer's colour; "Across the table" is
+/// what each means). "Play by Link", "Network game" and "Online game" use the same PlayAs step as
+/// PvC, so the result's <c>ComputerSide</c> is the remote correspondent's/peer's colour; "Across the table" is
 /// PvP with the seating made explicit (same-seat pass-and-play never flips, opposite-seat does);
 /// "Continue" lets the save define the real mode. Optional indices are normalized inside
 /// <see cref="Confirm"/> so the standard entries keep their base positions.</para>
@@ -85,7 +97,8 @@ public sealed class StartupWizard(StartupWizardOptions options = StartupWizardOp
              .. Has(StartupWizardOptions.AcrossTheTable) ? new[] { "Across the table" } : [],
              "Player vs Computer", "Custom Game",
              .. Has(StartupWizardOptions.LinkPlay) ? new[] { "Play by Link" } : [],
-             .. Has(StartupWizardOptions.NetworkPlay) ? new[] { "Network game" } : []]),
+             .. Has(StartupWizardOptions.NetworkPlay) ? new[] { "Network game" } : [],
+             .. Has(StartupWizardOptions.OnlinePlay) ? new[] { "Online game" } : []]),
         Phase.PlayAs => (Title, "Play as:", ["White", "Black"]),
         Phase.BoardType => (Title, "Starting board:", ["Empty Board", "Standard Board"]),
         Phase.SideToMove => (Title, "Side to move first:", ["White", "Black"]),
@@ -131,7 +144,7 @@ public sealed class StartupWizard(StartupWizardOptions options = StartupWizardOp
                     if (selected > 1) selected -= 1;
                 }
                 // Explicit indices, not a catch-all else: the item list is 3 base entries plus 0–2
-                // trailing optional entries (Play by Link, Network game), and a trailing else would
+                // trailing optional entries (Play by Link, Network game, Online game), and a trailing else would
                 // silently misroute an extra index into the Custom Game flow.
                 if (selected == 0)
                 {
@@ -168,6 +181,15 @@ public sealed class StartupWizard(StartupWizardOptions options = StartupWizardOp
                         if (selected == index)
                         {
                             _gameMode = GameMode.NetworkGame;
+                            _phase = Phase.PlayAs;
+                        }
+                        index++;
+                    }
+                    if (Has(StartupWizardOptions.OnlinePlay))
+                    {
+                        if (selected == index)
+                        {
+                            _gameMode = GameMode.OnlineGame;
                             _phase = Phase.PlayAs;
                         }
                         index++;

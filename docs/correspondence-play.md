@@ -980,7 +980,7 @@ that no one later reaches for a server-side "anti-cheat" that this architecture 
 | 2 | **The inbox:** multi-slot store (`GameInbox`) + a "your move" list + staleness, and the GUI picker over it | chess | **Done** — live-verified |
 | 1b | **Link play in the terminal:** the same phase-1 semantics in Chess.Console — `--link`, a wizard entry, Ctrl+L to copy (OSC 52) and Ctrl+O to open a prompt the terminal's own paste fills | chess | **Done** |
 | 3a | **Cloud courier in the browser:** Firebase JS SDK via `[JSImport]`, anonymous auth, the schema and rules above, lobby UI in `Play.razor`, the README wording | chess | **Done** — lobby + `#c=` link, 4 browser E2E tests, live-verified |
-| 3b | **Cloud courier on Android:** REST + SSE in `Chess.Net`, the `ILobby` extraction + `ISessionConnection` rename, a second API key with no referrer restriction, a cloud lobby beside the LAN one in `MainActivity` | chess | **In progress** — `ILobby`, `ISessionConnection`, the REST/SSE transport and `CloudLobby`/`CloudPlayStack` are done; what is left is the second API key (a console action) and wiring the lobby into `MainActivity` |
+| 3b | **Cloud courier on Android:** REST + SSE in `Chess.Net`, the `ILobby` extraction + `ISessionConnection` rename, a second API key with no referrer restriction, a cloud lobby beside the LAN one in `MainActivity` | chess | **Code complete, unverified on a device.** The only step left is minting the second API key and putting it in `FIREBASE_CONFIG` as `apiKeyNative` — a console action; until then the bundle carries no config and never offers the entry |
 | 4 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, building or reusing the drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | **Done** — live-verified, including the minimized case |
 | 5 | *Optional cleanup:* a public, non-`DEBUG` per-iteration hook on `SdlEventLoop` so the drain stops living in a side-effecting predicate | SdlVulkan.Renderer | Not started |
 
@@ -1045,6 +1045,32 @@ Two orderings inside that are less obvious:
   play, which is cross-platform — a desktop player and a browser player can already play each other by
   swapping links — so the gap left open is a *desktop* player meeting a stranger, which LAN covers for
   the same room and links cover for anyone reachable by message.
+
+### "Network game" and "Online game" are two entries now
+
+Android is the first host where both couriers are real, and they are not alternatives: one finds
+somebody in the same room and plays them live, the other finds a stranger and may take days over it.
+The browser had been borrowing the desktop's "Network game" entry for its cloud lobby — accurate
+enough while it had only one courier, and a lie the moment a menu lists them side by side. So
+`StartupWizardOptions.OnlinePlay` / `GameMode.OnlineGame` now sit beside `NetworkPlay` /
+`NetworkGame`, Chess.Web moved onto the new one (its label reads "Online game", which is what it
+always was), and Chess.Droid offers both — the second only when the build carries a backend.
+
+The Android config is the same `firebase-config.json` the web gets, bundled as an APK asset, written
+by CI from the same `FIREBASE_CONFIG` secret, and absent from the repository for the same reason: it
+names a live project and a fork must not inherit a pointer at somebody else's database. Absent is a
+normal state — the entry does not appear, and nothing else changes.
+
+**Not verified on a device.** The transport is covered against a real emulator and the lobby against
+an in-memory one, and the config is confirmed to land at `assets/firebase-config.json` in a built
+APK — but no build carrying a real config has been launched, because the native API key does not
+exist yet. That is the one remaining step and it is a console action.
+
+**One gap worth naming rather than discovering:** an online game is not saved, so "Continue" does not
+offer it. That is a real omission rather than a rule — the row *is* the whole game, and resuming it is
+precisely what correspondence play is for — but the Android save carries a position and a mode, not a
+courier's handle, and resuming a board with no channel behind it would be worse than not offering it.
+It needs somewhere to keep the game id.
 
 ## Open questions
 

@@ -193,7 +193,7 @@
                             its own, whether the game takes five minutes or five days.
                         </p>
                         <ol>
-                            <li>Choose <em>Network game</em> from the menu and pick your colour.</li>
+                            <li>Choose <em>Online game</em> from the menu and pick your colour.</li>
                             <li>
                                 Join a game somebody has posted, or post one of your own and wait.
                             </li>
@@ -305,11 +305,12 @@
     // (so far) the only front-end that can produce/consume game links, so only it opts in.
     StartupWizard _wizard = new(StartupWizardOptions.LinkPlay);
 
-    // "Network game" is offered only where there is a backend to reach. It is the SAME wizard entry
-    // the desktop uses for LAN: the courier is a host concern, and the browser's happens to be a
-    // database. A build with no config simply never shows it.
+    // "Online game" is offered only where there is a backend to reach; a build with no config
+    // simply never shows it. It used to borrow the desktop's "Network game" entry, which was
+    // accurate enough while the browser had only one courier -- but Android now offers both, and a
+    // host that lists "Network game" twice is no use to anyone. See StartupWizardOptions.OnlinePlay.
     StartupWizardOptions WizardOptions => StartupWizardOptions.LinkPlay
-        | (_cloudConfigured ? StartupWizardOptions.NetworkPlay : StartupWizardOptions.None);
+        | (_cloudConfigured ? StartupWizardOptions.OnlinePlay : StartupWizardOptions.None);
     bool _vsComputer = true;
     // Side to move for a custom game, from the wizard; consumed when setup finishes.
     Side _setupSideToMove = Side.White;
@@ -627,7 +628,7 @@
         var (mode, computerSide, sideToMove, difficulty) = _wizard.Result;
         _difficulty = difficulty;
 
-        if (mode == GameMode.NetworkGame)
+        if (mode == GameMode.OnlineGame)
         {
             // As with link play, "computerSide" carries the side we do NOT control — so ours is the
             // other one, and that is the colour a posted game advertises.

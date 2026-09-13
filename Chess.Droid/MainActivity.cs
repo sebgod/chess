@@ -9,6 +9,7 @@ using Android.Net.Wifi;
 using Chess.Lib;
 using Chess.Lib.UI;
 using Chess.Net;
+using Chess.Net.Cloud;
 using Chess.UCI;
 using DIR.Lib;
 using SdlVulkan.Renderer;
@@ -97,13 +98,18 @@ public sealed class MainActivity : SdlVulkanActivity
     // The mode the current game was started in — persisted with the save so Continue can restore it.
     private GameMode _mode = GameMode.PlayerVsPlayer;
 
-    // LAN network play (Chess.Net). Alone among this activity's modes, LAN is still driven directly
-    // rather than through the shared GameSession (see DrainNetworkMoves for what has to move first):
-    // taps send our move, and DrainNetworkMoves applies the peer's on the SDL/render thread (GameUI is
-    // single-threaded). The lobby/discovery run only while browsing; the multicast lock lets us receive
-    // UDP broadcast at all. Lobby is built on the SDL thread via the _pendingLobby* flags so the name
-    // dialog (UI thread) never touches renderer objects across threads.
+    // Network play (Chess.Net), in two couriers behind one ILobby: the LAN (UDP discovery + a TCP
+    // invite) and the cloud (a database row, so the opponent need not be awake). Both end in a
+    // NetworkSession that the shared GameSession drives through a NetworkPlayer, exactly as the
+    // engine is driven -- the earlier note here about taps sending and a DrainNetworkMoves applying
+    // the peer's move describes the hand-rolled path that migration replaced.
+    //
+    // The lobby runs only while browsing. The multicast lock is the LAN's alone (it is what lets us
+    // receive UDP broadcast at all); the cloud needs no permission beyond internet. Either stack is
+    // built on the SDL thread via the _pendingLobby* flags, so the name dialog (UI thread) never
+    // touches renderer objects across threads.
     private LanPlayStack? _netLan;
+    private CloudPlayStack? _netCloud;
     private ILobby? _netLobby;
     private PixelMenuWidget<VulkanContext>? _lobbyMenu;
     private NetworkSession? _netSession;
@@ -111,8 +117,14 @@ public sealed class MainActivity : SdlVulkanActivity
     private WifiManager.MulticastLock? _multicastLock;
     private volatile bool _pendingLobbyStart;
     private volatile bool _pendingShowMenu;
+    private volatile bool _pendingLobbyCloud;
     private string _pendingLobbyName = "";
     private Side _pendingLobbyPreferred;
+
+    // This build's backend, or null when it has none -- which is the normal state of a fork, a PR
+    // build and any checkout that has not opted in. Read once from the APK's assets; absent means the
+    // "Online game" entry never appears and nothing else changes. See Chess.Droid.csproj.
+    private string? _cloudConfig;
     private string _lobbyShownKey = "";
     private LobbyPeer[] _lobbyPeers = [];
 
@@ -156,6 +168,7 @@ public sealed class MainActivity : SdlVulkanActivity
         // (AppContext.BaseDirectory/Fonts). That path is empty in the APK sandbox, so stage the
         // bundled asset copies into it first — the Android analog of Chess.Web's LoadFontsAsync.
         StageFonts();
+        _cloudConfig = TryLoadCloudConfig();
         _renderer = renderer;
 
         // Resume an unfinished game across a process kill (Android reclaims backgrounded apps freely);
@@ -285,14 +298,16 @@ public sealed class MainActivity : SdlVulkanActivity
         _display = null;
         // The menu renders through the same projection — never let it inherit a turned frame.
         _renderer.ContentTransform = ContentTransform.Identity;
-        // No Play-by-Link on Android (no link driver), but Network game is on — Android can open
-        // sockets. "Continue game" appears whenever an unfinished save exists (back button mid-game,
-        // or a cold launch with one on disk) — returning to the menu must never cost the game; only
-        // starting a new one overwrites it.
+        // No Play-by-Link on Android (no link driver), but both network entries are on where they
+        // can work: "Network game" always (Android can open sockets), "Online game" only when this
+        // build carries a backend config. "Continue game" appears whenever an unfinished save exists
+        // (back button mid-game, or a cold launch with one on disk) — returning to the menu must
+        // never cost the game; only starting a new one overwrites it.
         var canContinue = TryLoadGame() is { } s && IsResumable(s);
         _wizard = new StartupWizard(
             (canContinue ? StartupWizardOptions.Continue : StartupWizardOptions.None)
             | StartupWizardOptions.NetworkPlay
+            | (_cloudConfig is null ? StartupWizardOptions.None : StartupWizardOptions.OnlinePlay)
             | StartupWizardOptions.AcrossTheTable);
         _menu = new PixelMenuWidget<VulkanContext>(_renderer, FontPaths.DejaVuSans);
         var (title, prompt, items) = _wizard.Current;
@@ -354,8 +369,8 @@ public sealed class MainActivity : SdlVulkanActivity
                         else
                             ShowMenu();
                     }
-                    else if (mode == GameMode.NetworkGame)
-                        EnterNetworkLobby(computerSide);
+                    else if (mode is GameMode.NetworkGame or GameMode.OnlineGame)
+                        EnterNetworkLobby(computerSide, cloud: mode == GameMode.OnlineGame);
                     else if (mode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard)
                     {
                         // Both wizard answers are honoured: the board it starts from and who moves
@@ -560,29 +575,31 @@ public sealed class MainActivity : SdlVulkanActivity
 
     // ── LAN network play (Chess.Net) ────────────────────────────────────────────────────────────
 
-    // Network game chosen: ask for a display name (native dialog), then hand off to StartLobby on the
-    // SDL thread via the _pendingLobby* flags — the dialog callbacks run on the UI thread and must not
-    // touch renderer objects.
-    private void EnterNetworkLobby(Side computerSide)
+    // A network game was chosen: ask for a display name (native dialog), then hand off to StartLobby
+    // on the SDL thread via the _pendingLobby* flags — the dialog callbacks run on the UI thread and
+    // must not touch renderer objects. The name is the same one either courier announces, and is
+    // remembered across both: it is who you are, not which network you are on.
+    private void EnterNetworkLobby(Side computerSide, bool cloud)
     {
         _menu = null;
         _wizard = null;
         var profile = LanProfile.Load(FilesDir!.AbsolutePath);
+        _pendingLobbyCloud = cloud;
         _pendingLobbyPreferred = computerSide == Side.White ? Side.Black : Side.White;
         var current = string.IsNullOrWhiteSpace(profile.Name)
             ? (Android.OS.Build.Model ?? "Player")
             : profile.Name;
-        PromptName(current);
+        PromptName(current, cloud);
     }
 
-    private void PromptName(string current)
+    private void PromptName(string current, bool cloud)
     {
         RunOnUiThread(() =>
         {
             var input = new Android.Widget.EditText(this) { Text = current };
             input.SetSingleLine(true);
             new AlertDialog.Builder(this)
-                .SetTitle("Network game — your name")!
+                .SetTitle(cloud ? "Online game — your name" : "Network game — your name")!
                 .SetView(input)!
                 .SetPositiveButton("Join", (_, _) =>
                 {
@@ -596,18 +613,53 @@ public sealed class MainActivity : SdlVulkanActivity
         });
     }
 
-    // Builds the Chess.Net stack on the SDL thread (all renderer/socket objects live here).
+    // Builds the chosen Chess.Net stack on the SDL thread (all renderer/socket objects live here).
+    // From the next line on, nothing here knows which courier it got: that is what ILobby is for.
     private void StartLobby()
     {
         var name = _pendingLobbyName;
         new LanProfile(name).Save(FilesDir!.AbsolutePath);
 
-        AcquireMulticastLock();
-        _netLan = new LanPlayStack(name, _pendingLobbyPreferred, TimeProvider.System);
-        _netLobby = _netLan.Lobby;
+        if (_pendingLobbyCloud)
+        {
+            // No multicast lock: the cloud is an HTTPS conversation, not a broadcast. TryCreate can
+            // only fail here if the config went missing since the menu was built, since the entry is
+            // gated on it — but "no backend" is a state this app returns to the menu for, never an
+            // exception.
+            _netCloud = CloudPlayStack.TryCreate(_cloudConfig, name, _pendingLobbyPreferred);
+            _netLobby = _netCloud?.Lobby;
+            if (_netLobby is null) { ShowMenu(); return; }
+        }
+        else
+        {
+            AcquireMulticastLock();
+            _netLan = new LanPlayStack(name, _pendingLobbyPreferred, TimeProvider.System);
+            _netLobby = _netLan.Lobby;
+        }
+
         _netLobby.Start();
         _lobbyMenu = new PixelMenuWidget<VulkanContext>(_renderer, FontPaths.DejaVuSans);
         _lobbyShownKey = "";
+    }
+
+    /// <summary>
+    /// This build's <c>firebase-config.json</c>, bundled as an APK asset, or null when it has none.
+    /// Absent is the normal state and costs nothing: the "Online game" entry does not appear and the
+    /// app plays LAN, hot-seat and vs-computer games exactly as before.
+    /// </summary>
+    private string? TryLoadCloudConfig()
+    {
+        try
+        {
+            using var stream = Assets!.Open("firebase-config.json");
+            using var reader = new StreamReader(stream);
+            var text = reader.ReadToEnd().Trim();
+            return text.StartsWith('{') ? text : null;
+        }
+        catch
+        {
+            return null; // no such asset in this build
+        }
     }
 
     private void RenderLobby()
@@ -637,8 +689,13 @@ public sealed class MainActivity : SdlVulkanActivity
                 break;
             default: // Browsing
                 _lobbyPeers = [.. _netLobby.Peers];
-                title = "LAN Lobby";
-                prompt = _lobbyPeers.Length == 0 ? "Searching for players…" : "Tap a player to invite:";
+                var cloud = _netCloud is not null;
+                title = cloud ? "Online Lobby" : "LAN Lobby";
+                prompt = _lobbyPeers.Length > 0
+                    ? (cloud ? "Tap a game to join:" : "Tap a player to invite:")
+                    // The cloud's own posting is already up by the time this shows, so the wait is
+                    // not a search — somebody may take it in ten seconds or tomorrow morning.
+                    : cloud ? "Your game is posted. Waiting for an opponent…" : "Searching for players…";
                 items = [.. _lobbyPeers.Select(p => p.Label), "Back"];
                 break;
         }
@@ -688,18 +745,22 @@ public sealed class MainActivity : SdlVulkanActivity
         _netSession = session;
         _netLocalSide = session.LocalSide;
 
+        var cloud = _netCloud is not null;
         _netLobby = null;
         _lobbyMenu = null;
+        // Tearing the lobby down does NOT close the game's channel: a LAN session owns its socket and
+        // a cloud one its subscription, both of which outlive the lobby that produced them.
         if (_netLan is not null) { _ = _netLan.DisposeAsync(); _netLan = null; }
+        if (_netCloud is not null) { _ = _netCloud.DisposeAsync(); _netCloud = null; }
         ReleaseMulticastLock(); // discovery is done; the game socket stays open
 
         _game = new Game();
-        _mode = GameMode.NetworkGame;
+        _mode = cloud ? GameMode.OnlineGame : GameMode.NetworkGame;
         _vsComputer = false;
         _acrossTheTable = false; // a LAN game has a single local side — never turns the frame
         _display = new PixelGameDisplay<VulkanContext>(_renderer);
         UpdateAcrossTheTableTransform(); // identity here + insets/cutout
-        _display.TopStripLabel = $"LAN ({_netLocalSide})";
+        _display.TopStripLabel = $"{(cloud ? "Online" : "LAN")} ({_netLocalSide})";
         _display.KeyboardHints = false;
 
         // The peer is just another opponent in the shared session: NetworkPlayer drains its moves on
@@ -707,7 +768,7 @@ public sealed class MainActivity : SdlVulkanActivity
         // settings below must follow it.
         _session = GameSession.Create(
             _display,
-            GameMode.NetworkGame,
+            _mode,
             session.RemoteSide,
             _game.CurrentSide,
             () => _input,
@@ -759,6 +820,7 @@ public sealed class MainActivity : SdlVulkanActivity
         _netLobby = null;
         _lobbyMenu = null;
         if (_netLan is not null) { _ = _netLan.DisposeAsync(); _netLan = null; }
+        if (_netCloud is not null) { _ = _netCloud.DisposeAsync(); _netCloud = null; }
         ReleaseMulticastLock();
         _pendingLobbyStart = false;
         _pendingShowMenu = false;
@@ -792,7 +854,13 @@ public sealed class MainActivity : SdlVulkanActivity
         // resume a game with nobody on the other end. This used to be implicit (the network tap path
         // simply never called here); now that every mode advances through the same session, it has to
         // be said. The desktop guards the same way, with currentGameIsNetwork.
-        if (_mode == GameMode.NetworkGame) return;
+        //
+        // An ONLINE game is skipped too, and that one is a gap rather than a rule: the row IS the
+        // whole game, so resuming it is exactly what correspondence play is for. What is missing is
+        // somewhere to keep the game id — the save carries a position and a mode, not a courier's
+        // handle — and resuming a board with no channel behind it would be worse than not offering
+        // it. See docs/correspondence-play.md.
+        if (_mode is GameMode.NetworkGame or GameMode.OnlineGame) return;
         var computerSide = _vsComputer ? (_humanSide == Side.White ? Side.Black : Side.White) : Side.None;
         // The mode goes in the save too: across-the-table and plain PvP are both engine-less, so
         // without it a resumed across-the-table game came back as hot-seat and stopped turning.

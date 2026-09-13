@@ -28,5 +28,12 @@ public enum GameMode : byte
     /// and <c>Chess.Net</c>). Wired like Player vs Computer — one local human plus one "other" player
     /// — but the "other" is a remote peer over the network; the wizard result's <c>ComputerSide</c>
     /// carries the remote peer's colour.</summary>
-    NetworkGame
+    NetworkGame,
+
+    /// <summary>Correspondence game carried by the cloud backend (see
+    /// <c>StartupWizardOptions.OnlinePlay</c> and <c>Chess.Net.Cloud</c>). Wired exactly like
+    /// <see cref="NetworkGame"/> — one local human and one remote human over a
+    /// <c>NetworkSession</c> — and differs only in the courier underneath it, which is the point of
+    /// <c>ILobby</c>. The wizard result's <c>ComputerSide</c> carries the remote player's colour.</summary>
+    OnlineGame
 }

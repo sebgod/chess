@@ -315,6 +315,25 @@ jobs:
           echo "signed=true" >> "$GITHUB_OUTPUT"
         fi
 
+    # The cloud backend, when there is one. Same secret and same shape as the web deploy in
+    # pages.yml, and absent is a normal state: the bundle simply never offers "Online game".
+    #
+    # The API KEY inside it must be the NATIVE one. The browser key is restricted to
+    # sebgod.github.io/*, and an HTTP-referrer restriction refuses a request that sends no Referer --
+    # which every native client does. The config carries that as an `apiKeyNative` override; see
+    # docs/correspondence-play.md, "One key per front-end".
+    - name: Write the backend config
+      env:
+        FIREBASE_CONFIG: ${{ secrets.FIREBASE_CONFIG }}
+      run: |
+        if [ -z "$FIREBASE_CONFIG" ]; then
+          echo "::notice::No FIREBASE_CONFIG secret. Online play will be absent from this bundle."
+          exit 0
+        fi
+        printf '%s' "$FIREBASE_CONFIG" > Chess.Droid/firebase-config.json
+        python3 -c "import json; json.load(open('Chess.Droid/firebase-config.json'))"
+        echo "Backend config written ($(wc -c < Chess.Droid/firebase-config.json) bytes)."
+
     # env: rather than the literal password, because MSBuild properties land in a process command
     # line that anything on the machine can read.
     - name: Publish the app bundle
