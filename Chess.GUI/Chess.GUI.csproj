@@ -47,8 +47,14 @@
     <PropertyGroup>
       <_EnginePublishDir>$(IntermediateOutputPath)engine-publish/</_EnginePublishDir>
       <_EngineRidArg Condition="'$(RuntimeIdentifier)' != ''"> -r $(RuntimeIdentifier)</_EngineRidArg>
+      <!-- Forward UseLocalSiblings, or this inner publish re-runs the auto-detection and disagrees
+           with the outer one. With junctions present that is not a subtle difference: the sibling
+           DIR.Lib drags in its netstandard2.0 SOURCE GENERATOR projects, which cannot be AOT
+           compiled, so `dotnet publish -p:UseLocalSiblings=false` fails with NETSDK1207 naming a
+           project the caller deliberately opted out of. -->
+      <_EngineSiblingsArg Condition="'$(UseLocalSiblings)' != ''"> -p:UseLocalSiblings=$(UseLocalSiblings)</_EngineSiblingsArg>
     </PropertyGroup>
-    <Exec Command="dotnet publish &quot;$(MSBuildThisFileDirectory)../Chess.Engine/Chess.Engine.csproj&quot; -c $(Configuration)$(_EngineRidArg) -p:PublishAot=$(PublishAot) -o &quot;$(_EnginePublishDir.TrimEnd('/'))&quot;" />
+    <Exec Command="dotnet publish &quot;$(MSBuildThisFileDirectory)../Chess.Engine/Chess.Engine.csproj&quot; -c $(Configuration)$(_EngineRidArg)$(_EngineSiblingsArg) -p:PublishAot=$(PublishAot) -o &quot;$(_EnginePublishDir.TrimEnd('/'))&quot;" />
     <ItemGroup>
       <EnginePublishFiles Include="$(_EnginePublishDir)chess-engine*" />
     </ItemGroup>

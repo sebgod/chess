@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<!--
+  MSIX manifest for Chess.GUI, for the Microsoft Store.
+
+  $VERSION$ and $ARCH$ are stamped by build-msix.ps1; this file is a template and is not a valid
+  manifest on its own. That is deliberate, so nobody hand-edits a version into it and ships a package
+  whose number disagrees with the run that built it.
+
+  IDENTITY IS A PLACEHOLDER UNTIL THE APP IS RESERVED. The three values below are development
+  identities so the package can be built, signed and installed locally today. They are NOT ours to
+  choose for a real submission: Partner Center assigns Name, Publisher and PublisherDisplayName for
+  the reserved app, and they must match byte for byte or the upload is rejected with an identity
+  mismatch that does not say which field was wrong. See tianwen's manifest for the shape of the real
+  thing (packaging/windows/msix/AppxManifest.xml in ../../sharpastro/tianwen).
+-->
+
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap rescap">
+
+  <Identity
+    Name="SharpAstro.Chess.Dev"
+    Publisher="CN=SharpAstro-Chess-Dev"
+    Version="$VERSION$"
+    ProcessorArchitecture="$ARCH$" />
+
+  <Properties>
+    <DisplayName>Chess</DisplayName>
+    <PublisherDisplayName>SharpAstro</PublisherDisplayName>
+    <Logo>Assets\StoreLogo.png</Logo>
+  </Properties>
+
+  <Dependencies>
+    <!--
+      19041 is Windows 10 2004, the floor for the Store's current MSIX handling and well below
+      anything this app can actually run on: it needs Vulkan and a driver to match.
+    -->
+    <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0" MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+
+  <Resources>
+    <Resource Language="en-us" />
+  </Resources>
+
+  <Applications>
+    <!--
+      EntryPoint Windows.FullTrustApplication is what makes this a packaged Win32 app rather than a
+      UWP one: the exe launches normally, keeps its own process, and the shell hands it a chess://
+      URL as an ordinary command line argument. That is why there is no activation plumbing here:
+      Program.cs reads it from args exactly as it does unpackaged.
+    -->
+    <Application Id="Chess"
+                 Executable="Chess.GUI.exe"
+                 EntryPoint="Windows.FullTrustApplication">
+
+      <uap:VisualElements
+        DisplayName="Chess"
+        Description="Play chess against the computer, someone beside you, or anyone in the world by link."
+        BackgroundColor="#16191D"
+        Square150x150Logo="Assets\Square150x150Logo.png"
+        Square44x44Logo="Assets\Square44x44Logo.png">
+        <uap:DefaultTile Square71x71Logo="Assets\Square71x71Logo.png" />
+      </uap:VisualElements>
+
+      <Extensions>
+        <!--
+          The chess:// scheme, declared instead of written. This replaces the HKCU key
+          ProtocolRegistration writes for an unpackaged build: Windows registers the handler when the
+          package is installed and removes it on uninstall, so a packaged app never touches the
+          registry and never needs the register-protocol flag (which, inside a package, would write into
+          the package's own virtualized hive and achieve nothing).
+
+          Unlike a FILE type, a custom URL scheme has no UserChoice arbitration to lose — nothing
+          else claims chess://, so declaring it here makes this app the handler outright.
+        -->
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="chess">
+            <uap:DisplayName>Chess correspondence link</uap:DisplayName>
+            <uap:Logo>Assets\Square44x44Logo.png</uap:Logo>
+          </uap:Protocol>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+
+  <Capabilities>
+    <!--
+      The only capability a packaged desktop app needs, and this app needs every part of it: it
+      spawns chess-engine.exe as a child process, opens a named pipe for the chess:// hand-off
+      (InstanceGate), and does UDP discovery plus TCP between two LOCAL instances for LAN play.
+      Without runFullTrust the process is confined to the UWP sandbox, where the first is forbidden
+      outright and the last is blocked by the loopback restriction — which would break the
+      two-windows-on-one-machine case that is the whole point of the LAN feature.
+    -->
+    <rescap:Capability Name="runFullTrust" />
+  </Capabilities>
+
+</Package>
