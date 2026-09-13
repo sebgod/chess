@@ -821,6 +821,79 @@ The one caution is JSON: the payloads are tiny (a string, two names, an integer)
 `JsonSerializerContext`, or hand-roll — at this size hand-rolling is genuinely defensible and matches
 how `SessionProtocol` already treats the wire.
 
+### Done — and it needed neither of those two
+
+There is a third option this section missed: **`JsonDocument` and `JsonEncodedText`**. Only
+`JsonSerializer`'s generic reflection path is AOT-hostile; the DOM and escaping APIs reflect over
+nothing, are trim-safe, and ship in the shared framework, so they add no package either. What is left
+is naming the four or five fields actually read, which is all `Chess.Net/Cloud/CloudJson.cs` is —
+smaller than a serializer context and smaller than a parser.
+
+What landed (`Chess.Net/Cloud/`):
+
+| File | What |
+|---|---|
+| `ICloudDatabase` | The seam: sign in, read/set/update/remove a path, watch a path. Knows no chess, exactly as the browser's `firebase-cloud.js` knows none |
+| `FirebaseDatabase` | The real one — REST verbs, anonymous sign-in, **token refresh**, and the SSE stream |
+| `FirebaseConfig` | The same `firebase-config.json` the web is handed, plus the native key |
+| `CloudGameConnection` | One game row as an `ISessionConnection` |
+| `CloudJson` | The above |
+
+Four things worth knowing, each of which cost something to find:
+
+- **Token refresh is not optional here.** An id token lasts an hour and a correspondence game sits
+  idle for days by design, so the *normal* case is a token that expired long before anyone next
+  touched the app. It refreshes on demand, five minutes ahead of expiry, behind one gate so a burst of
+  calls mints one token.
+- **Reconnects are silent.** A dropped stream, a DNS failure, a phone changing networks: none of those
+  mean the game is gone, and reporting them as absence would unwind the host to the menu over a wifi
+  blip. Only the server actually saying so — a null value, a read the rules refuse — is passed on.
+  Everything else backs off and retries, and the server re-sends the whole value on reconnect, so
+  nothing can be missed by having been offline for it.
+- **The stream sends deltas, and the caller is promised a value.** A server-sent `put` says "this
+  subtree is now that" and a `patch` says "these members changed", both against a path relative to the
+  subscription — so "here is the whole value" is maintained client-side. Every shape this courier
+  watches changes at its top level (a game's `{g, n}`, one row of the lobby), so exactly those cases
+  are folded and anything deeper re-reads the path. The fallback costs one small GET and cannot be
+  wrong.
+- **The emulator refuses an empty API key** (403, "The request is missing a valid API key") even
+  though it validates none. Any non-empty string satisfies it; the browser half already passed
+  `"demo"`, so the config does the same.
+
+**The API key question this document left open is answered: one config with an override.** The parser
+prefers `apiKeyNative` and falls back to `apiKey`. One field beats a second copy of five that must not
+drift, and a config with no override still works against the emulator.
+
+### The native side wraps the shared state; the browser reads it directly
+
+Worth stating plainly, because it looks like drift and is not. `Chess.Web`'s `CloudCourier` reads the
+row as what it is — one shared state that both sides extend — and says so in its own summary. The
+native side presents that same row through `ISessionConnection`, as a stream of `SessionProtocol`
+lines.
+
+The difference is what each side already has. The browser has no `Chess.Net` and never did; the native
+front-ends have one in which everything — `NetworkSession`, `NetworkPlayer`, Android's
+`DrainNetworkMoves` — is written against a move stream. So the shared state stays the wire format,
+where the rules can police it, and `CloudGameConnection` is the ~100 lines that present it locally in
+the shape every caller on this side already expects. Nothing is duplicated: the schema, the
+append-only rule and the turn gate remain the single authority, and the courier swaps underneath
+callers that never learn there is a database.
+
+Two properties fall out of the state model that a line stream could not have given us:
+
+- **Resume is the same code path as joining.** A row carries the whole game, not the plies since you
+  last looked, so opening a game in progress replays it from an empty board — which is what makes a
+  correspondence game survive the app being closed for two days with nothing buffered on its behalf.
+- **Your own move must not come back at you.** The subscription echoes our append, and a connection
+  that surfaced it would hand the host its own move as the opponent's. The ply is therefore *accounted
+  for before it is written*, because whether the echo beats the write's own response is not ours to
+  decide.
+
+And one thing the schema has no room for: **RESIGN**. A row is `{g, n, w, b}` and unknown fields are
+rejected, so leaving cannot be announced — and a correspondence opponent is not present to be told.
+`Send` drops it rather than pretending, and `Closed` means our own subscription ended or the row
+stopped being ours, never "the peer left".
+
 ## The browser is the hard part
 
 Chess.Web is where the cloud pays off — it is the front-end with no LAN play, and the one a stranger
@@ -999,6 +1072,18 @@ exempt, and Chess.Droid is not distributed through Play).
   logic that does not live in this repository. The Firebase emulator runs locally and free; a rules
   test asserting that a truncating write is rejected is worth more than any amount of client-side
   care. **Built and passing:** `firebase/rules.test.mjs`, 22 tests, `npm test` from `firebase/`.
+- **The native client gets the same treatment, from the other side.**
+  `Chess.Tests/Cloud/FirebaseDatabaseEmulatorTests.cs` drives the real `FirebaseDatabase` against the
+  emulator: anonymous sign-in, two clients playing one game through the database, the opening `put` of
+  a stream replaying a stored game, and the two rules that would be catastrophic to get wrong (moving
+  out of turn, truncating the log) asserted as *refusals the client receives*. That is the only test
+  covering the REST verbs, the SSE framing and the auth flow — a fake stands in for none of them. It
+  skips itself when nothing is listening on 9000/9099, which is how it can live in the ordinary test
+  project: CI's `test` job skips it and the `e2e` workflow, which already provisions an emulator,
+  runs it.
+- **`firebase-tools` needs a JDK 21 or newer** ("no longer supports Java version before 21"), which is
+  not the JDK 17 the Android head pins. Both are installed here; the emulator wants `JAVA_HOME`
+  pointed at the newer one, and CI's `e2e` workflow already sets up temurin 21.
 - **The walking skeleton is a checked-in check, not a one-off.** `firebase/cloud-check.html` is two
   tabs and one game with no Blazor in the way; `firebase/cloud-check.cjs` drives it in two browser
   contexts and asserts the ply arrives in the other one (`npm run check:cloud`, which starts the

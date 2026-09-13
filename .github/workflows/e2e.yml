@@ -43,6 +43,14 @@ jobs:
       run: npm ci
       working-directory: firebase
 
+    # The native cloud client -- REST, server-sent events, anonymous auth, and the deployed rules --
+    # needs this emulator and none of the browser. Those tests skip themselves in the `test` job,
+    # which has no emulator, so this is the only place they run; first, because they are seconds
+    # rather than minutes and a failure here explains a failure below.
+    - name: Run the native cloud tests
+      run: npx firebase emulators:exec --project demo-chess "dotnet test ../Chess.Tests -c Release --nologo --filter FullyQualifiedName~FirebaseDatabaseEmulatorTests"
+      working-directory: firebase
+
     # Points the web app at the emulator. Gitignored, and it names nothing real: "demo-" is what
     # makes the emulator run fully offline, with no Firebase account, project or secret involved.
     - name: Point Chess.Web at the emulator
