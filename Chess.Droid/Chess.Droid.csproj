@@ -19,11 +19,25 @@
   </PropertyGroup>
 
   <!-- Pin a coherent SDL managed+native pair for android, overriding the repo's 3.5.0-preview CPM
-       pin for this head only. 3.4.10.5 (NOT 3.4.12.x, whose SDL3-CS.Android ships a Java-3.4.10 /
-       native-3.4.12 mismatch that trips SDL's runtime C/Java version check). -->
+       pin for this head only.
+
+       3.4.16 rather than 3.4.10.5 because Google Play refuses a bundle whose native libraries are
+       not 16 KB page aligned, and 3.4.10.5's libSDL3.so was the ONLY library in the whole .aab that
+       wasn't — every .so the .NET Android SDK emits is already aligned. That is warning XA0141, and
+       it is a Play submission blocker rather than advice. 3.4.16's arm64-v8a and x86_64 builds are
+       16 KB aligned; its armeabi-v7a and x86 ones still are not, which does not matter here: a
+       Release build ships only the two 64-bit ABIs, and 16 KB pages are a 64-bit concern.
+
+       THE PAIR MUST STAY COHERENT: SDL compares its Java and native versions at startup and aborts
+       on a mismatch. 3.4.12.x is the version that got this wrong — Java 3.4.10 against native
+       3.4.12 — and is still the one to avoid. Coherence is checkable from the packages alone, with
+       no device: javap -p -constants on org/libsdl/app/SDLActivity.class inside the .aar gives
+       SDL_MAJOR/MINOR/MICRO_VERSION, and the version string in
+       runtimes/android-arm64/native/libSDL3.so gives the native side. 3.4.16 reads 3.4.16 against
+       "SDL-3.4.16-release-3.4.16". -->
   <ItemGroup>
-    <PackageReference Include="SDL3-CS" VersionOverride="3.4.10.5" />
-    <PackageReference Include="SDL3-CS.Android" VersionOverride="3.4.10.5" />
+    <PackageReference Include="SDL3-CS" VersionOverride="3.4.16" />
+    <PackageReference Include="SDL3-CS.Android" VersionOverride="3.4.16" />
   </ItemGroup>
 
   <ItemGroup>

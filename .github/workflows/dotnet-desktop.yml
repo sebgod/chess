@@ -263,6 +263,115 @@ jobs:
           artifacts/Chess-*.msix
         retention-days: 14
 
+  # The Google Play package. Same shape as `msix` above, and there for the same reason: a store
+  # build is not the tarball with a different extension, and what rejects it is a checklist rather
+  # than a compiler.
+  #
+  # It differs from msix in one way that matters. An MSIX goes up unsigned because the Store signs
+  # it at certification; a bundle must be signed BEFORE upload even though Play re-signs it too,
+  # because the upload key is how Play knows the upload is yours. Play also rejects the debug key
+  # specifically. So: signed here when the upload key is configured, debug-signed otherwise -- and
+  # the job still runs in that case, because the checks below are worth having on every push
+  # whether or not anyone can upload the result.
+  aab:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
+    runs-on: ubuntu-latest
+    env:
+      # versionName is human-facing and matches every other artifact from this run. versionCode is
+      # the run number alone: Play wants a strictly increasing integer, shows it to nobody, and
+      # refuses an upload that does not beat the last one.
+      APP_VERSION_NAME: ${{ needs.test.outputs.version-prefix }}
+      APP_VERSION_CODE: ${{ github.run_number }}
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: 10.0.x
+    # JDK 17, not the image default -- same pin and same reason as the `android` gate job above.
+    - uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: '17'
+    - run: dotnet workload install android
+    - name: Install Android SDK dependencies
+      run: >
+        dotnet build Chess.Droid/Chess.Droid.csproj -t:InstallAndroidDependencies
+        -p:AndroidSdkDirectory="$ANDROID_HOME" -p:AcceptAndroidSDKLicenses=True
+        -p:UseLocalSiblings=false
+
+    # The upload key, when there is one. Written to RUNNER_TEMP rather than the checkout so no
+    # artifact path can sweep it up, and deleted with the runner.
+    - name: Restore the upload keystore
+      id: keystore
+      env:
+        KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      run: |
+        if [ -z "$KEYSTORE_BASE64" ]; then
+          echo "::notice::No ANDROID_KEYSTORE_BASE64 secret. Building a debug-signed bundle, which Play will refuse."
+          echo "signed=false" >> "$GITHUB_OUTPUT"
+        else
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/upload.keystore"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+        fi
+
+    # env: rather than the literal password, because MSBuild properties land in a process command
+    # line that anything on the machine can read.
+    - name: Publish the app bundle
+      env:
+        ANDROID_STORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        ANDROID_KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      run: |
+        set -euo pipefail
+        common=(Chess.Droid/Chess.Droid.csproj -c Release --nologo
+                -p:UseLocalSiblings=false
+                "-p:ApplicationVersion=$APP_VERSION_CODE"
+                "-p:ApplicationDisplayVersion=$APP_VERSION_NAME")
+        if [ "${{ steps.keystore.outputs.signed }}" = "true" ]; then
+          dotnet publish "${common[@]}" \
+            -p:AndroidKeyStore=true \
+            "-p:AndroidSigningKeyStore=$RUNNER_TEMP/upload.keystore" \
+            "-p:AndroidSigningKeyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" \
+            -p:AndroidSigningStorePass=env:ANDROID_STORE_PASS \
+            -p:AndroidSigningKeyPass=env:ANDROID_KEY_PASS
+        else
+          dotnet publish "${common[@]}"
+        fi
+
+    # The gate this job exists for. 16 KB page alignment is a Play rejection, it comes from a
+    # third-party native rather than from anything we wrote, and the build only WARNS about it
+    # (XA0141) -- a warning in a publish log is not a gate.
+    - name: Check the bundle
+      shell: pwsh
+      run: |
+        $aab = Get-ChildItem Chess.Droid/bin/Release/net10.0-android -Filter '*-Signed.aab' |
+               Select-Object -First 1
+        if (-not $aab) { throw 'no signed .aab was produced' }
+        ./packaging/android/check-aab.ps1 -Bundle $aab.FullName -RequireSignature
+        "AAB=$($aab.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+    - name: What to do with this artifact
+      shell: bash
+      run: |
+        if [ "${{ steps.keystore.outputs.signed }}" = "true" ]; then
+          SIG="signed with the upload key, so it can go straight to the Play Console"
+        else
+          SIG="**debug-signed** -- Play refuses it. Add the ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD secrets to get an uploadable one"
+        fi
+        {
+          echo "### Chess $APP_VERSION_NAME (versionCode $APP_VERSION_CODE)"
+          echo
+          echo "This bundle is $SIG."
+          echo
+          echo "See \`packaging/android/README.md\` for the rest of the Play path."
+        } >> "$GITHUB_STEP_SUMMARY"
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: chess-aab
+        path: Chess.Droid/bin/Release/net10.0-android/*-Signed.aab
+        retention-days: 14
+
   # Gating: only ship binaries to a GitHub Release on an explicit dispatch, and only when tests
   # passed AND all six publish legs succeeded. Previously this job needed nothing but `publish`,
   # which was gated on main+push alone -- so every merge cut a release. That produced 90 of them
