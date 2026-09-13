@@ -1,0 +1,81 @@
+name: e2e
+
+# The browser suite, on a schedule rather than on every push.
+#
+# Chess.Web.E2E.Tests sits outside Chess.sln deliberately: it needs a browser and a dev server, so
+# the solution-wide `dotnet test` in CI must not sweep it up. That is fail-safe for CI and blind for
+# everyone else -- SetupDragGhostTests sat red for two weeks after the drag ghost's off-board
+# behaviour was deliberately reversed, and nothing said so, because the only suite that encoded the
+# old decision runs nowhere automatic. A nightly run closes that gap without putting a Chromium
+# download and a WASM boot in front of every push.
+#
+# It is allowed to be slower and flakier than CI proper: a failure here is a thing to look at in the
+# morning, not a thing that blocks a merge.
+
+on:
+  schedule:
+    # 04:17 UTC daily. Off the hour on purpose -- GitHub's scheduler queues heavily at :00.
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: 10.0.x
+
+    # The cloud tests need a backend. Without one they SKIP (they probe the emulator port rather
+    # than trusting a config file), which would quietly reduce this job to the link-play suite --
+    # so the emulator is provisioned here and the cloud path is actually covered.
+    - uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: '21'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: npm
+        cache-dependency-path: firebase/package-lock.json
+    - name: Install the emulator toolchain
+      run: npm ci
+      working-directory: firebase
+
+    # Points the web app at the emulator. Gitignored, and it names nothing real: "demo-" is what
+    # makes the emulator run fully offline, with no Firebase account, project or secret involved.
+    - name: Point Chess.Web at the emulator
+      run: |
+        cat > Chess.Web/wwwroot/firebase-config.json <<'JSON'
+        {
+          "projectId": "demo-chess",
+          "emulator": { "auth": "http://127.0.0.1:9099", "host": "127.0.0.1", "port": 9000 }
+        }
+        JSON
+
+    # Build first so playwright.ps1 exists, then install the browser WITH its OS dependencies --
+    # the fixture self-installs Chromium but cannot install the system libraries it needs to launch.
+    - name: Install Chromium
+      run: |
+        dotnet build Chess.Web.E2E.Tests --nologo
+        pwsh Chess.Web.E2E.Tests/bin/Debug/net10.0/playwright.ps1 install --with-deps chromium
+
+    # emulators:exec brings the database and auth emulators up, runs the suite, and tears them down
+    # -- the same wrapper the rules tests use, so there is one way to get an emulator in this repo.
+    # The fixture starts (and stops) the Chess.Web dev server itself.
+    - name: Run the browser suite
+      run: npx firebase emulators:exec --project demo-chess "dotnet test ../Chess.Web.E2E.Tests --nologo"
+      working-directory: firebase
+
+    # Traces and screenshots are the only way to understand a failure that nobody watched happen.
+    - name: Upload test output
+      if: failure()
+      uses: actions/upload-artifact@v7
+      with:
+        name: e2e-failure
+        path: |
+          Chess.Web.E2E.Tests/TestResults/
+          Chess.Web.E2E.Tests/bin/Debug/net10.0/playwright-report/
+        retention-days: 14
+        if-no-files-found: ignore
