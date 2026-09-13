@@ -6,7 +6,61 @@ using Chess.UCI;
 using DIR.Lib;
 using SDL3;
 using SdlVulkan.Renderer;
+using SharpAstro.AppShell;
 using System.Numerics;
+
+// ---- Before any window exists: the two jobs that must not open one. --------------------------
+
+// Registering the scheme is an explicit action with an explicit result, never a silent write on first
+// run -- see ProtocolRegistration for why an app that ships as a folder cannot claim a URL scheme on
+// the user's behalf.
+if (args.Contains("--register-protocol")) return ProtocolRegistration.Register();
+if (args.Contains("--unregister-protocol")) return ProtocolRegistration.Unregister();
+
+// A link waiting to become a game -- handed over on argv at boot, arriving from another instance, or
+// pasted mid-game. Decoded HERE, before the window, because it may belong to an instance that is
+// already running and this one would otherwise flash a window on its way to exiting. TryDecode takes
+// the raw argument: it reduces a page URL, a chess:// URL or a bare body itself
+// (GameLinkCodec.ExtractBody), so there is no argv parser here to drift from the web's.
+string? linkPayload = null;
+Game? pendingLinkGame = null;
+
+foreach (var arg in args)
+{
+    var bootResult = GameLinkCodec.TryDecode(arg, out var decoded, out var bootLinkError);
+    if (bootResult is GameLinkResult.Ok)
+    {
+        linkPayload = arg;
+        pendingLinkGame = decoded;
+        break;
+    }
+    // An argument that IS a link but a broken one is worth saying out loud; one that simply isn't a
+    // link (GameLinkResult.NoLink) is not an error -- it falls through to the menu silently.
+    if (bootResult is GameLinkResult.Invalid)
+    {
+        Console.Error.WriteLine($"[chess] ignoring '{arg}': {bootLinkError}");
+    }
+}
+
+// Single instance, but only just. Claiming the channel is what makes THIS window reachable, and
+// LOSING the claim is not a reason to exit: two windows on one machine is a scenario chess supports
+// on purpose -- Chess.Net mints a per-process peer id precisely so two local windows can find each
+// other over LAN, and the inspector workflows want fresh instances too. So the whole policy is:
+// always claim, and hand off ONLY when carrying a payload.
+var instanceChannel = InstanceGate.ChannelFor("sharpastro-chess");
+
+if (linkPayload is not null
+    && InstanceGate.TryHandOff(instanceChannel, linkPayload, TimeSpan.FromSeconds(2)))
+{
+    // Another instance owns the channel and has taken the link; it surfaces itself. A FAILED hand-off
+    // is never fatal -- we fall through and open the link here, because an extra window is a poor
+    // outcome and a click that does nothing is an unacceptable one.
+    return 0;
+}
+
+// Null means somebody else owns the pipe. That is fine: this process simply cannot RECEIVE hand-offs,
+// and everything else about it works.
+using var instanceGate = InstanceGate.TryClaim(instanceChannel);
 
 // 1280x800 (1.6:1), not the near-square 1050x830 this opened at, for the same reason the web canvas
 // asks for that aspect: GameFrameLayout costs its shapes off the proportions it is handed, and the
@@ -107,11 +161,12 @@ void SaveCurrentGame()
         stamp, started: currentGameStarted);
 }
 
-// A link waiting to become a game — handed over on argv at boot, or pasted mid-game. Declared up here
-// because the local functions below capture it, and a local function may only reach locals declared
-// above it.
-Game? pendingLinkGame = null;
 VkStartupMenu? menu = null;
+
+// Set by the drain in CheckNeedsRedraw, consumed by the next OnRender. The two are separate because
+// the drain runs in a phase where nothing may touch the display -- and because a minimized window
+// reaches the drain but not the render, which is the entire point of the arrangement below.
+var handoffArrived = false;
 
 // The ply the current StatusOverride was raised at, so it can be retired once the game moves on —
 // see the clear in OnRender. Without it a transient message ("Link copied") would shadow the derived
@@ -222,19 +277,29 @@ void PasteLink()
     }
 
     pendingLinkGame = pasted;
+    AcceptPendingLink("pasted");
+}
+
+// Put whatever is in pendingLinkGame on screen, from wherever it came -- the clipboard, argv, or
+// another instance handing it over. Shared because the three arrivals differ only in how the link
+// reached the process; what has to happen to the running game is identical, and a second teardown
+// path is a second thing to drift.
+void AcceptPendingLink(string source)
+{
+    if (pendingLinkGame is not { } incoming) return;
 
     if (display is null)
     {
-        StartPendingLinkGame(); // pasted at the menu: straight into the game
+        StartPendingLinkGame(); // at the menu: straight into the game
         return;
     }
 
     // Mid-game: warn when this is a DIFFERENT game rather than the reply we were waiting for. The
     // single save slot means the current game is about to be the one that gets kept (the restart
     // handler saves it first), so the swap should never be silent.
-    if (display is { HasGameUI: true } && !GameLinkCodec.IsContinuationOf(display.UI.Game, pasted!))
+    if (display is { HasGameUI: true } && !GameLinkCodec.IsContinuationOf(display.UI.Game, incoming))
     {
-        Console.Error.WriteLine("[chess] pasted link is a different game; the current one was saved.");
+        Console.Error.WriteLine($"[chess] {source} link is a different game; the current one was saved.");
     }
 
     // Unwind the running game the way F8 does, and let the restart handler pick the link back up.
@@ -242,28 +307,8 @@ void PasteLink()
     player.HandleInput(new InputEvent.KeyDown(InputKey.F8, InputModifier.None));
 }
 
-// A game link handed over on the command line — a browser's "open with", a shell, a file manager, and
-// later a chess:// click — skips the wizard entirely, exactly as the web does (Play.razor:323).
-// Asking someone to choose a game mode for a game that already has one is a question with a wrong
-// answer available. TryDecode takes the raw argument: it reduces a page URL, a chess:// URL or a bare
-// body itself (GameLinkCodec.ExtractBody), so there is no argv parser here to drift from the web's.
-foreach (var arg in args)
-{
-    var bootResult = GameLinkCodec.TryDecode(arg, out var decoded, out var linkError);
-    if (bootResult is GameLinkResult.Ok)
-    {
-        pendingLinkGame = decoded;
-        break;
-    }
-    // An argument that IS a link but a broken one is worth saying out loud; one that simply isn't a
-    // link (GameLinkResult.NoLink) is not an error — it falls through to the menu silently.
-    if (bootResult is GameLinkResult.Invalid)
-    {
-        Console.Error.WriteLine($"[chess] ignoring '{arg}': {linkError}");
-    }
-}
-
-// No wizard when a link decided the game for us.
+// A link on argv skips the wizard entirely, exactly as the web does (Play.razor:323). Asking someone
+// to choose a game mode for a game that already has one is a question with a wrong answer available.
 menu = pendingLinkGame is null ? new(CanContinue()) : null;
 
 // Map a pointer event's pixel coordinates from device space into content space through the renderer's
@@ -401,12 +446,53 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
     OnResize = (rw, rh) =>
         display?.OnResize((int)rw, (int)rh),
 
+    // This is the drain, and its placement is the non-obvious part of the whole feature.
+    //
+    // SdlEventLoop computes `anyNeedsRedraw` EXCLUDING minimized windows and then parks in
+    // WaitEventTimeout -- so a minimized window never renders, and OnRender/OnBeforeFrame/OnPostFrame
+    // never run. A minimized window is precisely the state a hand-off exists to rescue, so draining
+    // in the render path would apply the link whenever the user next happened to click the app: from
+    // their point of view, never. CheckNeedsRedraw is the one public per-iteration hook that runs
+    // regardless (OnLoopIteration is internal AND #if DEBUG, so it is compiled out of a shipping
+    // build). Activating the window is what lets the render resume and the payload be applied.
     CheckNeedsRedraw = () =>
-        display is { HasPendingUpdate: true } || gameTask is { IsCompleted: true }
-        || lobby is not null || picker is not null,
+    {
+        // TryDequeue is the gate's only reader -- there is no HasPending -- so this has to take the
+        // payload and stash it rather than peek and leave it for the render.
+        if (instanceGate is not null && instanceGate.TryDequeue(out var handoff))
+        {
+            if (GameLinkCodec.TryDecode(handoff.Payload, out var handed, out var handoffError)
+                is GameLinkResult.Ok)
+            {
+                pendingLinkGame = handed;
+                handoffArrived = true;
+            }
+            else
+            {
+                Console.Error.WriteLine($"[chess] ignoring handed-off link: {handoffError}");
+            }
+
+            // Come forward whatever the payload turned out to be: somebody clicked a link expecting
+            // this app, and a window that stays buried is indistinguishable from a click that did
+            // nothing. Activate restores ONLY when actually minimized, so a maximised window keeps
+            // its size.
+            sdlWindow.Activate();
+            return true;
+        }
+
+        return display is { HasPendingUpdate: true } || gameTask is { IsCompleted: true }
+            || lobby is not null || picker is not null;
+    },
 
     OnRender = () =>
     {
+        // A link that arrived from another instance, stashed by the drain above.
+        if (handoffArrived)
+        {
+            handoffArrived = false;
+            AcceptPendingLink("handed-off");
+        }
+
         // Check if game requested restart (back to menu)
         if (gameTask is { IsCompleted: true } completed)
         {

@@ -844,7 +844,7 @@ that no one later reaches for a server-side "anti-cheat" that this architecture 
 | 1b | **Link play in the terminal:** the same phase-1 semantics in Chess.Console — `--link`, a wizard entry, Ctrl+L to copy (OSC 52) and Ctrl+O to open a prompt the terminal's own paste fills | chess | **Done** |
 | 3a | **Cloud courier in the browser:** Firebase JS SDK via `[JSImport]`, anonymous auth, the schema and rules above, lobby UI in `Play.razor`, the README wording | chess | **Done** — lobby + `#c=` link, 4 browser E2E tests, live-verified |
 | 3b | **Cloud courier on Android:** REST + SSE in `Chess.Net`, the `ILobby` extraction + `ISessionConnection` rename, a second API key with no referrer restriction, a cloud lobby beside the LAN one in `MainActivity` | chess | Not started |
-| 4 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, building or reusing the drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | Not started |
+| 4 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, building or reusing the drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | **Done** — live-verified, including the minimized case |
 | 5 | *Optional cleanup:* a public, non-`DEBUG` per-iteration hook on `SdlEventLoop` so the drain stops living in a side-effecting predicate | SdlVulkan.Renderer | Not started |
 
 **The drain belongs to phase 4 alone**, though an earlier version of this table put it in phase 2 and a
@@ -856,6 +856,16 @@ off-thread arrivals through volatile flags named in its own redraw predicate. Th
 `InstanceGate` hand-off as the drain's only producer. Building it before then would
 be plumbing with nothing flowing through it — the same objection this document raises against doing the
 gate early.
+
+**Phase 4 is done and the drain's placement was verified, not assumed.** Driven through the SDL
+inspector: a second launch carrying a `chess://` link exits in ~150 ms without opening a window while
+the first instance switches to that game; with the first window **minimized** the same hand-off still
+lands (the drain runs in `CheckNeedsRedraw`, `Activate()` restores the window, the next frame applies
+it) and a screenshot — impossible while minimized, so its success is the proof — shows the handed-off
+position with the board auto-flipped to the receiving side. Two plain launches still open two windows,
+which is the LAN-compatibility property the whole policy exists to protect. Registration writes
+`HKCU\Software\Classes\chess` with the empty `URL Protocol` marker and `"%1"`, and unregistering
+removes it completely.
 
 **Phase 1 is done except for being watched.** What landed: `GameLinkCodec.ExtractBody` (one reduction
 for a page URL / `chess://` / bare fragment / bare body, folded into `TryDecode` so no host parses) and

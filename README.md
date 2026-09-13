@@ -82,6 +82,26 @@ dotnet test -c Release
 
 Select a piece by typing its file + rank (e.g. `e2`), then type the target square (e.g. `e4`) to move. When a piece is already selected, typing just a rank moves it along the same file.
 
+### `chess://` links (GUI)
+
+The desktop GUI can register itself as the handler for `chess://` links, so clicking one opens the
+game in the app rather than a browser. It is **never** registered automatically — chess ships as a
+folder rather than an installer, so claiming a URL scheme is an explicit, reversible action:
+
+```bash
+chess-gui --register-protocol      # per-user; no admin needed
+chess-gui --unregister-protocol
+```
+
+Windows writes `HKCU\Software\Classes\chess`; Linux writes a `.desktop` file under
+`~/.local/share/applications`. macOS needs a real `.app` bundle, which this build doesn't produce, and
+says so rather than pretending.
+
+Clicking a link while the app is **already running** hands it to that window instead of opening a
+second one — including when the window is minimized, which it restores. A second *plain* launch
+(no link) always opens its own window, because two instances on one machine is how you play yourself
+over LAN.
+
 ### Play by Link (terminal app)
 
 | Key | Action |

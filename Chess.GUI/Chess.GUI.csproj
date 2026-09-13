@@ -14,6 +14,9 @@
   <ItemGroup>
     <PackageReference Include="SDL3-CS" />
     <PackageReference Include="SDL3-CS.Native" />
+    <!-- Not conditioned on UseLocalSiblings: AppShell has no sibling working copy here, so it comes
+         from NuGet either way. -->
+    <PackageReference Include="SharpAstro.AppShell" />
   </ItemGroup>
   <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
     <PackageReference Include="DIR.Lib" />
