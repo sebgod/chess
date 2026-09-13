@@ -904,6 +904,29 @@ Four things worth knowing, each of which cost something to find:
 prefers `apiKeyNative` and falls back to `apiKey`. One field beats a second copy of five that must not
 drift, and a config with no override still works against the emulator.
 
+#### Minting the native key needs no console
+
+This was written down twice as "a console action" and it is not one. Registering an **Android app**
+makes Firebase auto-provision that app's own key, exactly as registering the web app did — the browser
+key was never created by hand either:
+
+```bash
+firebase apps:create  ANDROID "chess-android" --package-name org.sebgod.chess
+firebase apps:sdkconfig ANDROID <appId>          # google-services.json; the key is client[0].api_key[0].current_key
+```
+
+**The key that comes out carries no application restriction**, which is the property the native client
+needs and the one worth checking rather than assuming — an *Android apps* restriction is package name
+plus cert SHA-1 carried in `X-Android-Package` / `X-Android-Cert` headers, and `HttpClient` sends
+neither, so a restricted key would have failed exactly like the referrer-restricted browser one. It was
+measured, against all three services the client actually uses, with no headers of any kind: anonymous
+`accounts:signUp` (200), the `securetoken` refresh that a game hits an hour in (200), and an
+authenticated RTDB read (200). Adding a SHA-1 later would impose that restriction, so don't, unless
+something needs it — nothing here does; anonymous auth wants no cert.
+
+The only genuinely console-shaped step in this whole backend remains the **Anonymous auth toggle**,
+which was flipped once when phase 3a went in.
+
 ### The native side wraps the shared state; the browser reads it directly
 
 Worth stating plainly, because it looks like drift and is not. `Chess.Web`'s `CloudCourier` reads the
@@ -980,7 +1003,7 @@ that no one later reaches for a server-side "anti-cheat" that this architecture 
 | 2 | **The inbox:** multi-slot store (`GameInbox`) + a "your move" list + staleness, and the GUI picker over it | chess | **Done** — live-verified |
 | 1b | **Link play in the terminal:** the same phase-1 semantics in Chess.Console — `--link`, a wizard entry, Ctrl+L to copy (OSC 52) and Ctrl+O to open a prompt the terminal's own paste fills | chess | **Done** |
 | 3a | **Cloud courier in the browser:** Firebase JS SDK via `[JSImport]`, anonymous auth, the schema and rules above, lobby UI in `Play.razor`, the README wording | chess | **Done** — lobby + `#c=` link, 4 browser E2E tests, live-verified |
-| 3b | **Cloud courier on Android:** REST + SSE in `Chess.Net`, the `ILobby` extraction + `ISessionConnection` rename, a second API key with no referrer restriction, a cloud lobby beside the LAN one in `MainActivity` | chess | **Code complete, unverified on a device.** The only step left is minting the second API key and putting it in `FIREBASE_CONFIG` as `apiKeyNative` — a console action; until then the bundle carries no config and never offers the entry |
+| 3b | **Cloud courier on Android:** REST + SSE in `Chess.Net`, the `ILobby` extraction + `ISessionConnection` rename, a second API key with no referrer restriction, a cloud lobby beside the LAN one in `MainActivity` | chess | **Done — unverified on a device.** Both keys exist and `FIREBASE_CONFIG` carries the native one as `apiKeyNative`; see below for how it was minted. What is left is a device, which is #15 |
 | 4 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, building or reusing the drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | **Done** — live-verified, including the minimized case |
 | 5 | *Optional cleanup:* a public, non-`DEBUG` per-iteration hook on `SdlEventLoop` so the drain stops living in a side-effecting predicate | SdlVulkan.Renderer | Not started |
 

@@ -10,9 +10,17 @@
     "but keeping them out of the source tree is what stops a fork writing to our backend.",
     "",
     "Replace this file's contents entirely -- the keys below are the shape, not real values.",
-    "Delete this _comment key in the real file; unknown keys are handed straight to the SDK."
+    "Delete this _comment key in the real file; unknown keys are handed straight to the SDK.",
+    "",
+    "apiKeyNative is OPTIONAL and is for Chess.Net (Android, and any desktop client): the browser",
+    "key is restricted to an HTTP referrer, and that restriction refuses a request sending no",
+    "Referer -- which is every native client. Register an Android app to get a second, unrestricted",
+    "key without touching the console: `firebase apps:create ANDROID <name> --package-name <pkg>`",
+    "then `firebase apps:sdkconfig ANDROID <appId>`. Omit the field and native clients fall back to",
+    "apiKey, which is correct for a project whose single key is unrestricted."
   ],
   "apiKey": "AIza...",
+  "apiKeyNative": "AIza...",
   "authDomain": "your-project.firebaseapp.com",
   "databaseURL": "https://your-project-default-rtdb.europe-west1.firebasedatabase.app",
   "projectId": "your-project",

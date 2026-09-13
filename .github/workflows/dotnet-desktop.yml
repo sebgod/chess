@@ -332,6 +332,12 @@ jobs:
         fi
         printf '%s' "$FIREBASE_CONFIG" > Chess.Droid/firebase-config.json
         python3 -c "import json; json.load(open('Chess.Droid/firebase-config.json'))"
+        # A warning rather than a failure: a project whose single key is unrestricted needs no
+        # override. But when the override is missing by ACCIDENT nothing else ever says so -- the
+        # bundle builds, ships, and 403s at sign-in on every device it reaches.
+        if ! python3 -c "import json,sys; sys.exit(0 if json.load(open('Chess.Droid/firebase-config.json')).get('apiKeyNative') else 1)"; then
+          echo "::warning::FIREBASE_CONFIG has no apiKeyNative. Native clients will use the browser key, which fails sign-in if it is referrer-restricted."
+        fi
         echo "Backend config written ($(wc -c < Chess.Droid/firebase-config.json) bytes)."
 
     # env: rather than the literal password, because MSBuild properties land in a process command
