@@ -1084,10 +1084,20 @@ by CI from the same `FIREBASE_CONFIG` secret, and absent from the repository for
 names a live project and a fork must not inherit a pointer at somebody else's database. Absent is a
 normal state — the entry does not appear, and nothing else changes.
 
+**Editing that secret does not need the old value from anywhere private.** A repo secret cannot be
+read back, which makes "add one field to it" look like a retype-the-whole-thing job. It is not:
+`pages.yml` writes `FIREBASE_CONFIG` verbatim to `publish/wwwroot/firebase-config.json`, so the
+deployed copy at `sebgod.github.io/chess/firebase-config.json` **is** the secret, and the edit is
+fetch it, add the field, `gh secret set FIREBASE_CONFIG < file`. Nothing about that is a leak — the
+config is public identifiers by design, and the secret exists to stop a *fork* inheriting the backend,
+not to hide the values from visitors.
+
 **Not verified on a device.** The transport is covered against a real emulator and the lobby against
 an in-memory one, and the config is confirmed to land at `assets/firebase-config.json` in a built
-APK — but no build carrying a real config has been launched, because the native API key does not
-exist yet. That is the one remaining step and it is a console action.
+APK. The native key now exists (see "Minting the native key needs no console" above) and
+`FIREBASE_CONFIG` carries it, so the bundles CI builds from here on are the first that can offer the
+entry at all — but none has been launched. A device is the one remaining step, and it is the only
+one; nothing here waits on a person to click anything.
 
 **One gap worth naming rather than discovering:** an online game is not saved, so "Continue" does not
 offer it. That is a real omission rather than a rule — the row *is* the whole game, and resuming it is

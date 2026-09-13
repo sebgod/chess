@@ -57,7 +57,11 @@
        from the repository on purpose, exactly as Chess.Web/wwwroot/firebase-config.json is: it names
        a live project, and a fork must not inherit a pointer at somebody else's database. A build
        without it matches this glob nothing and simply never offers "Online game" — which is the
-       normal state of every fork and PR build. CI writes it from the FIREBASE_CONFIG secret. -->
+       normal state of every fork and PR build. CI writes it from the FIREBASE_CONFIG secret.
+
+       To build one locally that DOES offer it, drop the same JSON here as Chess.Droid/firebase-config.json
+       (gitignored); ../Chess.Web/wwwroot/firebase-config.example.json documents the shape, including the
+       apiKeyNative field this head needs and the browser does not. -->
   <ItemGroup>
     <AndroidAsset Include="firebase-config.json" Link="Assets\firebase-config.json" Condition="Exists('firebase-config.json')" />
   </ItemGroup>
