@@ -13,6 +13,15 @@ namespace Chess.GUI;
 /// <c>--unregister-protocol</c> pair: visible, reversible, and reporting what it did.</para>
 ///
 /// <para>Per-user in both places, so neither needs elevation and neither can affect another account.</para>
+///
+/// <para><b>And not an in-app menu item either</b>, which was the obvious next step and is not worth
+/// taking. The people who would ever find such an item are Windows users who do not open a terminal
+/// — and they get the scheme from the MSIX package, whose <c>windows.protocol</c> declaration
+/// registers it on install without anyone asking. What is left is a tarball on Windows or Linux,
+/// which is a terminal-shaped audience already: the flag works, it reports what it did, and the
+/// README documents it. The item would also have to hide itself inside a package, because HKCU is
+/// virtualized there — see sebgod/chess#53 for that hazard, which is a guard on this flag rather
+/// than a reason for a menu.</para>
 /// </summary>
 internal static class ProtocolRegistration
 {
