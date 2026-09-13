@@ -183,6 +183,86 @@ jobs:
         path: Chess.GUI/bin/Release/net10.0/${{ matrix.rid }}/publish/
         retention-days: 14
 
+  # The Microsoft Store package. Separate from `publish` because it is Windows-only, needs the SDK
+  # build tools rather than just the .NET SDK, and produces ONE artifact spanning two architectures
+  # rather than one per RID.
+  #
+  # The bundle this uploads is UNSIGNED, and that is not an oversight: the Store re-signs after
+  # certification, which is the whole reason chess is packaged as MSIX at all (no certificate to buy
+  # or rotate, and no SmartScreen warning). The consequence is that the artifact cannot be installed
+  # by double-clicking it -- an unsigned MSIX is a hard refusal with no "run anyway". To try a CI
+  # build locally, sign it with a throwaway certificate first; the summary step below prints how.
+  msix:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push')
+    runs-on: windows-latest
+    env:
+      # Four parts with a zero revision, which is what MSIX wants and Partner Center enforces: the
+      # Store reserves the fourth component for its own use and rejects a non-zero one at upload.
+      MSIX_VERSION: ${{ needs.test.outputs.version-prefix }}.0
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: 10.0.x
+
+    # Cheap, and first: a manifest typo or a mis-sized asset should fail in seconds rather than
+    # after two AOT publishes.
+    - name: Validate the manifest
+      run: ./packaging/windows/msix/build-msix.ps1 -ValidateOnly
+      shell: pwsh
+
+    # Both architectures from one x64 runner. Cross-target NativeAOT for win-arm64 already works
+    # here -- the `publish` job above has been doing exactly that on windows-latest.
+    - name: Publish and pack each architecture
+      shell: pwsh
+      run: |
+        foreach ($rid in 'win-x64', 'win-arm64') {
+          $arch = $rid -replace '^win-', ''
+          Write-Host "::group::$rid"
+          dotnet publish Chess.GUI/Chess.GUI.csproj -r $rid -c Release `
+            -p:Version="$env:VERSION_PREFIX$env:VERSION_HASH" -p:FileVersion="$env:VERSION_PREFIX.$env:VERSION_REV"
+          if ($LASTEXITCODE -ne 0) { throw "publish failed for $rid" }
+          ./packaging/windows/msix/build-msix.ps1 `
+            -PublishDir "Chess.GUI/bin/Release/net10.0/$rid/publish" `
+            -Arch $arch -Version $env:MSIX_VERSION -OutFile "artifacts/Chess-$arch.msix"
+          Write-Host '::endgroup::'
+        }
+      env:
+        VERSION_PREFIX: ${{ needs.test.outputs.version-prefix }}
+
+    # One .msixbundle spanning both architectures is what Partner Center takes for a multi-arch
+    # submission, and what a tester wants: Windows picks the right package for the machine.
+    - name: Bundle
+      run: ./packaging/windows/msix/build-msix.ps1 -BundleDir artifacts -BundleVersion $env:MSIX_VERSION -BundleOut bundle/Chess.msixbundle
+      shell: pwsh
+
+    - name: How to install this artifact
+      shell: pwsh
+      run: |
+        @"
+        ### Chess $env:MSIX_VERSION (unsigned)
+
+        The Store re-signs on certification, so CI builds are unsigned and **cannot be installed as
+        downloaded** -- there is no click-through for an untrusted MSIX. To try this build:
+
+        ``````powershell
+        ./packaging/windows/msix/build-msix.ps1 -SignPackage Chess.msixbundle
+        # once, ELEVATED, to trust the throwaway certificate:
+        Import-Certificate -FilePath Chess.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople
+        # then, no elevation:
+        Add-AppxPackage Chess.msixbundle
+        ``````
+        "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: chess-msix
+        path: |
+          bundle/Chess.msixbundle
+          artifacts/Chess-*.msix
+        retention-days: 14
+
   # Gating: only ship binaries to a GitHub Release on an explicit dispatch, and only when tests
   # passed AND all six publish legs succeeded. Previously this job needed nothing but `publish`,
   # which was gated on main+push alone -- so every merge cut a release. That produced 90 of them
