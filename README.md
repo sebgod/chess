@@ -14,7 +14,7 @@ A chess game with browser (WebGL), terminal (Sixel), and Vulkan GUI rendering ba
 - **Terminal app**: graphical board rendered using FreeType2 and the [Sixel](https://en.wikipedia.org/wiki/Sixel) protocol (no ImageMagick dependency)
 - **Vulkan GUI app**: standalone windowed app using SDL3 + Vortice.Vulkan
 - **Browser app**: the full engine compiled to WebAssembly, rendered with WebGL2 — [play online](https://sebgod.github.io/chess/), nothing to install
-- **Play by Link**: serverless correspondence chess (browser) — the whole game travels in the URL, so you can play someone on the other side of the planet by swapping links over any messenger. No accounts, no server, no logins
+- **Play by Link**: serverless correspondence chess in the **browser, the GUI and the terminal** — the whole game travels in the URL, so you can play someone on the other side of the planet by swapping links over any messenger. No accounts, no server, no logins
 - **Play online** (browser): the same correspondence game, delivered for you — post a game in the lobby, or send a link, and moves arrive as they are played. Still no sign-up and no password: you are an anonymous player the moment you open the lobby. The one thing a link cannot do is find you an opponent you have not already met
 - Move history panel with algebraic notation — click any move or use Ctrl+Arrow to review past positions
 - Cross-platform: Windows, Linux, and macOS (x64 and ARM64)
@@ -81,6 +81,21 @@ dotnet test -c Release
 | `F1` | Toggle help |
 
 Select a piece by typing its file + rank (e.g. `e2`), then type the target square (e.g. `e4`) to move. When a piece is already selected, typing just a rank moves it along the same file.
+
+### Play by Link (terminal app)
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+L` | Copy the reply link for the game as it stands |
+| `Ctrl+O` | Open a link your opponent sent you |
+
+Or start straight from a link: `chess-console --link "https://sebgod.github.io/chess/#g=e2e4"`.
+
+The copy goes through the terminal's own clipboard (OSC 52), which works over SSH but is disabled by
+default in a few terminals — if nothing lands, that is a terminal setting, not an error the app can
+see. `Ctrl+O` opens a prompt you paste into with whatever your terminal uses for paste; it is
+deliberately **not** bound to `Ctrl+V`, which is the paste shortcut itself in Windows Terminal and
+others.
 
 ### Playback
 

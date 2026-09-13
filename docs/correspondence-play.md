@@ -841,6 +841,7 @@ that no one later reaches for a server-side "anti-cheat" that this architecture 
 |---|---|---|---|
 | 1 | **Link play in the GUI**, end to end and with no new plumbing: `args` on `Program.cs`, `StartupWizardOptions.LinkPlay` on `VkStartupMenu`, paste-a-link (Ctrl+V, `SDL.GetClipboardText`), the turn semantics above, and "copy reply link" (Ctrl+L, `SDL.SetClipboardText`) | chess | **Done** — live-verified, see below |
 | 2 | **The inbox:** multi-slot store (`GameInbox`) + a "your move" list + staleness, and the GUI picker over it | chess | **Done** — live-verified |
+| 1b | **Link play in the terminal:** the same phase-1 semantics in Chess.Console — `--link`, a wizard entry, Ctrl+L to copy (OSC 52) and Ctrl+O to open a prompt the terminal's own paste fills | chess | **Done** |
 | 3a | **Cloud courier in the browser:** Firebase JS SDK via `[JSImport]`, anonymous auth, the schema and rules above, lobby UI in `Play.razor`, the README wording | chess | **Done** — lobby + `#c=` link, 4 browser E2E tests, live-verified |
 | 3b | **Cloud courier on Android:** REST + SSE in `Chess.Net`, the `ILobby` extraction + `ISessionConnection` rename, a second API key with no referrer restriction, a cloud lobby beside the LAN one in `MainActivity` | chess | Not started |
 | 4 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, building or reusing the drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | Not started |

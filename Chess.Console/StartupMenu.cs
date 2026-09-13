@@ -15,8 +15,11 @@ internal class StartupMenu(IVirtualTerminal terminal, TimeProvider timeProvider)
 {
     protected override async Task<(GameMode Mode, Side ComputerSide, Side SideToMove, Difficulty Difficulty)> ShowAsyncCore(CancellationToken cancellationToken)
     {
-        // The console can open sockets, so it offers LAN "Network game" (routes into ConsoleLanLobby).
-        var wizard = new StartupWizard(StartupWizardOptions.NetworkPlay);
+        // The console can open sockets, so it offers LAN "Network game" (routes into ConsoleLanLobby),
+        // and it can carry a link, so it offers "Play by Link" too. The link courier needs nothing
+        // from the host but a clipboard and somewhere to type -- OSC 52 and a prompt, both of which a
+        // terminal has.
+        var wizard = new StartupWizard(StartupWizardOptions.NetworkPlay | StartupWizardOptions.LinkPlay);
         while (!wizard.IsComplete)
         {
             var (title, prompt, items) = wizard.Current;

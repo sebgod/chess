@@ -51,7 +51,18 @@ namespace Chess.Console;
 /// the paint pass exists to re-split gutters against the board's drawn width, and nothing here re-arranges
 /// often enough to benefit.)</para>
 /// </summary>
-internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
+/// <summary>
+/// The non-generic face of a console display's status bar. <see cref="ConsoleGameDisplayBase{TSurface}"/>
+/// is generic over its surface, so Sixel and ASCII share no concrete base a host can hold — which is
+/// the same reason <c>IPixelGameDisplay</c> exists on the other side of the family.
+/// </summary>
+internal interface IConsoleStatusDisplay
+{
+    /// <summary>Replaces the status text for one message; null restores <c>GameUI.StatusLine()</c>.</summary>
+    string? StatusOverride { get; set; }
+}
+
+internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay, IConsoleStatusDisplay
 {
     /// <summary>
     /// Snapshot of rendering performance counters, split by pipeline stage so "is sixel the cost?"
@@ -283,10 +294,18 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay
 
     private int? HighlightPlyIndex => UI.Mode == GameUIMode.Playback ? UI.PlaybackPlyIndex : null;
 
+    /// <summary>
+    /// Replaces the status text for one message — a link copied, a link refused. Mirrors
+    /// <c>PixelGameDisplay.StatusOverride</c>, which the GUI and the browser already use for exactly
+    /// this, so link play says the same things on every front-end. Null restores
+    /// <see cref="GameUI.StatusLine"/>, which is otherwise the only source.
+    /// </summary>
+    public string? StatusOverride { get; set; }
+
     private void UpdateStatusBar(Game game)
     {
         // Canonical mode-aware text from GameUI; the leading space is terminal-cell padding.
-        var status = $" {UI.StatusLine()}";
+        var status = $" {StatusOverride ?? UI.StatusLine()}";
 
         var debugInfo = "";
         if (Stats is { } s)

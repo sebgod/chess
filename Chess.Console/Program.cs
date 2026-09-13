@@ -44,6 +44,11 @@ var renderSizeOption = new Option<uint>("--render-size")
     DefaultValueFactory = _ => 480
 };
 
+var linkOption = new Option<string?>("--link")
+{
+    Description = "Open a correspondence game link (a sebgod.github.io/chess URL, a chess:// one, or a bare '#g=...' fragment)"
+};
+
 var renderMoveOption = new Option<string?>("--move")
 {
     Description = "UCI move to display as arrow overlay (e.g. 'e2e4')"
@@ -57,7 +62,8 @@ var rootCommand = new RootCommand("Terminal chess game with Sixel graphics")
     boardOption,
     renderFenOption,
     renderSizeOption,
-    renderMoveOption
+    renderMoveOption,
+    linkOption
 };
 
 rootCommand.Validators.Add(result =>
@@ -71,6 +77,11 @@ rootCommand.Validators.Add(result =>
         result.AddError("--side is required when --mode is 'pvc' or 'custom'.");
     }
 });
+
+// The action returns Task, not Task<int>, and InvokeAsync's own result becomes the process exit code
+// -- so Environment.ExitCode set inside the action is overwritten. A failure that reports itself and
+// still exits 0 is invisible to anything scripting this.
+var exitCode = 0;
 
 rootCommand.SetAction(async (parseResult, cancellationToken) =>
 {
@@ -143,6 +154,26 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
     }
 #endif
 
+    // Play by Link: the courier the console did not have. Shared across restarts because a received
+    // link ENDS one session and starts the next -- the game it decodes cannot be installed into the
+    // session that was running when the key was pressed.
+    var link = new LinkPlay(terminal);
+
+    if (parseResult.GetValue(linkOption) is { } linkArg)
+    {
+        var decoded = GameLinkCodec.TryDecode(linkArg, out var linkGame, out var linkError);
+        if (decoded is not GameLinkResult.Ok)
+        {
+            await System.Console.Error.WriteLineAsync(decoded is GameLinkResult.NoLink
+                ? "--link doesn't look like a game link (it needs a '#g=' part)."
+                : $"--link is not a valid game: {linkError}");
+            exitCode = 1;
+            return;
+        }
+
+        link.Pending = linkGame;
+    }
+
     var restart = true;
     while (restart && !cancellationToken.IsCancellationRequested)
     {
@@ -151,8 +182,20 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
         Side sideToMove;
         var difficulty = Difficulty.Normal;
 
+        // "Receiving a link means it is your turn" -- so the local side is whoever is to move in the
+        // decoded position, and GameSession states that rule once for all three front-ends.
+        Game? resumeGame = null;
         var modeArg = parseResult.GetValue(modeOption);
-        if (modeArg is null)
+
+        if (link.Pending is { } received)
+        {
+            gameMode = GameMode.PlayByLink;
+            computerSide = GameSession.CorrespondentSideFor(received);
+            sideToMove = Side.White;
+            resumeGame = received;
+            link.Pending = null;
+        }
+        else if (modeArg is null)
         {
             var startupMenu = new StartupMenu(terminal, timeProvider);
             (gameMode, computerSide, sideToMove, difficulty) = await startupMenu.ShowAsync(cancellationToken);
@@ -192,7 +235,14 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
         }
 
         Func<IGameDisplay> displayFactory = () =>
-            imageCapability is ImageDisplayCapability.Sixel ? new SixelGameDisplay(terminal) : new AsciiDisplay(terminal);
+        {
+            var display = imageCapability is ImageDisplayCapability.Sixel
+                ? (IGameDisplay)new SixelGameDisplay(terminal)
+                : new AsciiDisplay(terminal);
+            // So a copied link, or a refused one, can say so in the status bar.
+            link.Display = display as IConsoleStatusDisplay;
+            return display;
+        };
 
         GameLoop gameLoop;
         if (netSession is { } session)
@@ -205,13 +255,23 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
             gameLoop = new GameLoop(
                 timeProvider,
                 displayFactory,
-                () => new HumanPlayer(terminal),
+                () => new HumanPlayer(terminal, link),
                 (cs, tp) => new UciPlayer(UciPlayer.DefaultEnginePath, cs, tp, difficulty)
             );
         }
 
-        restart = await gameLoop.RunAsync(gameMode, computerSide, sideToMove, cancellationToken);
+        restart = await gameLoop.RunAsync(gameMode, computerSide, sideToMove, cancellationToken, resumeGame);
+
+        // Ctrl+O during a game ends the session and lands here, which is the only place a link can
+        // become the next one. Cancelling the prompt simply falls through to the menu.
+        if (link.PasteRequested)
+        {
+            link.PasteRequested = false;
+            link.Pending = await new ConsoleLinkPrompt(terminal, timeProvider).ShowAsync(cancellationToken);
+            restart = true;
+        }
     }
 });
 
-return await rootCommand.Parse(args).InvokeAsync();
+var parseExitCode = await rootCommand.Parse(args).InvokeAsync();
+return parseExitCode != 0 ? parseExitCode : exitCode;

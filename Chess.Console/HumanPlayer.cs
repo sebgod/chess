@@ -12,7 +12,7 @@ namespace Chess.Console;
 /// <see cref="GameUI.HandleMouseDown"/>, <see cref="GameUI.HandlePointerUp"/>,
 /// <see cref="GameUI.HandlePointerMove"/> and <see cref="GameUI.HandleMouseWheel"/>.
 /// </summary>
-internal sealed class HumanPlayer(IVirtualTerminal terminal) : IGamePlayer
+internal sealed class HumanPlayer(IVirtualTerminal terminal, LinkPlay? link = null) : IGamePlayer
 {
     /// <summary>
     /// Damage from motion events whose render was skipped, unioned as it accumulates. See the
@@ -35,6 +35,31 @@ internal sealed class HumanPlayer(IVirtualTerminal terminal) : IGamePlayer
         // the flush would routinely leave a drag's last frame unpainted until something else happened.
         if (inputEvt is null)
             return Result(Coalesce(inputEvt: null, UIResponse.None, []));
+
+        // Host-level keys, taken before GameUI sees them — the same division the GUI makes, where
+        // Ctrl+L/Ctrl+V live in the window's handler and never reach the board.
+        //
+        // Ctrl+O, not Ctrl+V, for "open a link". In a terminal Ctrl+V is very often the HOST's paste
+        // shortcut (Windows Terminal binds it by default), so an app that claimed it would be fighting
+        // the one keystroke the user needs to get the link in. The prompt this opens is filled by the
+        // terminal's own paste, whatever that happens to be.
+        if (link is not null && inputEvt is InputEvent.KeyDown { Modifiers: var mods } key
+            && mods.HasFlag(InputModifier.Ctrl))
+        {
+            if (key.Key is InputKey.L)
+            {
+                link.CopyReplyLink(ui);
+                return Result((UIResponse.NeedsRefresh, []));
+            }
+
+            if (key.Key is InputKey.O)
+            {
+                // The session has to unwind before a new one can be built from the link, so this ends
+                // it and the host takes over -- the same route the GUI's paste takes.
+                link.RequestPaste();
+                return Result((UIResponse.NeedsRestart, []));
+            }
+        }
 
 #if CONSOLE_INSPECTOR
         var selectedBefore = ui.Selected;
