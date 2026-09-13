@@ -72,6 +72,10 @@ internal sealed class FakeCloudStore
 
     public Func<string, string?, bool>? Refuse { get; set; }
 
+    /// <summary>Stands in for the server's clock, which is what <c>{".sv": "timestamp"}</c> asks
+    /// for — so a test can post a row and then age it.</summary>
+    public TimeProvider Time { get; set; } = TimeProvider.System;
+
     /// <summary>Every write the store accepted, for asserting what a client actually sent.</summary>
     public List<(string Path, string? Json)> Writes { get; } = [];
 
@@ -169,6 +173,15 @@ internal sealed class FakeCloudStore
         switch (value.ValueKind)
         {
             case JsonValueKind.Object:
+                // {".sv": "timestamp"} is a server-side placeholder, not data: the real database
+                // replaces it with its own clock on write. Modelling it means a client's `updated`
+                // field behaves here as it does there, which is what the staleness filter reads.
+                if (value.TryGetProperty(".sv", out var sv) && sv.ValueKind == JsonValueKind.String)
+                {
+                    _leaves[path] = Time.GetUtcNow().ToUnixTimeMilliseconds()
+                        .ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    break;
+                }
                 foreach (var member in value.EnumerateObject())
                     Expand($"{path}/{member.Name}", member.Value);
                 break;

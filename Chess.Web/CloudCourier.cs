@@ -1,8 +1,8 @@
 using System.Runtime.InteropServices.JavaScript;
-using System.Security.Cryptography;
 using System.Runtime.Versioning;
 using System.Text.Json;
 using Chess.Lib;
+using Chess.UCI;
 
 namespace Chess.Web;
 
@@ -266,19 +266,10 @@ internal static partial class CloudCourier
         }
     }
 
-    /// <summary>
-    /// A fresh game id: URL-safe, unguessable enough that nobody stumbles into someone else's game,
-    /// and short enough to live in a link. It is NOT a secret — the rules decide who may read a
-    /// game, not whether the id can be found — so this only has to avoid collisions.
-    /// </summary>
-    public static string NewGameId()
-    {
-        const string Alphabet = "abcdefghijkmnopqrstuvwxyz23456789"; // no l/1/0/o: these get read aloud
-        var id = new char[12];
-        var bytes = RandomNumberGenerator.GetBytes(id.Length);
-        for (var i = 0; i < id.Length; i++) id[i] = Alphabet[bytes[i] % Alphabet.Length];
-        return new string(id);
-    }
+    /// <summary>A fresh game id. The grammar lives with the rest of the link format in
+    /// <see cref="GameLinkCodec"/>, because the native courier mints these too and two copies of an
+    /// id alphabet drift into a game only one front-end can name.</summary>
+    public static string NewGameId() => GameLinkCodec.NewCloudGameId();
 
     [JSImport("init", Module)]
     private static partial Task<string> InitJs(string configJson);

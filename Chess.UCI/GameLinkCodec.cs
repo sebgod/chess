@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Chess.Lib;
 using Action = Chess.Lib.Action;
 
@@ -60,6 +61,24 @@ public static class GameLinkCodec
     /// <summary>The "#c=…" fragment naming a cloud game — the link that starts one.</summary>
     public static string EncodeCloudFragment(string gameId) =>
         $"#{CloudKey}{KeyValueSeparator}{gameId}";
+
+    /// <summary>
+    /// A fresh cloud game id: URL-safe, unguessable enough that nobody stumbles into someone else's
+    /// game, and short enough to live in a link. It is NOT a secret — the rules decide who may read a
+    /// game, not whether its id can be found — so this only has to avoid collisions.
+    ///
+    /// <para>It lives beside the fragment grammar rather than in a front-end because both couriers
+    /// mint these, and two copies of an id alphabet is exactly the kind of thing that drifts into a
+    /// game only one of them can name.</para>
+    /// </summary>
+    public static string NewCloudGameId()
+    {
+        const string Alphabet = "abcdefghijkmnopqrstuvwxyz23456789"; // no l/1/0/o: these get read aloud
+        var id = new char[12];
+        var bytes = RandomNumberGenerator.GetBytes(id.Length);
+        for (var i = 0; i < id.Length; i++) id[i] = Alphabet[bytes[i] % Alphabet.Length];
+        return new string(id);
+    }
 
     /// <summary>
     /// Pulls a cloud game id out of whatever shape a link arrived in, or returns false. Kept here

@@ -772,6 +772,46 @@ not.
 opposite — which in the cloud is literally true, because the invitee claims the seat the inviter left
 empty.
 
+#### Done — and `/invites` turned out not to be needed yet
+
+`CloudLobby` implements `ILobby` with **no new interface members**, and the reason is the sentence
+above about discovery: on the LAN, being visible is what `Start()` does, and `/open/{uid}` is that
+beacon persisted. So the cloud's `Start()` signs in, creates a game with our seat taken, and
+advertises it; `Peers` is everyone else's postings; and `Invite(peer)` claims the empty seat, which is
+the handshake's whole length. The three front-end lobby screens drive it through the same six calls
+they drive `LanLobby` through.
+
+Which means **`IncomingInvite` and `Declined` are unreachable for this courier**, and the `/invites`
+subtree — rules written, 6 emulator tests passing — has no producer. That is not a gap: a directed
+invitation needs somebody visible who has *not* posted, which is a presence table `/open` is not.
+Building the path before that exists would be plumbing with nothing flowing through it, the same
+objection this document raises against doing the instance gate early. The rules can wait; they cost
+nothing sitting there.
+
+Three consequences worth recording:
+
+- **A filled posting is withdrawn by its poster**, because only the poster may write
+  `/open/{poster}`. A poster who is offline when their seat is claimed cannot, so the row lingers,
+  somebody tries to claim a game that is full, and the rules refuse it — the lobby says the game was
+  taken, and the row goes the next time its poster opens the app. Self-healing; the alternative is a
+  rules change letting a claimer write someone else's row.
+- **Leaving the lobby unclaimed removes both rows**, the posting and the one-seat game. Otherwise
+  every visit would leave a game behind for ever, on a free tier whose whole appeal is that it caps
+  rather than bills. A game that *is* being played survives, exactly as a LAN session's socket
+  survives the lobby that produced it.
+- **A claimed seat cannot be given back.** The rules only allow writing a seat that is empty, so
+  `Cancel()` arriving while a claim is in flight does not undo it — and should not: somebody now has
+  an opponent. The window is one write long.
+
+Postings are hidden after **7 days**, judged when the list is read rather than when a row arrives, so
+a posting that ages out while somebody sits in the lobby leaves it rather than waiting for the next
+delivery. Shorter than the browser's 120-day game staleness on purpose: that measures a game somebody
+is still playing, this measures an invitation nobody took.
+
+One small de-duplication went with it: the cloud game id is minted by `GameLinkCodec.NewCloudGameId()`
+now, beside the `#c=` grammar it belongs to, rather than once in each front-end. Two copies of an id
+alphabet drift into a game only one of them can name.
+
 **Post → claim does not go away; it becomes the same path with the invite step skipped.** Claiming
 straight from the `/open` list is `Accept()` with no prior `Invite()`. That is also what LAN already
 does at the discovery layer: a peer's UDP beacon is a standing "I am here and playable" broadcast, and
@@ -940,7 +980,7 @@ that no one later reaches for a server-side "anti-cheat" that this architecture 
 | 2 | **The inbox:** multi-slot store (`GameInbox`) + a "your move" list + staleness, and the GUI picker over it | chess | **Done** — live-verified |
 | 1b | **Link play in the terminal:** the same phase-1 semantics in Chess.Console — `--link`, a wizard entry, Ctrl+L to copy (OSC 52) and Ctrl+O to open a prompt the terminal's own paste fills | chess | **Done** |
 | 3a | **Cloud courier in the browser:** Firebase JS SDK via `[JSImport]`, anonymous auth, the schema and rules above, lobby UI in `Play.razor`, the README wording | chess | **Done** — lobby + `#c=` link, 4 browser E2E tests, live-verified |
-| 3b | **Cloud courier on Android:** REST + SSE in `Chess.Net`, the `ILobby` extraction + `ISessionConnection` rename, a second API key with no referrer restriction, a cloud lobby beside the LAN one in `MainActivity` | chess | **In progress** — `ILobby` + `ISessionConnection` done (see below); transport, key and lobby to come |
+| 3b | **Cloud courier on Android:** REST + SSE in `Chess.Net`, the `ILobby` extraction + `ISessionConnection` rename, a second API key with no referrer restriction, a cloud lobby beside the LAN one in `MainActivity` | chess | **In progress** — `ILobby`, `ISessionConnection`, the REST/SSE transport and `CloudLobby`/`CloudPlayStack` are done; what is left is the second API key (a console action) and wiring the lobby into `MainActivity` |
 | 4 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, building or reusing the drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | **Done** — live-verified, including the minimized case |
 | 5 | *Optional cleanup:* a public, non-`DEBUG` per-iteration hook on `SdlEventLoop` so the drain stops living in a side-effecting predicate | SdlVulkan.Renderer | Not started |
 
