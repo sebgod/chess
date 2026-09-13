@@ -105,6 +105,39 @@ jobs:
     - name: Build Chess.Droid
       run: dotnet build Chess.Droid/Chess.Droid.csproj -c Release -p:UseLocalSiblings=false --nologo
 
+  # The database security rules are the ONLY logic in this repository that does not live in the C#
+  # tree, and the only part a client cannot re-check for itself: a client that believes the history
+  # is append-only is no use if the server disagrees. Nothing else can catch a regression in them,
+  # which is the same argument that earns the `android` job above its keep.
+  #
+  # No Firebase account, project, login or secret is involved, and that was VERIFIED rather than
+  # assumed: the suite passes 23/23 with HOME pointed at an empty directory, and the config store it
+  # creates there holds one key (`motd`). The "demo-" project id prefix is what makes the emulator
+  # run fully offline.
+  rules:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: firebase
+    steps:
+    - uses: actions/checkout@v7
+    # firebase-tools needs a JDK 21+ to run the database emulator. This pin is independent of the
+    # `android` job's JDK 17 because they are separate jobs on separate runners -- the conflict only
+    # exists on a developer's single machine, where the fix is PATH for one command and never
+    # JAVA_HOME (see firebase/rules.test.mjs).
+    - uses: actions/setup-java@v5
+      with:
+        distribution: temurin
+        java-version: '21'
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: npm
+        cache-dependency-path: firebase/package-lock.json
+    # `npm ci`, not `npm install`: the point of a gate job is to run what the lockfile pins.
+    - run: npm ci
+    - run: npm test
+
   publish:
     needs: test
     if: github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push')

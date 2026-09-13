@@ -2,10 +2,11 @@
 //
 // These exist because the rules are the ONLY piece of the correspondence design that does not live
 // in the C# tree, and the one part a client cannot re-check for itself: a client that believes the
-// history is append-only is no use if the server disagrees. They are deliberately not part of the
-// dotnet suite -- they need the emulator and a JVM, which CI for the game does not have.
+// history is append-only is no use if the server disagrees. They are not part of the dotnet suite --
+// they need the emulator and a JVM -- but CI does run them, in its own `rules` job (which installs a
+// JDK 21 for exactly this; see .github/workflows/dotnet-desktop.yml).
 //
-//   npm install          (once)
+//   npm ci               (once; firebase-tools is a devDependency, so this is all you need)
 //   npm test             (starts the emulator, runs this, shuts it down)
 //
 // JDK TRAP: firebase-tools needs Java 21+, and this repo's Android head pins JDK **17** (a newer JDK
@@ -15,8 +16,10 @@
 //
 //   PATH="/c/Program Files/Microsoft/jdk-25.0.2.10-hotspot/bin:$PATH" npm test
 //
-// No Firebase account, project or login is involved: the "demo-" project id prefix makes the
-// emulator run fully offline.
+// No Firebase account, project, login or secret is involved, and that is checked rather than
+// assumed: this suite passes 23/23 with HOME pointed at an empty directory, and the config store
+// firebase-tools creates there holds exactly one key (`motd`). The "demo-" project id prefix is what
+// makes the emulator run fully offline -- which is also why CI can run it with nothing configured.
 
 import { readFileSync } from 'node:fs';
 import test, { after, before, beforeEach } from 'node:test';
