@@ -25,7 +25,7 @@ public sealed class TcpSessionTransport : ISessionTransport
 
     public int ListenPort { get; }
 
-    public event Action<ILanConnection>? ConnectionAccepted;
+    public event Action<ISessionConnection>? ConnectionAccepted;
 
     public TcpSessionTransport()
     {
@@ -36,11 +36,11 @@ public sealed class TcpSessionTransport : ISessionTransport
         _ = AcceptLoopAsync(_cts.Token);
     }
 
-    public async Task<ILanConnection> ConnectAsync(IPEndPoint endPoint, CancellationToken ct = default)
+    public async Task<ISessionConnection> ConnectAsync(IPEndPoint endPoint, CancellationToken ct = default)
     {
         var client = new TcpClient();
         await client.ConnectAsync(endPoint.Address, endPoint.Port, ct);
-        return new TcpLanConnection(client);
+        return new TcpSessionConnection(client);
     }
 
     private async Task AcceptLoopAsync(CancellationToken ct)
@@ -50,7 +50,7 @@ public sealed class TcpSessionTransport : ISessionTransport
             try
             {
                 var client = await _listener.AcceptTcpClientAsync(ct);
-                ConnectionAccepted?.Invoke(new TcpLanConnection(client));
+                ConnectionAccepted?.Invoke(new TcpSessionConnection(client));
             }
             catch (OperationCanceledException) { break; }
             catch (ObjectDisposedException) { break; }
@@ -67,9 +67,9 @@ public sealed class TcpSessionTransport : ISessionTransport
     }
 }
 
-/// <summary>A real TCP-backed <see cref="ILanConnection"/> — one background reader raising a line at
+/// <summary>A real TCP-backed <see cref="ISessionConnection"/> — one background reader raising a line at
 /// a time, and a locked writer with newline framing.</summary>
-internal sealed class TcpLanConnection : ILanConnection
+internal sealed class TcpSessionConnection : ISessionConnection
 {
     private readonly TcpClient _client;
     private readonly StreamReader _reader;
@@ -85,7 +85,7 @@ internal sealed class TcpLanConnection : ILanConnection
     public event Action<string>? LineReceived;
     public event Action? Closed;
 
-    public TcpLanConnection(TcpClient client)
+    public TcpSessionConnection(TcpClient client)
     {
         _client = client;
         _client.NoDelay = true; // moves are tiny and latency-sensitive — don't Nagle-buffer them
@@ -93,7 +93,7 @@ internal sealed class TcpLanConnection : ILanConnection
         var stream = client.GetStream();
         _reader = new StreamReader(stream, Encoding.UTF8);
         _writer = new StreamWriter(stream, new UTF8Encoding(false)) { AutoFlush = true };
-        // NOT started here — see ILanConnection.StartReceiving.
+        // NOT started here — see ISessionConnection.StartReceiving.
     }
 
     public void StartReceiving()

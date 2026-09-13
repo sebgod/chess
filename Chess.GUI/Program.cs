@@ -685,7 +685,7 @@ using var inspector = DebugInspector.Attach(loop, new DebugInspectorOptions
         if (lobby is not null)
         {
             s.Set("lobbyState", lobby.State.ToString());
-            s.Set("peers", string.Join(", ", lobby.Peers.Select(p => p.DisplayName)));
+            s.Set("peers", string.Join(", ", lobby.Peers.Select(p => p.Label)));
         }
         if (display is not null)
         {

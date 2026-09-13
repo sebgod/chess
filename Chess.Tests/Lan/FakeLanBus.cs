@@ -57,7 +57,7 @@ internal sealed class FakeLanNode
     {
         Address = address;
         Discovery = new FakeDiscoveryTransport(bus, this);
-        Session = new FakeSessionTransport(bus, this, listenPort);
+        Session = new FakeSessionTransport(bus, listenPort);
     }
 
     public IPAddress Address { get; }
@@ -87,22 +87,20 @@ internal sealed class FakeDiscoveryTransport(FakeLanBus bus, FakeLanNode node) :
 
 /// <summary>The TCP half: a "connect" finds the target node by port and hands both ends a paired
 /// in-memory connection.</summary>
-internal sealed class FakeSessionTransport(FakeLanBus bus, FakeLanNode node, int listenPort) : ISessionTransport
+internal sealed class FakeSessionTransport(FakeLanBus bus, int listenPort) : ISessionTransport
 {
     public int ListenPort { get; } = listenPort;
 
-    public event Action<ILanConnection>? ConnectionAccepted;
+    public event Action<ISessionConnection>? ConnectionAccepted;
 
-    public Task<ILanConnection> ConnectAsync(IPEndPoint endPoint, CancellationToken ct = default)
+    public Task<ISessionConnection> ConnectAsync(IPEndPoint endPoint, CancellationToken ct = default)
     {
         var target = bus.FindByPort(endPoint.Port)
             ?? throw new SocketException((int)SocketError.ConnectionRefused);
 
         var (mine, theirs) = FakeLanConnection.CreatePair(bus);
-        mine.RemoteEndPoint = endPoint;
-        theirs.RemoteEndPoint = new IPEndPoint(node.Address, ListenPort);
         target.Session.ConnectionAccepted?.Invoke(theirs);
-        return Task.FromResult<ILanConnection>(mine);
+        return Task.FromResult<ISessionConnection>(mine);
     }
 
     public ValueTask DisposeAsync() => ValueTask.CompletedTask;
@@ -110,9 +108,8 @@ internal sealed class FakeSessionTransport(FakeLanBus bus, FakeLanNode node, int
 
 /// <summary>A synchronous in-memory duplex connection: what one end sends is delivered to the other
 /// immediately (deterministic ordering, no threads).</summary>
-internal sealed class FakeLanConnection : ILanConnection
+internal sealed class FakeLanConnection : ISessionConnection
 {
-    public IPEndPoint RemoteEndPoint { get; set; } = new(IPAddress.Loopback, 0);
     public bool IsConnected { get; private set; } = true;
 
     /// <summary>Everything sent from this end (for assertions).</summary>

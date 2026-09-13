@@ -1,29 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
+using System.Threading.Tasks;
 using Chess.Lib;
 using LAN.Lib;
 
 namespace Chess.Net;
 
-/// <summary>Where the lobby is in the invite dance. Front-ends poll <see cref="LanLobby.State"/> each
-/// frame and render accordingly.</summary>
-public enum LobbyState
-{
-    Browsing,        // showing the peer list; can invite or receive an invite
-    Inviting,        // we dialed a peer and are waiting for Accept/Decline
-    IncomingInvite,  // a peer invited us; awaiting our Accept/Decline (see Incoming)
-    Connecting,      // we accepted; ACCEPT is going out (see Accept) — Session is not published yet
-    Connected,       // Session is ready — start the game
-    Declined,        // our invite was declined
-    Failed,          // couldn't reach the peer / it went away
-}
-
-/// <summary>Details of an invite we've received, surfaced while <see cref="LanLobby.State"/> is
-/// <see cref="LobbyState.IncomingInvite"/>.</summary>
-public sealed record IncomingInvite(string PeerName, Side YourSide);
-
 /// <summary>
-/// Orchestrates discovery + the invite/accept handshake into a ready <see cref="NetworkSession"/>.
+/// The LAN implementation of <see cref="ILobby"/>: orchestrates discovery + the invite/accept
+/// handshake into a ready <see cref="NetworkSession"/>.
 /// Kept separate from <c>StartupWizard</c> on purpose: the lobby is live and asynchronous (a peer
 /// list that updates, invites that arrive unprompted), which the wizard's synchronous
 /// <c>Confirm(int)</c> model can't express — the wizard only routes the user *into* this.
@@ -41,7 +27,7 @@ public sealed record IncomingInvite(string PeerName, Side YourSide);
 /// are volatile; multi-field transitions take <c>_lock</c> so an inbound invite and an outbound one
 /// can't interleave.</para>
 /// </summary>
-public sealed class LanLobby : IAsyncDisposable
+public sealed class LanLobby : ILobby
 {
     private readonly ISessionTransport _transport;
     private readonly LanDiscovery _discovery;
@@ -50,7 +36,7 @@ public sealed class LanLobby : IAsyncDisposable
     private readonly Side _preferredColor;
     private readonly object _lock = new();
 
-    private ILanConnection? _pending;
+    private ISessionConnection? _pending;
     private string _pendingPeerName = "";
     private Side _pendingLocalSide;
 
@@ -76,9 +62,24 @@ public sealed class LanLobby : IAsyncDisposable
     public string? StatusMessage => _statusMessage;
     public string LocalName => _localName;
 
-    /// <summary>The chess players on the LAN. Filtered by service: the discovery port is shared with
-    /// every other SharpAstro app, so an unfiltered table would list telescope rigs as opponents.</summary>
-    public IReadOnlyList<LanPeer> Peers => _discovery.PeersOf(SessionProtocol.ServiceName);
+    /// <summary>The chess players on the LAN, labelled for a menu. Filtered by service: the discovery
+    /// port is shared with every other SharpAstro app, so an unfiltered table would list telescope
+    /// rigs as opponents.</summary>
+    public IReadOnlyList<LobbyPeer> Peers
+    {
+        get
+        {
+            // ResolveLabels belongs here rather than in each front-end: it needs the WHOLE list to
+            // decide how far to disambiguate, and it answers positionally, so pairing each label back
+            // with its peer is precisely the step that was repeated in all three lobby screens.
+            var peers = _discovery.PeersOf(SessionProtocol.ServiceName);
+            var labels = LanPeer.ResolveLabels(peers);
+            var result = new LobbyPeer[peers.Count];
+            for (var i = 0; i < peers.Count; i++)
+                result[i] = new LobbyPeer(peers[i].PeerId, labels[i]);
+            return result;
+        }
+    }
 
     /// <summary>Begin announcing/listening. Fire-and-forget: the first beacon is a UDP send whose
     /// failures the transport already swallows (as does the timer that repeats it), so there is
@@ -86,20 +87,43 @@ public sealed class LanLobby : IAsyncDisposable
     public void Start() => _ = _discovery.StartAsync();
 
     /// <summary>Invite a discovered peer to play (we become the inviter; our colour stands).</summary>
-    public async void Invite(LanPeer peer)
+    public void Invite(LobbyPeer peer)
     {
         lock (_lock)
         {
             if (_state != LobbyState.Browsing) return;
             _state = LobbyState.Inviting;
-            _statusMessage = $"Inviting {peer.DisplayName}…";
-            _pendingPeerName = peer.DisplayName;
+            _statusMessage = $"Inviting {peer.Label}…";
+            _pendingPeerName = peer.Label;
             _pendingLocalSide = _preferredColor;
         }
 
+        // Resolve the id back to a live peer only now. The list the user picked from was drawn a frame
+        // ago, and a peer that has stopped beaconing since is already out of the table — which this
+        // reports as "went away" instead of dialing an address nobody is listening on any more.
+        LanPeer? target = null;
+        foreach (var candidate in _discovery.PeersOf(SessionProtocol.ServiceName))
+        {
+            if (candidate.PeerId == peer.Id) { target = candidate; break; }
+        }
+
+        if (target is null)
+        {
+            Fail($"{peer.Label} went away");
+            return;
+        }
+
+        // Dialing is asynchronous but nothing awaits the lobby: the result lands in _state, which the
+        // caller is polling anyway. The body catches everything, so the discarded task can't carry an
+        // exception away unobserved (which is the whole reason this is not `async void`).
+        _ = DialAsync(target.EndPoint, peer.Label);
+    }
+
+    private async Task DialAsync(IPEndPoint endPoint, string label)
+    {
         try
         {
-            var conn = await _transport.ConnectAsync(peer.EndPoint);
+            var conn = await _transport.ConnectAsync(endPoint);
             lock (_lock)
             {
                 if (_state != LobbyState.Inviting) { conn.Dispose(); return; } // cancelled while dialing
@@ -107,12 +131,12 @@ public sealed class LanLobby : IAsyncDisposable
                 conn.LineReceived += OnInviteReply;
                 conn.Closed += OnPendingClosed;
             }
-            conn.StartReceiving(); // handlers are wired — safe to deliver (see ILanConnection)
+            conn.StartReceiving(); // handlers are wired — safe to deliver (see ISessionConnection)
             conn.Send(SessionProtocol.EncodeInvite(_identity.PeerId, _localName, _pendingLocalSide));
         }
         catch
         {
-            Fail($"Couldn't reach {peer.DisplayName}");
+            Fail($"Couldn't reach {label}");
         }
     }
 
@@ -129,7 +153,7 @@ public sealed class LanLobby : IAsyncDisposable
     /// </summary>
     public void Accept()
     {
-        ILanConnection conn;
+        ISessionConnection conn;
         NetworkSession session;
         lock (_lock)
         {
@@ -174,7 +198,7 @@ public sealed class LanLobby : IAsyncDisposable
     /// <summary>Decline the invite currently in <see cref="Incoming"/>.</summary>
     public void Decline()
     {
-        ILanConnection conn;
+        ISessionConnection conn;
         lock (_lock)
         {
             if (_state != LobbyState.IncomingInvite || _pending is null) return;
@@ -194,7 +218,7 @@ public sealed class LanLobby : IAsyncDisposable
     /// <summary>Back out of an in-flight invite (either direction) and return to browsing.</summary>
     public void Cancel()
     {
-        ILanConnection? conn;
+        ISessionConnection? conn;
         lock (_lock)
         {
             if (_state == LobbyState.Connected) return;
@@ -213,7 +237,7 @@ public sealed class LanLobby : IAsyncDisposable
         conn?.Dispose();
     }
 
-    private void OnInboundConnection(ILanConnection conn)
+    private void OnInboundConnection(ISessionConnection conn)
     {
         lock (_lock)
         {

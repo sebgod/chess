@@ -23,19 +23,24 @@ public interface ISessionTransport : IAsyncDisposable
 
     /// <summary>Raised when a remote peer opens a TCP session to us — an inbound invite (background
     /// thread). The handler owns the connection's lifetime from here on.</summary>
-    event Action<ILanConnection>? ConnectionAccepted;
+    event Action<ISessionConnection>? ConnectionAccepted;
 
     /// <summary>Dial a peer's TCP endpoint to open an outbound session (to send an invite).</summary>
-    Task<ILanConnection> ConnectAsync(IPEndPoint endPoint, CancellationToken ct = default);
+    Task<ISessionConnection> ConnectAsync(IPEndPoint endPoint, CancellationToken ct = default);
 }
 
 /// <summary>
-/// A duplex, line-oriented connection (one TCP socket): the invite handshake and then the move
-/// stream flow over it as <see cref="SessionProtocol"/> lines.
+/// A duplex, line-oriented channel carrying the invite handshake and then the move stream as
+/// <see cref="SessionProtocol"/> lines. On the LAN that is one TCP socket; it is named for the
+/// session rather than for the LAN because the cloud courier's channel — a REST write out, a
+/// server-sent event stream back — is the same four operations and the same line protocol.
+///
+/// <para>It says nothing about <i>where</i> the other end is, which is why there is no endpoint on
+/// it: a cloud peer has no address to report, and nothing ever read the TCP one (it lives on
+/// <see cref="TcpSessionConnection"/> for a debugger to look at).</para>
 /// </summary>
-public interface ILanConnection : IDisposable
+public interface ISessionConnection : IDisposable
 {
-    IPEndPoint RemoteEndPoint { get; }
     bool IsConnected { get; }
 
     /// <summary>Send one protocol line (the implementation adds newline framing). Thread-safe.</summary>

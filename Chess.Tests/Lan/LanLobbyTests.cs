@@ -46,8 +46,47 @@ public class LanLobbyTests
         var (alice, bob) = TwoVisiblePeers(bus, new FakeTimeProvider());
         await using var _a = alice; await using var _b = bob;
 
-        alice.Peers.Select(p => p.PeerId).ShouldContain("bob");
-        bob.Peers.Select(p => p.PeerId).ShouldContain("alice");
+        alice.Peers.Select(p => p.Id).ShouldContain("bob");
+        bob.Peers.Select(p => p.Id).ShouldContain("alice");
+    }
+
+    /// <summary>
+    /// A peer arrives at the front-end already labelled, and the label belongs to THAT peer. All three
+    /// lobby screens used to call <c>LanPeer.ResolveLabels</c> themselves and index the result back
+    /// against their own peer snapshot — three chances to pair a name with the wrong opponent, and
+    /// three things a second courier would have had to reimplement. (How far a label disambiguates is
+    /// LAN.Lib's business and is tested there; what matters here is that the pairing survives.)
+    /// </summary>
+    [Fact]
+    public async Task Peers_CarryTheirOwnLabel()
+    {
+        var bus = new FakeLanBus();
+        var (alice, bob) = TwoVisiblePeers(bus, new FakeTimeProvider());
+        await using var _a = alice; await using var _b = bob;
+
+        alice.Peers.Single(p => p.Id == "bob").Label.ShouldBe("Bob");
+        bob.Peers.Single(p => p.Id == "alice").Label.ShouldBe("Alice");
+    }
+
+    /// <summary>
+    /// The peer list is live and the tap is not: a player can pick someone who stopped beaconing
+    /// between the frame that drew them and the finger that chose them. Inviting by id — rather than
+    /// by the endpoint captured in that stale frame — is what lets the lobby say so, instead of
+    /// dialing an address nobody is listening on and waiting out a connect timeout.
+    /// </summary>
+    [Fact]
+    public async Task Invite_PeerNoLongerInTheTable_FailsWithoutDialing()
+    {
+        var bus = new FakeLanBus();
+        var (alice, bob) = TwoVisiblePeers(bus, new FakeTimeProvider());
+        await using var _a = alice; await using var _b = bob;
+
+        alice.Invite(new LobbyPeer("ghost", "Ghost"));
+
+        alice.State.ShouldBe(LobbyState.Failed);
+        alice.StatusMessage.ShouldBe("Ghost went away");
+        alice.Session.ShouldBeNull();
+        bob.State.ShouldBe(LobbyState.Browsing); // nobody was disturbed
     }
 
     [Fact]
@@ -57,7 +96,7 @@ public class LanLobbyTests
         var (alice, bob) = TwoVisiblePeers(bus, new FakeTimeProvider(), aliceColor: Side.White);
         await using var _a = alice; await using var _b = bob;
 
-        alice.Invite(alice.Peers.Single(p => p.PeerId == "bob"));
+        alice.Invite(alice.Peers.Single(p => p.Id == "bob"));
 
         // Alice (inviter) chose White, so Bob is offered Black.
         bob.State.ShouldBe(LobbyState.IncomingInvite);
@@ -84,7 +123,7 @@ public class LanLobbyTests
         var (alice, bob) = TwoVisiblePeers(bus, new FakeTimeProvider(), aliceColor: Side.Black);
         await using var _a = alice; await using var _b = bob;
 
-        alice.Invite(alice.Peers.Single(p => p.PeerId == "bob"));
+        alice.Invite(alice.Peers.Single(p => p.Id == "bob"));
         bob.Incoming!.YourSide.ShouldBe(Side.White);
         bob.Accept();
 
@@ -99,7 +138,7 @@ public class LanLobbyTests
         var (alice, bob) = TwoVisiblePeers(bus, new FakeTimeProvider());
         await using var _a = alice; await using var _b = bob;
 
-        alice.Invite(alice.Peers.Single(p => p.PeerId == "bob"));
+        alice.Invite(alice.Peers.Single(p => p.Id == "bob"));
         bob.Accept();
 
         alice.Session!.SendMove("e2e4");
@@ -125,7 +164,7 @@ public class LanLobbyTests
         var (alice, bob) = TwoVisiblePeers(bus, new FakeTimeProvider(), aliceColor: Side.Black);
         await using var _a = alice; await using var _b = bob;
 
-        alice.Invite(alice.Peers.Single(p => p.PeerId == "bob"));
+        alice.Invite(alice.Peers.Single(p => p.Id == "bob"));
         bob.Incoming!.YourSide.ShouldBe(Side.White);
 
         LobbyState? stateAtAccept = null;
@@ -162,7 +201,7 @@ public class LanLobbyTests
         var (alice, bob) = TwoVisiblePeers(bus, new FakeTimeProvider());
         await using var _a = alice; await using var _b = bob;
 
-        alice.Invite(alice.Peers.Single(p => p.PeerId == "bob"));
+        alice.Invite(alice.Peers.Single(p => p.Id == "bob"));
         bob.State.ShouldBe(LobbyState.IncomingInvite);
 
         bob.Decline();

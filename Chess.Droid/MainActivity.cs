@@ -11,7 +11,6 @@ using Chess.Lib.UI;
 using Chess.Net;
 using Chess.UCI;
 using DIR.Lib;
-using LAN.Lib;
 using SdlVulkan.Renderer;
 using static Android.Content.PM.ConfigChanges;
 using File = System.IO.File;
@@ -105,7 +104,7 @@ public sealed class MainActivity : SdlVulkanActivity
     // UDP broadcast at all. Lobby is built on the SDL thread via the _pendingLobby* flags so the name
     // dialog (UI thread) never touches renderer objects across threads.
     private LanPlayStack? _netLan;
-    private LanLobby? _netLobby;
+    private ILobby? _netLobby;
     private PixelMenuWidget<VulkanContext>? _lobbyMenu;
     private NetworkSession? _netSession;
     private Side _netLocalSide;
@@ -115,7 +114,7 @@ public sealed class MainActivity : SdlVulkanActivity
     private string _pendingLobbyName = "";
     private Side _pendingLobbyPreferred;
     private string _lobbyShownKey = "";
-    private LanPeer[] _lobbyPeers = [];
+    private LobbyPeer[] _lobbyPeers = [];
 
     // Tap-vs-drag tracking for the menus (see OnMouseDown): where the finger went down, and where it
     // was last seen. How far it may travel and still count as a tap — a finger's worth of wobble,
@@ -640,7 +639,7 @@ public sealed class MainActivity : SdlVulkanActivity
                 _lobbyPeers = [.. _netLobby.Peers];
                 title = "LAN Lobby";
                 prompt = _lobbyPeers.Length == 0 ? "Searching for players…" : "Tap a player to invite:";
-                items = [.. LanPeer.ResolveLabels(_lobbyPeers), "Back"];
+                items = [.. _lobbyPeers.Select(p => p.Label), "Back"];
                 break;
         }
 

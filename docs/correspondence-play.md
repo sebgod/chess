@@ -704,6 +704,30 @@ not a published package and has no external consumers, so renaming `ILanConnecti
 `ISessionConnection` is a free, mechanical change. Do it as part of this phase rather than leaving the
 next reader to wonder why the cloud opens a "LAN" connection.
 
+### Done — what the extraction actually came to
+
+`ILobby` is `LanLobby`'s surface unchanged (`State`, `Incoming`, `Session`, `StatusMessage`,
+`LocalName`, `Peers`, `Start`/`Invite`/`Accept`/`Decline`/`Cancel`), which is the outcome this section
+predicted once the handshakes were seen to be the same one. `LanLobby` implements it; `LanPlayStack`
+still hands out the concrete type, because the stack *is* LAN's — only the lobby is shared. Three
+things were decided while doing it, none of them obvious from the design above:
+
+- **`Peers` is `LobbyPeer(Id, Label)`, not `LanPeer`.** The label is already disambiguated against the
+  rest of the list, so a front-end renders the peer list straight into menu items. All three screens
+  used to call `LanPeer.ResolveLabels` themselves and index the result back against their own
+  snapshot — three chances to pair a name with the wrong opponent, and three things the cloud lobby
+  would have had to reimplement against a peer type it does not have.
+- **`Invite` takes the id and resolves it against the live table.** It used to take the `LanPeer` the
+  front-end had captured, endpoint and all. But a peer list is live and a tap is not: the peer chosen
+  may have stopped beaconing between the frame that drew it and the finger that picked it. Resolving
+  at invite time turns that into "X went away" instead of a dial to an address nobody is listening on.
+  It is also the only form the cloud can implement, since a uid is not an endpoint.
+- **`RemoteEndPoint` left the connection interface.** A cloud peer has no address to report, and
+  nothing ever read the TCP one — it stays on the concrete `TcpSessionConnection` for a debugger.
+
+Two tests came with it (`Peers_CarryTheirOwnLabel`, `Invite_PeerNoLongerInTheTable_FailsWithoutDialing`),
+the second covering behaviour that did not exist before. 603 + 59 green, and Chess.Droid builds.
+
 ## The cloud handshake is LAN's handshake
 
 The user's suggestion, and it is the right one: rather than draw `ILobby` above two different
@@ -843,7 +867,7 @@ that no one later reaches for a server-side "anti-cheat" that this architecture 
 | 2 | **The inbox:** multi-slot store (`GameInbox`) + a "your move" list + staleness, and the GUI picker over it | chess | **Done** — live-verified |
 | 1b | **Link play in the terminal:** the same phase-1 semantics in Chess.Console — `--link`, a wizard entry, Ctrl+L to copy (OSC 52) and Ctrl+O to open a prompt the terminal's own paste fills | chess | **Done** |
 | 3a | **Cloud courier in the browser:** Firebase JS SDK via `[JSImport]`, anonymous auth, the schema and rules above, lobby UI in `Play.razor`, the README wording | chess | **Done** — lobby + `#c=` link, 4 browser E2E tests, live-verified |
-| 3b | **Cloud courier on Android:** REST + SSE in `Chess.Net`, the `ILobby` extraction + `ISessionConnection` rename, a second API key with no referrer restriction, a cloud lobby beside the LAN one in `MainActivity` | chess | Not started |
+| 3b | **Cloud courier on Android:** REST + SSE in `Chess.Net`, the `ILobby` extraction + `ISessionConnection` rename, a second API key with no referrer restriction, a cloud lobby beside the LAN one in `MainActivity` | chess | **In progress** — `ILobby` + `ISessionConnection` done (see below); transport, key and lobby to come |
 | 4 | **`chess://` registration** (`--register-protocol`) + `InstanceGate` claim/hand-off + `WindowActivation.Activate`, building or reusing the drain; explicit `PackageReference` on `SharpAstro.AppShell` | chess | **Done** — live-verified, including the minimized case |
 | 5 | *Optional cleanup:* a public, non-`DEBUG` per-iteration hook on `SdlEventLoop` so the drain stops living in a side-effecting predicate | SdlVulkan.Renderer | Not started |
 

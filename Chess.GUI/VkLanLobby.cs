@@ -4,7 +4,6 @@ using Chess.Lib;
 using Chess.Lib.UI;
 using Chess.Net;
 using DIR.Lib;
-using LAN.Lib;
 using SdlVulkan.Renderer;
 
 namespace Chess.GUI;
@@ -18,7 +17,7 @@ namespace Chess.GUI;
 ///
 /// <para>Name entry is driven from KeyDown rather than SDL text-input events (the renderer never
 /// starts SDL text input): enough for a display name — letters (Shift = caps), digits, space, '-'/'_'.
-/// The lobby's content is derived from <see cref="LanLobby.State"/> every frame, so an invite that
+/// The lobby's content is derived from <see cref="ILobby.State"/> every frame, so an invite that
 /// arrives while browsing switches the screen on its own.</para>
 /// </summary>
 internal sealed class VkLanLobby : IWidget, IDisposable
@@ -34,14 +33,14 @@ internal sealed class VkLanLobby : IWidget, IDisposable
 
     // Built once the name is committed, so the beacon announces the final name.
     private LanPlayStack? _lan;
-    private LanLobby? _lobby;
+    private ILobby? _lobby;
 
     // What the widget currently shows — so we only Reset() (which snaps the selection back to 0) when
     // the content actually changes, not every frame the live peer list is re-read.
     private string _shownTitle = "";
     private string _shownPrompt = "";
     private string[] _shownItems = [];
-    private LanPeer[] _peers = [];
+    private LobbyPeer[] _peers = [];
 
     public bool IsConnected => _lobby?.State == LobbyState.Connected;
     public NetworkSession? Session => _lobby?.Session;
@@ -54,7 +53,7 @@ internal sealed class VkLanLobby : IWidget, IDisposable
 
     /// <summary>Lobby state exposed for the DEBUG inspector's appState snapshot.</summary>
     public LobbyState State => _lobby?.State ?? LobbyState.Browsing;
-    public System.Collections.Generic.IReadOnlyList<LanPeer> Peers => _lobby?.Peers ?? [];
+    public System.Collections.Generic.IReadOnlyList<LobbyPeer> Peers => _lobby?.Peers ?? [];
 #endif
 
     public VkLanLobby(VkRenderer renderer, string saveDir, Side preferredColor)
@@ -114,7 +113,7 @@ internal sealed class VkLanLobby : IWidget, IDisposable
                     prompt = _peers.Length == 0
                         ? "Searching for players on your network…"
                         : "Select a player to invite:";
-                    items = [.. LanPeer.ResolveLabels(_peers), "Back"];
+                    items = [.. _peers.Select(p => p.Label), "Back"];
                     break;
             }
         }

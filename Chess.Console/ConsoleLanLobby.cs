@@ -2,7 +2,6 @@ using System.Text;
 using Chess.Lib;
 using Chess.Net;
 using Console.Lib;
-using LAN.Lib;
 
 namespace Chess.Console;
 
@@ -84,7 +83,7 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
     }
 
     // Returns the header lines and the selectable items for the current lobby state.
-    private static (string[] Header, IReadOnlyList<string> Items) BuildView(LanLobby lobby, string myName)
+    private static (string[] Header, IReadOnlyList<string> Items) BuildView(ILobby lobby, string myName)
     {
         switch (lobby.State)
         {
@@ -114,14 +113,14 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
                     ""
                 };
                 var items = new List<string>(peers.Count + 1);
-                items.AddRange(LanPeer.ResolveLabels(peers));
+                foreach (var peer in peers) items.Add(peer.Label);
                 items.Add("Back");
                 return (header, items);
         }
     }
 
     // Acts on the chosen item; returns true if the lobby should close with no session (user backed out).
-    private bool Activate(LanLobby lobby, int index)
+    private bool Activate(ILobby lobby, int index)
     {
         switch (lobby.State)
         {
@@ -146,7 +145,7 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
         }
     }
 
-    private static bool HandleEscape(LanLobby lobby)
+    private static bool HandleEscape(ILobby lobby)
     {
         switch (lobby.State)
         {

@@ -13,7 +13,7 @@ namespace Chess.Net;
 /// </summary>
 public sealed class NetworkSession : IDisposable
 {
-    private readonly ILanConnection _conn;
+    private readonly ISessionConnection _conn;
     private readonly ConcurrentQueue<string> _incomingMoves = new();
     private volatile bool _peerLeft;
 
@@ -33,7 +33,7 @@ public sealed class NetworkSession : IDisposable
     /// loop (Android) poll for redraws instead of blocking on a socket.</summary>
     public bool HasIncomingMove => !_incomingMoves.IsEmpty;
 
-    public NetworkSession(ILanConnection conn, Side localSide, string peerName)
+    public NetworkSession(ISessionConnection conn, Side localSide, string peerName)
     {
         _conn = conn;
         LocalSide = localSide;
