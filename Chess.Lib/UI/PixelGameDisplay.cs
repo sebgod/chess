@@ -310,7 +310,7 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
             frame.SafeArea,
             // Chess sizes its chrome from the surface height already (see ChromeFontSize), so the
             // tree's design units ARE device pixels — same as the history rows' RenderLayout call.
-            dpiScale: 1f);
+            scale: DesignScale.One);
 
         // Publish the frame to the layout capture buffer -- what the DEBUG inspector's describe_layout
         // reads, and what damage-based repaint diffs against.
@@ -328,7 +328,7 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         //
         // Paint pass only. ArrangeFrame also runs twice for sizing, and capturing those would file
         // three frames in a buffer meant to describe one.
-        if (capture) PaintLayout(arranged, dpiScale: 1f);
+        if (capture) PaintLayout(arranged, scale: DesignScale.One);
 
         static RectF32 Slot(ImmutableArray<Layout.ArrangedNode<float>> arranged, string key)
         {
@@ -394,8 +394,11 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
         // sizing, so scale the DPI-independent scrollbar metrics up by the same font factor.
         var contentY = rect.Y + headerH + 4;
         var rowsRect = new RectF32(rect.X, contentY, rect.Width, rect.Height - (contentY - rect.Y));
-        var barScale = MathF.Max(1f, fontSize / 13f);
-        _historyBarWidthPx = ListScrollController.ScrollBarBaseWidthPx * barScale;
+        // Not a DPI scale: the history bar tracks the panel's TEXT size, so a larger board widens the
+        // scrollbar with it. Passing the same DesignScale the controller sizes itself from is what keeps
+        // the width this panel reserves and the width the controller draws from being two numbers.
+        var barScale = new DesignScale(MathF.Max(1f, fontSize / 13f));
+        _historyBarWidthPx = barScale.ToSurface(ListScrollController.ScrollBarBaseWidthPx);
         _historyScroll.SetExtent(rowsRect, rowH, moveCount, barScale);
         SyncHistoryPlayback();
 
@@ -417,7 +420,7 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
                 .RowH(rowH);
         }
 
-        RenderLayout(Layout.Builder.VStack(rows), _historyScroll.ContentArea, _labelFont, dpiScale: 1f);
+        RenderLayout(Layout.Builder.VStack(rows), _historyScroll.ContentArea, _labelFont, scale: DesignScale.One);
         // Theme colours so the bar reads against the dark history panel (the DIR.Lib defaults are
         // near-black and vanish here): the separator tone for the track, the index grey for the thumb.
         _historyScroll.DrawScrollBar(FillRect, track: HistorySepColor, thumb: HistoryIndexColor);
@@ -472,7 +475,7 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
 
         if (chip is null)
         {
-            if (title is not null) RenderLayout(title, strip, _labelFont, dpiScale: 1f);
+            if (title is not null) RenderLayout(title, strip, _labelFont, scale: DesignScale.One);
             return;
         }
 
@@ -484,7 +487,7 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
 
         RenderLayout(
             Layout.Builder.Dock(title ?? Layout.Builder.Spacer(), Layout.Builder.Right(chipNode, chipStrip)),
-            strip, _labelFont, dpiScale: 1f);
+            strip, _labelFont, scale: DesignScale.One);
     }
 
     /// <summary>

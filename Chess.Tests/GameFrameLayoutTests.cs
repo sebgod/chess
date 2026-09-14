@@ -30,7 +30,7 @@ public class GameFrameLayoutTests
             GameFrameMetrics.FromCellSize(cellW, cellH, historyColumns: 24, minStackedHistoryRows: 5),
             allowOffCentreBoard: true);
 
-    /// <summary>A dpiScale-1 pixel context: design units are surface units, as chess uses them.</summary>
+    /// <summary>A unit-scale pixel context: design units are surface units, as chess uses them.</summary>
     private sealed class UnitPixels : Layout.IMeasureContext<float>
     {
         public Layout.Size<float> MeasureText(ReadOnlySpan<char> text, float fontSize)
