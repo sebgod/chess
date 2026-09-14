@@ -211,6 +211,29 @@ Consequences:
    publish when nothing is wrong. If even the flat container lags, read the publish
    step's log in the Actions run (`gh run view <id> --log`) for the pushed `.nupkg`.
 
+   **How long, and how to tell a slow validation from a failed push** (DIR.Lib 9.0,
+   2026-09-14): ~25 minutes from "Your package was pushed" to restorable. While a package
+   sits in NuGet's validation pipeline it has **no nuget.org page at all** —
+   `https://www.nuget.org/packages/<Id>/<version>` returns **404**, not a "validating"
+   page — so a 404 there is NOT evidence the push failed. The push log is: three
+   `Created` + `Your package was pushed` lines mean nuget.org accepted all three packages
+   and the rest is their pipeline. Nothing to retry, nothing to fix; just wait.
+
+   **Then clear the HTTP cache before the first downstream restore.** NuGet caches the
+   flat-container index locally, so a restore run any time during the wait poisons it and
+   keeps failing AFTER the package is live, with a message that reads exactly like a bad
+   pin:
+   ```
+   error NU1102: Unable to find package DIR.Lib with version (>= 9.0.0)
+     - Found 200 version(s) in nuget.org [ Nearest version: 8.21.2921 ]
+   ```
+   `8.21.2921` there is the stale index, not the truth. Fix:
+   ```bash
+   dotnet nuget locals http-cache --clear
+   ```
+   Hit on 2026-09-14 verifying WebGl.Renderer against the freshly published DIR.Lib 9.0 —
+   the same command had failed a minute earlier and passed immediately after the clear.
+
    The published version is `X.Y.<run_number>`, e.g. `6.9.1421`. You need the
    new `X.Y` to be live before updating downstream floating pins.
 

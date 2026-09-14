@@ -6,9 +6,9 @@
     <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Console.Lib" Version="4.31.*" />
+    <PackageVersion Include="Console.Lib" Version="4.33.*" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
-    <PackageVersion Include="DIR.Lib" Version="8.19.*" />
+    <PackageVersion Include="DIR.Lib" Version="9.0.*" />
     <!-- Chess.Web's Blazor WebAssembly deps. They used to ride inline in Chess.Web.csproj, which
          opted out of CPM entirely; that also hid the WebGl.Renderer pin below from every
          solution-wide sweep, which is how it twice ended up two minors behind DIR.Lib. -->
@@ -43,7 +43,7 @@
     <PackageVersion Include="Microsoft.Playwright" Version="1.61.0" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
     <PackageVersion Include="SDL3-CS" Version="3.5.0-preview.20260213-150035" />
-    <PackageVersion Include="SdlVulkan.Renderer" Version="7.34.*" />
+    <PackageVersion Include="SdlVulkan.Renderer" Version="7.37.*" />
     <!-- Single-instance gate + window activation for chess:// hand-off. It already arrived
          transitively under SdlVulkan.Renderer (which implements IActivatableWindow); Chess.GUI now
          uses InstanceGate directly, and a type you call by name deserves a reference you can see. -->
@@ -62,7 +62,7 @@
          flagged BEHAVIOUR CHANGE in the range, 8.13's text baseline moving onto the FACE, chess
          already absorbed. Console.Lib 4.31 also carries cell glyphs for the three IconKinds DIR.Lib
          added (Search/Pan/IBeam), which had been falling back to a "?" placeholder. -->
-    <PackageVersion Include="WebGl.Renderer" Version="1.28.*" />
+    <PackageVersion Include="WebGl.Renderer" Version="1.29.*" />
     <!-- Vortice.ShaderCompiler pin removed: SdlVulkan.Renderer 6.29+ embeds pre-baked SPIR-V and no
          longer compiles GLSL at runtime, and no chess project ever referenced the package directly. -->
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.10" />

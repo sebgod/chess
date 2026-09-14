@@ -1,7 +1,7 @@
 # Design: a constrained content→device transform (DPI + rotation, unified)
 
-**Status:** Phases 1a (Vulkan) and 2 (chess consumer) are **done** (see [Phasing](#phasing)); the
-WebGL compose (1b) and the CPU backend (3) are still pending. **Repo scope:** this describes a change to the
+**Status:** All four phases are **done** (see [Phasing](#phasing)) — 1a (Vulkan) and 2 (chess consumer)
+in 2026-07, and 1b (WebGL) and 3 (CPU backend + retiring the scalar `dpiScale`) on 2026-09-14. **Repo scope:** this describes a change to the
 **sibling rendering libraries** (`DIR.Lib` + its backends `SdlVulkan.Renderer`, `WebGl.Renderer`,
 and the CPU `RgbaImageRenderer`); chess is only a *consumer*. It lives here because chess is the
 driver use case (the [Android "across the table" mode](../Chess.Droid/docs/across-the-table-flip.md)),
@@ -125,9 +125,9 @@ result on `PixelGameDisplay.SafeAreaInsets`. Under 180° that swaps top↔bottom
 | Phase | Scope | Where | Status |
 |---|---|---|---|
 | 1a | `ContentTransform` type (+ `Matrix3x2`/`Vector2` algebra, unit tests) + Vulkan projection compose; all four 90° rotations work on the GPU | DIR.Lib + SdlVulkan.Renderer | **Done** — 180° flip verified via offscreen render + readback |
-| 1b | WebGL projection compose (the `uProj` `mat4` is built JS-side, so this composes there or pushes the full matrix from .NET) | WebGl.Renderer | Pending |
+| 1b | WebGL projection compose (the `uProj` `mat4` is built JS-side, so this composes there or pushes the full matrix from .NET) | WebGl.Renderer | **Done** — **WebGl.Renderer 1.29**. It composes JS-side: the six affine coefficients cross the bridge as a new `SetContentTransform` opcode and the surface re-folds them whenever the projection is rebuilt. Pushing a finished matrix was the other option and was rejected — the projection carries the GL NDC Y-flip, and JS builds one at surface creation before .NET has sent anything |
 | 2 | Host input inverse-mapping (`M.Invert`) + safe-area inset transform; wire the across-the-table 180° in Chess.Droid | chess (consumer) | **Done** — `DeviceContentMapping` (Chess.Lib.UI) maps insets/cutout; taps inverted at both SDL hosts; the explicit `GameMode.AcrossTheTable` flips the frame to face the side to move (board counter-rotates via `FlipBoard`, chrome mirror-swaps via `MirrorChrome`) |
-| 3 | CPU backend `RgbaImageRenderer` remap (180° then 90°/270°); retire the scalar `dpiScale`; consider subsuming `FlipBoard` | DIR.Lib + backends | Pending |
+| 3 | CPU backend `RgbaImageRenderer` remap (180° then 90°/270°); retire the scalar `dpiScale`; consider subsuming `FlipBoard` | DIR.Lib + backends | **Done** — **DIR.Lib 9.0** (breaking). All four turns, not just 180°: the mapping is exact, so a bijection test pins that every content pixel lands on its own device pixel with no hole or collision. `dpiScale` is retired as the currency between components in favour of `DesignScale` (two axes); the host's set-point stays a float. `FlipBoard` was NOT subsumed — see below |
 
 Note on the "180° only" original scope: on a GPU backend the rotation folds into the projection, so all
 four quarter-turns render correctly for free — the 180° constraint is really about what is *wired and
