@@ -48,6 +48,16 @@ async function seedGame(id, { g = '', n = 0 } = {}) {
 
 const dbFor = (uid) => env.authenticatedContext(uid).database();
 
+/** Who actually holds Black, read past the rules -- because "the write was refused" and "the seat
+ *  survived" are different claims, and only the second one is the one that matters. */
+async function seatIsStill(id, uid) {
+  let held;
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    held = (await get(ref(ctx.database(), `games/${id}/b/uid`))).val();
+  });
+  assert.equal(held, uid, `${uid} still holds Black`);
+}
+
 /** A lobby row, stamped the way the app stamps one -- by the SERVER, not the client. A client
  *  clock a second fast writes a timestamp in the future, which the rule refuses. */
 const open = (gameId, name, color) => ({ gameId, name, color, updated: serverTimestamp() });
@@ -137,6 +147,43 @@ test('a taken seat cannot be stolen', async () => {
   await seedGame('g1');
 
   await assertFails(set(ref(dbFor(MALLORY), 'games/g1/b'), { uid: MALLORY, name: 'M' }));
+});
+
+// The thief above is a STRANGER, and a stranger is the easy case -- he holds no seat, so nothing
+// grants him a write anywhere near the game. The dangerous thief is the person you are playing:
+// write permission CASCADES in this database, so the grant that lets Alice make her own moves at
+// `games/$id` reaches every child of it, and a child's own ".write" can narrow nothing. Whatever
+// `w`/`b` say about `!data.exists()` is therefore advice to strangers only.
+test('your OPPONENT cannot take your seat, which is the thief that matters', async () => {
+  await seedGame('g1');
+
+  // Alice holds White. `uid` must equal auth.uid, so the only seat she can write is her own name --
+  // which is exactly the attack: two seats, one player, and Bob evicted from a game he is playing.
+  await assertFails(set(ref(dbFor(ALICE), 'games/g1/b'), { uid: ALICE, name: 'Alice' }));
+
+  await seatIsStill('g1', BOB);
+});
+
+// ...and the same attack spelled with two writes instead of one. A delete is the hole a .validate
+// rule cannot plug, because validation is skipped when the new value is null -- so a fix that only
+// makes the seat immutable still loses the seat to `remove()` followed by a fresh claim.
+test('your opponent cannot EMPTY your seat and re-claim it', async () => {
+  await seedGame('g1');
+
+  await assertFails(set(ref(dbFor(ALICE), 'games/g1/b'), null));
+
+  await seatIsStill('g1', BOB);
+});
+
+// The turn gate lives in a .validate at the GAME node, and .validate does not cascade the way
+// .write does -- it is evaluated at the written location and below, never at an ancestor. So a write
+// aimed one level lower than the gate would never meet it. That is not a hypothesis worth leaving
+// untested: `g` is the whole game.
+test('the turn gate cannot be walked around by writing the log alone', async () => {
+  await seedGame('g1');
+
+  // Alice is White and it is White's move -- but this appends BOTH plies, Black's included.
+  await assertFails(set(ref(dbFor(ALICE), 'games/g1/g'), 'e2e4.e7e5'));
 });
 
 // ── Nowhere to put anything ───────────────────────────────────────

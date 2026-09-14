@@ -619,6 +619,40 @@ with 16 tests in `firebase/rules.test.mjs`, run against the Firebase emulator: a
 the log is accepted, and writes that *rewrite* or *truncate* it are rejected by the server. The turn
 gate, the race-free seat claim, the unknown-field rejection and the size caps are pinned there too.
 
+#### `.write` cascades, `.validate` does not — and the first rules got that backwards (2026-09-14)
+
+Three holes, one root cause, found by running the emulator suite's own assertions against the *live*
+database after the native key went in. RTDB resolves a write by walking from the root to the written
+path and taking the **first `.write` that is true**; a rule further down is never consulted and can
+narrow nothing. `.validate` is the mirror image: it is evaluated at the written location and its
+descendants, **never at an ancestor**. So a guard written on a child is unreachable, and a guard
+written on a parent is stepped around by aiming one level lower.
+
+The original `games/$gameId` granted `.write` to either seat-holder, which read as "a player may move
+in their own game". What it actually granted was every child of that node:
+
+| aimed at | what it did | why it was allowed |
+|---|---|---|
+| `games/$id/b` | overwrite the opponent's seat with your own uid, evicting them from a game in progress (they then 401 on read) | `b`'s `".write": "!data.exists()"` cannot narrow the parent's grant |
+| `games/$id/b` = `null` | empty their seat, then claim it cleanly | the same, and **no `.validate` can catch it** — validation is skipped when the new value is null |
+| `games/$id/g` | append the opponent's ply and play both sides | the turn gate was a `.validate` on the *game* node, which a write to `g` never meets |
+
+`uid`'s `newData.val() === auth.uid` was not a second line of defence, it was the exploit's shape: the
+only seat a thief can write is one in their **own** name, which is precisely the eviction.
+
+The fix puts every guard on the node the write lands on. `games/$gameId` now grants `.write` for
+**creation only**, so nothing cascades over the seats and `!data.exists()` finally means what it says
+— a seat is claimed once and thereafter neither overwritten nor emptied. A seated player's permission
+to move moved down onto `g` and `n`, each carrying the turn gate itself: `g` requires `n` to advance
+in the same write (which is what forbids a lone write to the log — `newData.parent()` sees `n`
+unchanged, so `n === n + 1` is false), and `n` requires the log to have grown (which forbids a lone
+bump of the ply count, otherwise a free pass). Neither can be reached alone.
+
+**The tests that passed throughout are the lesson.** "A taken seat cannot be stolen" was already
+there and already green — it cast *Mallory*, a stranger, who holds no seat and therefore never had
+the parent grant that made the attack work. The thief that matters is the person across the board,
+and a rules suite that only models outsiders will keep saying so.
+
 Two things about running them. They need **no Firebase account, project or login** — a `demo-`
 prefixed project id makes the emulator run fully offline, which is why this step can be done long
 before any console setup. And they need **Java 21+**, while this repo's Android head pins **JDK 17**

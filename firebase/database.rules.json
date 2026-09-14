@@ -53,15 +53,16 @@
     "games": {
       "$gameId": {
         ".read": "auth != null && (data.child('w/uid').val() === auth.uid || data.child('b/uid').val() === auth.uid)",
-
-        ".write": "auth != null && (!data.exists() || data.child('w/uid').val() === auth.uid || data.child('b/uid').val() === auth.uid)",
-
-        ".validate": "newData.hasChildren(['g', 'n']) && (!data.exists() || newData.child('n').val() === data.child('n').val() || (newData.child('n').val() === data.child('n').val() + 1 && ((data.child('n').val() % 2 === 0 && auth.uid === data.child('w/uid').val()) || (data.child('n').val() % 2 === 1 && auth.uid === data.child('b/uid').val()))))",
-
-        "g": { ".validate": "newData.isString() && newData.val().length <= 24576 && (!data.exists() || newData.val().beginsWith(data.val()))" },
-
-        "n": { ".validate": "newData.isNumber() && newData.val() >= 0 && (!data.exists() || newData.val() >= data.val())" },
-
+        ".write": "auth != null && !data.exists()",
+        ".validate": "newData.hasChildren(['g', 'n'])",
+        "g": {
+          ".write": "auth != null && (data.parent().child('w/uid').val() === auth.uid || data.parent().child('b/uid').val() === auth.uid)",
+          ".validate": "newData.isString() && newData.val().length <= 24576 && (!data.exists() || newData.val().beginsWith(data.val())) && (!data.parent().exists() || (newData.parent().child('n').val() === data.parent().child('n').val() + 1 && ((data.parent().child('n').val() % 2 === 0 && auth.uid === data.parent().child('w/uid').val()) || (data.parent().child('n').val() % 2 === 1 && auth.uid === data.parent().child('b/uid').val()))))"
+        },
+        "n": {
+          ".write": "auth != null && (data.parent().child('w/uid').val() === auth.uid || data.parent().child('b/uid').val() === auth.uid)",
+          ".validate": "newData.isNumber() && newData.val() >= 0 && (!data.parent().exists() || (newData.val() === data.parent().child('n').val() + 1 && newData.parent().child('g').val().length > data.parent().child('g').val().length))"
+        },
         "w": {
           ".write": "auth != null && !data.exists()",
           ".validate": "newData.hasChildren(['uid'])",
