@@ -138,6 +138,26 @@ jobs:
     - run: npm ci
     - run: npm test
 
+    # The rules ARE the security boundary, and until 2026-09-14 nothing shipped them: the file was
+    # tested here on every push and deployed by hand, which is a drift waiting to happen -- and did.
+    # Deploying from the same job that just tested the same file is the point; a deploy gated on a
+    # green suite cannot ship rules the suite has not seen.
+    #
+    # Absent secret = skip, like FIREBASE_CONFIG: a fork has no project to deploy to, and that is
+    # normal rather than broken. To enable it, once:
+    #     firebase login:ci            # prints a token; browser consent, no console
+    #     gh secret set FIREBASE_TOKEN # paste it
+    - name: Deploy the rules
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      env:
+        FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+      run: |
+        if [ -z "$FIREBASE_TOKEN" ]; then
+          echo "::notice::No FIREBASE_TOKEN secret. The rules were tested but not deployed."
+          exit 0
+        fi
+        npx firebase deploy --only database --project chess-app-bce7a --non-interactive
+
   publish:
     needs: test
     if: github.event_name == 'workflow_dispatch' || (github.ref == 'refs/heads/main' && github.event_name == 'push')

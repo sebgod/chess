@@ -653,6 +653,21 @@ there and already green — it cast *Mallory*, a stranger, who holds no seat and
 the parent grant that made the attack work. The thief that matters is the person across the board,
 and a rules suite that only models outsiders will keep saying so.
 
+The second lesson is that **nothing deployed the rules**. They were tested on every push and shipped
+by hand, so the file in the repository and the boundary actually enforcing anything were only ever
+related by somebody remembering. The `rules` job now deploys what it has just tested, on a push to
+main, skipping with a notice when there is no `FIREBASE_TOKEN` — a fork has no project to deploy to.
+Enabling it is two commands and no console:
+
+```bash
+firebase login:ci             # browser consent, prints a token
+gh secret set FIREBASE_TOKEN  # paste it
+```
+
+The fix above was deployed by hand (`firebase deploy --only database`) and then **verified against
+the live database**, not just the emulator: all four attacks refused, a legal game still playable, the
+out-of-turn move still refused.
+
 Two things about running them. They need **no Firebase account, project or login** — a `demo-`
 prefixed project id makes the emulator run fully offline, which is why this step can be done long
 before any console setup. And they need **Java 21+**, while this repo's Android head pins **JDK 17**
