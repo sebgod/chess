@@ -234,6 +234,19 @@ Consequences:
    Hit on 2026-09-14 verifying WebGl.Renderer against the freshly published DIR.Lib 9.0 —
    the same command had failed a minute earlier and passed immediately after the clear.
 
+   **And the same staleness can bite a CI RUNNER after it has stopped biting you.** The
+   flat container is regionally cached, so a runner can still see the old index once the
+   package is plainly visible from your machine. On the chess repin (2026-09-14) five of
+   the six `publish` RIDs restored fine and `linux-arm64` alone failed:
+   ```
+   error NU1102: Unable to find package Console.Lib with version (>= 4.33.0)
+     - Found 143 version(s) in nuget.org [ Nearest version: 4.32.1751 ]
+   ```
+   with 4.33.1761 already published and already restored by the other five. **One RID
+   failing NU1102 on a fresh repin while its siblings pass is propagation, not a bad
+   pin** — `gh run rerun <id> --failed` and it goes green. Do not go hunting in the props
+   file; the tell is that the *same* pin succeeded elsewhere in the *same* run.
+
    The published version is `X.Y.<run_number>`, e.g. `6.9.1421`. You need the
    new `X.Y` to be live before updating downstream floating pins.
 
