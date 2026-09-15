@@ -124,26 +124,39 @@ Everything here needs a browser, and knowing *which* browser page saves the sear
 
 So the honest shape of Play is: one long manual setup, then a scriptable release path.
 
-## Drift found while writing this (2026-09-15)
+## Drift found while writing this, and fixed the same day (2026-09-15)
 
-`scripts/google-audit.ps1` found one real problem on its first run: **`FIREBASE_TOKEN` is not set**,
-so the deploy step added on 2026-09-14 has never actually deployed. Every push to `main` since has
-logged
+`scripts/google-audit.ps1` found one real problem on its first run: **`FIREBASE_TOKEN` was not
+set**, so the deploy step added on 2026-09-14 had never actually deployed. Every push to `main`
+since had logged
 
 ```
 ##[notice]No FIREBASE_TOKEN secret. The rules were tested but not deployed.
 ```
 
-which is the designed behaviour for a fork and exactly wrong for this repo. The rules are still
-whatever was last deployed by hand. Two commands fix it:
+which is the designed behaviour for a fork and exactly wrong for this repo — the live rules were
+whatever was last deployed by hand. Two commands fixed it:
 
 ```bash
 npx firebase login:ci          # browser consent, prints a token, no console visit
-gh secret set FIREBASE_TOKEN   # paste it
+gh secret set FIREBASE_TOKEN   # reads stdin, echoes nothing
+```
+
+and the next push deployed for real:
+
+```
+✔  database: rules syntax for database chess-app-bce7a-default-rtdb is valid
+✔  database: rules for database chess-app-bce7a-default-rtdb released successfully
 ```
 
 That is the whole case for the audit script: the workflow said "deployed from CI", the secret list
 said otherwise, and nothing in between was going to notice.
+
+**Note that `login:ci` cannot run non-interactively** — it needs the consent screen, so it fails
+with `Cannot run login:ci in non-interactive mode` from any wrapper, an agent session included. The
+trap it sets is the obvious workaround: redirecting its output to a file parks an account-wide
+refresh token in the working tree, untracked and, until 2026-09-15, unignored. `*.token` and
+`*.secret` are in `.gitignore` for that reason.
 
 ## Running the audit
 
