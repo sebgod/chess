@@ -73,6 +73,9 @@ losing yours is not fatal.
 
 Roughly in order, because the first one takes the longest by far:
 
+Which console each of these lives in, and what a CLI can do instead, is [docs/google-ops.md](../../docs/google-ops.md); `scripts/google-audit.ps1` reports the
+current state of the secrets and the Firebase side.
+
 1. **Closed testing.** A personal developer account registered after 13 November 2023 must run a
    closed test — at the time of writing, **12 testers opted in for 14 continuous days** — before it
    can apply for production access. The console states the rule that applies to your account; check

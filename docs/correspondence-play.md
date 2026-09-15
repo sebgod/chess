@@ -379,6 +379,10 @@ account, ever.** Attaching one silently converts the cap into a bill.
 
 ## Operational setup (the account, and what it constrains)
 
+This section is the *why*. The operational map — which Google console owns what, which parts are
+CLI-driven, why none of it is Terraform, and what is irreducibly clickops — is
+[google-ops.md](google-ops.md).
+
 The project exists — Firebase console, **Spark plan, no billing account**. Its id, instance and web
 config are deliberately NOT written here; see [Why the config is a secret](#why-the-config-is-a-secret). Three
 facts about it are load-bearing enough to belong in the design rather than in a setup guide.
