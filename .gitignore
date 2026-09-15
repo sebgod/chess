@@ -366,3 +366,10 @@ Chess.Web/wwwroot/firebase-config.json
 
 # The Android head reads the same config from its assets; same reason it is not in the tree.
 Chess.Droid/firebase-config.json
+
+# Credentials redirected to a file. `firebase login:ci` prints a refresh token for the whole
+# account, good until revoked, and it is the kind of thing that gets parked in the repo root for a
+# minute and committed by a `git add .` before anybody notices. By extension rather than by name, so
+# the next tool's token is covered too; the value belongs in a repo secret and nowhere on disk.
+*.token
+*.secret
