@@ -143,6 +143,27 @@ test('an empty seat can be claimed, and only for yourself', async () => {
   await assertSucceeds(set(ref(dbFor(BOB), 'games/g1/b'), { uid: BOB, name: 'Bob' }));
 });
 
+// The join sequence is a chain of WRITES -- create, else claim Black, else claim White -- whose
+// last case is "both failed, so we must already be sitting at this game". That case is only
+// reachable if claiming is refused for someone who already holds a seat. Otherwise a poster walking
+// into the game they just posted takes the seat opposite their own, becomes both players, and the
+// advertisement comes straight back down: a lobby game nobody can ever join. The lobby list already
+// leaves our own rows out, but that is a courtesy in one client, and "you cannot be your own
+// opponent" is a property of the game -- so it belongs here, where every client meets it.
+test('you cannot sit in BOTH seats of your own game', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await set(ref(ctx.database(), 'games/g1'), { g: '', n: 0, w: { uid: ALICE, name: 'Alice' } });
+  });
+
+  await assertFails(set(ref(dbFor(ALICE), 'games/g1/b'), { uid: ALICE, name: 'Alice' }));
+
+  // ...and not by writing the pair in one go either, where neither seat has an occupied twin in the
+  // STORED data to compare itself against -- only in the data the write would leave behind.
+  await assertFails(set(ref(dbFor(ALICE), 'games/g2'), {
+    g: '', n: 0, w: { uid: ALICE, name: 'Alice' }, b: { uid: ALICE, name: 'Alice' },
+  }));
+});
+
 test('a taken seat cannot be stolen', async () => {
   await seedGame('g1');
 
