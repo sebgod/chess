@@ -65,7 +65,7 @@
         },
         "w": {
           ".write": "auth != null && !data.exists()",
-          ".validate": "newData.hasChildren(['uid'])",
+          ".validate": "newData.hasChildren(['uid']) && newData.parent().child('b/uid').val() !== auth.uid",
           "uid":  { ".validate": "newData.isString() && newData.val() === auth.uid" },
           "name": { ".validate": "newData.isString() && newData.val().length <= 32" },
           "$other": { ".validate": false }
@@ -73,7 +73,7 @@
 
         "b": {
           ".write": "auth != null && !data.exists()",
-          ".validate": "newData.hasChildren(['uid'])",
+          ".validate": "newData.hasChildren(['uid']) && newData.parent().child('w/uid').val() !== auth.uid",
           "uid":  { ".validate": "newData.isString() && newData.val() === auth.uid" },
           "name": { ".validate": "newData.isString() && newData.val().length <= 32" },
           "$other": { ".validate": false }

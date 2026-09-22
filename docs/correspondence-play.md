@@ -589,6 +589,10 @@ out to be enough for everything the store actually owes us:
   — the rules still have no idea what chess is.
 - **Race-free seat claim.** `".write": "!data.exists()"` on a seat makes joining an open game atomic
   with no transaction: the first writer wins, the second is rejected.
+- **You cannot be your own opponent.** A seat refuses an occupant who already holds the other one,
+  compared against `newData.parent()` so that writing both seats in a single create is refused too.
+  Without it the poster's own join takes the seat it just advertised (see below), and the lobby's
+  "leave our own rows out" filter is one client being polite rather than a boundary.
 - **Hard size caps on every field**, plus `"$other": { ".validate": false }` to reject any key that
   was not named here. Without these the project is a free 1 GB pastebin for whoever finds it. A move
   is 5 characters at most, `g` is bounded by `MaxPlies`, a display name 32.
@@ -651,6 +655,18 @@ to move moved down onto `g` and `n`, each carrying the turn gate itself: `g` req
 in the same write (which is what forbids a lone write to the log — `newData.parent()` sees `n`
 unchanged, so `n === n + 1` is false), and `n` requires the log to have grown (which forbids a lone
 bump of the ply count, otherwise a free pass). Neither can be reached alone.
+
+**Closing that hole broke the join, which is the real shape of the bug.** `games/$gameId` granting
+`.write` for creation only means `create` on a game that exists is now correctly refused — and the
+join chain reads that refusal as "somebody else's game" and goes on to claim the free seat. For a
+poster walking into the game they had just posted, the free seat was the one opposite their own: they
+became both players, `WithdrawPostingIfClaimedAsync` saw two seats filled and pulled the
+advertisement, and every posted game died in the second it was born. The nightly browser suite caught
+it (`CloudPlayTests` waiting on "Waiting for an opponent" and reading "Your move (White)"), which is
+what that job is for. The chain itself was right all along — its third case is *"we already sit
+there"* — it simply could not be reached while the database was willing to seat one player twice. The
+guard belongs in the rules rather than in the join, because "you cannot be your own opponent" is true
+of the game, and the join is one of three front-ends that must not be able to get it wrong.
 
 **The tests that passed throughout are the lesson.** "A taken seat cannot be stolen" was already
 there and already green — it cast *Mallory*, a stranger, who holds no seat and therefore never had
