@@ -1,0 +1,24 @@
+{
+  "firebase": {
+    "projectId": "chess-app-bce7a",
+    "location": "europe-west1",
+    "directory": "firebase",
+    "rules": "firebase/database.rules.json",
+    "apps": [
+      { "platform": "WEB", "displayName": "chess" },
+      { "platform": "ANDROID", "displayName": "chess-android", "package": "org.sebgod.chess" }
+    ]
+  },
+  "secrets": [
+    { "name": "FIREBASE_CONFIG", "required": true, "why": "without it the web and Android builds ship with cloud play absent" },
+    { "name": "FIREBASE_TOKEN", "required": true, "why": "without it the rules job TESTS the rules and does not DEPLOY them" },
+    { "name": "ANDROID_KEYSTORE_BASE64", "required": false, "why": "without it the aab job produces a debug-signed bundle Play will refuse" },
+    { "name": "ANDROID_KEYSTORE_PASSWORD", "required": false, "why": "part of the upload-key set" },
+    { "name": "ANDROID_KEY_ALIAS", "required": false, "why": "part of the upload-key set" },
+    { "name": "ANDROID_KEY_PASSWORD", "required": false, "why": "part of the upload-key set" }
+  ],
+  "byHand": [
+    { "area": "play", "detail": "the listing is created in the Play Console by hand -- the publishing API cannot create an app (#59)" }
+  ],
+  "clickops": "docs/google-ops.md, \"The irreducible clickops\""
+}

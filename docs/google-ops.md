@@ -9,7 +9,10 @@ This is the map. It is written after the fact — the project is already provisi
 it doubles as the record of what was done and the recipe for doing it again.
 
 Companion: `scripts/google-audit.ps1` reports the live state of everything below and can create the
-parts that are creatable. Run it before believing any of this is still true.
+parts that are creatable. Run it before believing any of this is still true. The audit itself lives in
+**SharpAstro/cloud-ops** (private; `firebase/FirebaseOps.psm1`), shared with every app that has a backend;
+what is chess's own -- the project, its region, the apps, the rules file, the secrets and the steps no API
+can take -- is `cloud.json` at this repository's root.
 
 ## The tab list, decoded
 
@@ -86,7 +89,10 @@ that would otherwise let Terraform toggle the anonymous sign-in provider this ap
 
 **When the answer would flip:** a second project (a staging backend), or a sibling repo needing the
 same shape. At that point the thing to grow is `scripts/google-audit.ps1 -Provision`, which already
-creates all four resources, rather than to adopt a state file.
+creates all four resources, rather than to adopt a state file. **It flipped on 2026-10-25:** TianWen
+needs the same shape (a relay for controlling a rig from its website, SharpAstro/tianwen#1815), so the
+audit moved to SharpAstro/cloud-ops, read from a per-app `cloud.json`, and chess became its first
+consumer. Its output against `chess-app-bce7a` was checked identical, line for line, before and after.
 
 Sources: [Get started with Terraform and Firebase](https://firebase.google.com/docs/projects/terraform/get-started),
 [`google_firebase_database_instance`](https://registry.terraform.io/providers/hashicorp/google/latest/docs/resources/firebase_database_instance),
@@ -159,6 +165,9 @@ refresh token in the working tree, untracked and, until 2026-09-15, unignored. `
 `*.secret` are in `.gitignore` for that reason.
 
 ## Running the audit
+
+It needs SharpAstro/cloud-ops cloned beside this checkout, at `../../sharpastro/cloud-ops`, or
+`CLOUD_OPS_ROOT` pointing at it.
 
 ```powershell
 pwsh scripts/google-audit.ps1              # read-only report
