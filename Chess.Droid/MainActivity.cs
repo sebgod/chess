@@ -10,6 +10,7 @@ using Chess.Lib;
 using Chess.Lib.UI;
 using Chess.Net;
 using Chess.Net.Cloud;
+using SharpAstro.Firebase;
 using Chess.UCI;
 using DIR.Lib;
 using SdlVulkan.Renderer;

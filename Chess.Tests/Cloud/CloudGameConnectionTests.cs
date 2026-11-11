@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using Chess.Lib;
 using Chess.Net;
 using Chess.Net.Cloud;
+using SharpAstro.Firebase;
 using Shouldly;
 using Xunit;
 
@@ -11,7 +12,7 @@ namespace Chess.Tests.Cloud;
 /// <summary>
 /// The cloud courier's channel, tested with no cloud — the store is in memory and delivers
 /// synchronously, so an exchange between two clients is deterministic (see
-/// <see cref="FakeCloudStore"/>).
+/// <see cref="InMemoryCloudStore"/>).
 ///
 /// <para>What is under test is the one thing this class exists for: a database row holding a shared,
 /// append-only move log, presented to <see cref="NetworkSession"/> as the stream of moves every
@@ -22,13 +23,13 @@ public class CloudGameConnectionTests
     private const string GameId = "g1";
     private const string Path = $"games/{GameId}";
 
-    private static (FakeCloudStore Store, CloudGameConnection White, CloudGameConnection Black) TwoSeats()
+    private static (InMemoryCloudStore Store, CloudGameConnection White, CloudGameConnection Black) TwoSeats()
     {
-        var store = new FakeCloudStore();
+        var store = new InMemoryCloudStore();
         store.Set(Path, """{"g":"","n":0,"w":{"uid":"alice","name":"Alice"},"b":{"uid":"bob","name":"Bob"}}""");
         return (store,
-            new CloudGameConnection(new FakeCloudDatabase(store, "alice"), GameId),
-            new CloudGameConnection(new FakeCloudDatabase(store, "bob"), GameId));
+            new CloudGameConnection(new InMemoryCloudDatabase(store, "alice"), GameId),
+            new CloudGameConnection(new InMemoryCloudDatabase(store, "bob"), GameId));
     }
 
     private static List<string> Collect(CloudGameConnection conn)
@@ -101,10 +102,10 @@ public class CloudGameConnectionTests
     [Fact]
     public void OpeningAGameInProgress_ReplaysEveryPly()
     {
-        var store = new FakeCloudStore();
+        var store = new InMemoryCloudStore();
         store.Set(Path, """{"g":"e2e4.e7e5.g1f3","n":3}""");
 
-        var conn = new CloudGameConnection(new FakeCloudDatabase(store, "alice"), GameId);
+        var conn = new CloudGameConnection(new InMemoryCloudDatabase(store, "alice"), GameId);
         var heard = Collect(conn);
 
         heard.Count.ShouldBe(3);
@@ -116,10 +117,10 @@ public class CloudGameConnectionTests
     [Fact]
     public void OpeningWithMovesAlreadyKnown_ReplaysOnlyTheRemainder()
     {
-        var store = new FakeCloudStore();
+        var store = new InMemoryCloudStore();
         store.Set(Path, """{"g":"e2e4.e7e5.g1f3","n":3}""");
 
-        var conn = new CloudGameConnection(new FakeCloudDatabase(store, "alice"), GameId, known: "e2e4.e7e5");
+        var conn = new CloudGameConnection(new InMemoryCloudDatabase(store, "alice"), GameId, known: "e2e4.e7e5");
         var heard = Collect(conn);
 
         heard.ShouldHaveSingleItem();
@@ -135,9 +136,9 @@ public class CloudGameConnectionTests
     [Fact]
     public async Task RefusedAppend_IsGivenBack_SoTheNextOneStillFits()
     {
-        var store = new FakeCloudStore();
+        var store = new InMemoryCloudStore();
         store.Set(Path, """{"g":"","n":0}""");
-        var db = new FakeCloudDatabase(store, "alice");
+        var db = new InMemoryCloudDatabase(store, "alice");
         var conn = new CloudGameConnection(db, GameId);
         Collect(conn);
 
@@ -163,9 +164,9 @@ public class CloudGameConnectionTests
     [Fact]
     public void HistoryThatIsNotAnExtensionOfOurs_ClosesTheConnection()
     {
-        var store = new FakeCloudStore();
+        var store = new InMemoryCloudStore();
         store.Set(Path, """{"g":"e2e4","n":1}""");
-        var conn = new CloudGameConnection(new FakeCloudDatabase(store, "alice"), GameId);
+        var conn = new CloudGameConnection(new InMemoryCloudDatabase(store, "alice"), GameId);
         Collect(conn);
 
         var closed = false;
@@ -180,9 +181,9 @@ public class CloudGameConnectionTests
     [Fact]
     public void GameThatVanishes_ClosesTheConnection()
     {
-        var store = new FakeCloudStore();
+        var store = new InMemoryCloudStore();
         store.Set(Path, """{"g":"","n":0}""");
-        var conn = new CloudGameConnection(new FakeCloudDatabase(store, "alice"), GameId);
+        var conn = new CloudGameConnection(new InMemoryCloudDatabase(store, "alice"), GameId);
         Collect(conn);
 
         var closed = false;

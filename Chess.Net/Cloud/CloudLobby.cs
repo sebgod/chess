@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Chess.Lib;
 using Chess.UCI;
+using SharpAstro.Firebase;
 
 namespace Chess.Net.Cloud;
 

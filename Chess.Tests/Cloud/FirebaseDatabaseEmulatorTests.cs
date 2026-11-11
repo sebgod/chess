@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Chess.Lib;
 using Chess.Net;
 using Chess.Net.Cloud;
+using SharpAstro.Firebase;
 using Shouldly;
 using Xunit;
 

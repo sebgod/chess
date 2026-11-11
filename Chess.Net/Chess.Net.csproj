@@ -24,4 +24,15 @@
     <PackageReference Include="LAN.Lib" />
   </ItemGroup>
 
+  <!-- SharpAstro.Firebase: the no-SDK Realtime Database client (REST + server-sent events + anonymous
+       auth) that the cloud courier rides on. It lived here as Cloud/FirebaseDatabase.cs and friends
+       until it was lifted into its own repo for tianwen and pilot to share; Cloud/ keeps only the
+       chess-specific lobby and game connection on top of it. -->
+  <ItemGroup Condition="'$(UseLocalSiblings)' == 'true'">
+    <ProjectReference Include="..\..\Firebase\src\SharpAstro.Firebase\SharpAstro.Firebase.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
+    <PackageReference Include="SharpAstro.Firebase" />
+  </ItemGroup>
+
 </Project>
