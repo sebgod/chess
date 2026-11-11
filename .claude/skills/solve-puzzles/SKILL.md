@@ -88,6 +88,11 @@ Steps:
    ```
    Each entry is `{ply, side, uci, san, status}`. Use `uci` for rendering, `san` for display.
 
+   **Only `solve_mate_in` has that `---` tail.** `render_sequence` returns a **bare JSON array** as its
+   whole body, and its entries are `{ply, file, san, fenBefore}` — there is **no `side` field**, so take
+   the side from the filename suffix (`-move{round}{w|b}.png`), not from the entry. Parse defensively:
+   try the `---` tail, and fall back to `json.loads(text.strip())`.
+
 5. **Order multi-move frames by PLY, never by filename.** `chess-render_sequence` names files `{baseName}-move{round}{w|b}.png` where `{round}` is the full-move number. A plain alphabetical sort is **wrong**: within a round `b` sorts before `w`, but **White plays first**. So a White-to-move line `move1w, move1b, move2w` mis-sorts to `move1b, move1w, move2w` (black's reply jumps ahead of white's first move); a Black-to-move line `move1b, move2w, move2b` mis-sorts to `move1b, move2b, move2w`.
 
    The returned JSON array is already in play order — **drive ordering off its `file`/`ply` fields, never `sorted(os.listdir())`.** If you keep the frames on disk for browsing, rename with a zero-padded ply index so name-sort == play order: `{baseName}-ply{ply:02d}{w|b}.png`.
@@ -105,6 +110,12 @@ Steps:
                          outDir="OUT", baseName="puzzle-07", annotationPrefix="Puzzle 7")
    ```
    Those frames END on "arrow not yet played", so add a closing frame that shows the executed mate: `chess-play_moves(fen, startingSide, moves)` → take its final FEN → `chess-render_board_png(finalFEN, move=LAST_UCI, annotation="Puzzle N: <SAN> — mate", savePath="OUT/pNN-final.png")`.
+
+   **Read that final FEN off the `FEN:` line — anchor the regex.** `play_moves` output opens with
+   `Starting position: <FEN>`, so a loose "first FEN-shaped match" grabs the START position and the
+   closing frame silently renders the puzzle again with the last arrow drawn but unplayed. It looks
+   plausible enough to ship. Use `re.search(r'^FEN:\s*(\S+)', pm, re.M)`, and assert two things
+   before rendering: `"Status: Checkmate" in pm`, and `final_fen != start_fen`.
 
    Optional: a single-board summary with every arrow overlaid — `chess-render_board_png(fen, moves="u1,u2,...")`.
 
@@ -135,12 +146,23 @@ Steps:
     transitive floor under `DIR.Lib -> SharpAstro.Fonts` (see the comment on that pin in
     `Directory.Packages.props`).
 
+    **But a build that "fails" only on MSB3021/MSB3027 + ~10 MSB3026 retry warnings is NOT a break** —
+    the compile already succeeded and a *running* `chess-mcp` is merely holding the output exe (the
+    error names the locking pid). The existing binary is current; skip the rebuild and drive it. Do
+    NOT kill that process — a dead chess MCP reads as a build break next session.
+
     The harness cannot re-attach an MCP server mid-session, so after fixing the build **drive the
     server yourself over stdio** rather than asking the user to restart. A ~50-line JSON-RPC client is
     enough: spawn `Chess.MCP/bin/Release/net10.0/chess-mcp.exe`, send `initialize`, then the
     `notifications/initialized` notification, then `tools/call` with `{"name": ..., "arguments": {...}}`;
     each response is one JSON object per line on stdout. Tool names are the snake_case method names
     (`solve_mate_in`, `render_board_png`, `render_sequence`, `play_moves`).
+
+    Wrap `call` in a **retry (3-4 attempts, short backoff)**: with the user's own `chess-mcp` still
+    running, renders fail intermittently with a bare `An error occurred invoking 'render_board_png'.`
+    that succeeds on the very next identical call. Every tool here is idempotent, so retrying is safe
+    — and cheaper than chasing a phantom. Point the client's `stderr` at a log file rather than
+    `DEVNULL`; the server logs each `tools/call` there and it is the only detail you get.
 
 11. **Pass `sideToMove` to `render_board_png`.** A placement-only FEN does not carry it, and the
     parameter decides check/checkmate detection *and* the game-over banner. It matters most on the
