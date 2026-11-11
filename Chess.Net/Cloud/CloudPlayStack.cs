@@ -1,6 +1,7 @@
 using System;
 using System.Threading.Tasks;
 using Chess.Lib;
+using SharpAstro.Firebase;
 
 namespace Chess.Net.Cloud;
 

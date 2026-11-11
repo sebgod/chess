@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Chess.Lib;
 using Chess.Net;
 using Chess.Net.Cloud;
+using SharpAstro.Firebase;
 using Microsoft.Extensions.Time.Testing;
 using Shouldly;
 using Xunit;
@@ -12,20 +13,20 @@ namespace Chess.Tests.Cloud;
 
 /// <summary>
 /// The cloud lobby driven exactly as a front-end drives it — <c>Start()</c>, read <c>Peers</c>,
-/// <c>Invite</c>, take <c>Session</c> — over an in-memory database (see <see cref="FakeCloudStore"/>).
+/// <c>Invite</c>, take <c>Session</c> — over an in-memory database (see <see cref="InMemoryCloudStore"/>).
 /// The point of these is that they are the same six calls <c>LanLobbyTests</c> makes, which is what
 /// <see cref="ILobby"/> was extracted for.
 /// </summary>
 public class CloudLobbyTests
 {
-    private static CloudLobby Player(FakeCloudStore store, string uid, string name, Side preferred, TimeProvider time)
-        => new(new FakeCloudDatabase(store, uid), name, preferred, time);
+    private static CloudLobby Player(InMemoryCloudStore store, string uid, string name, Side preferred, TimeProvider time)
+        => new(new InMemoryCloudDatabase(store, uid), name, preferred, time);
 
-    private static (FakeCloudStore Store, CloudLobby Alice, CloudLobby Bob) TwoPlayers(
+    private static (InMemoryCloudStore Store, CloudLobby Alice, CloudLobby Bob) TwoPlayers(
         Side aliceColor = Side.White, FakeTimeProvider? time = null)
     {
         var clock = time ?? new FakeTimeProvider(DateTimeOffset.UnixEpoch.AddYears(56));
-        var store = new FakeCloudStore { Time = clock };
+        var store = new InMemoryCloudStore { Time = clock };
         var alice = Player(store, "alice", "Alice", aliceColor, clock);
         var bob = Player(store, "bob", "Bob", Side.White, clock);
         alice.Start(); // each Start() posts an open game the other's lobby then lists
