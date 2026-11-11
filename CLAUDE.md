@@ -8,8 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 dotnet build -c Release              # Build all projects
 dotnet test -c Release               # Run all tests
-dotnet test Chess.Tests --filter "ClassName=Chess.Tests.GameTests"  # Run one test class
-dotnet test Chess.Tests --filter "GameTests.EvaluateMoves"          # Run one test method
+dotnet test Chess.Tests --filter-class Chess.Tests.GameTests        # Run one test class
+dotnet test Chess.Tests --filter-method "*GameTests.EvaluateMoves"  # Run one test method
 dotnet run --project Chess.Console -c Release                       # Run the console app
 dotnet run --project Chess.GUI -c Release                           # Run the Vulkan GUI app
 ```

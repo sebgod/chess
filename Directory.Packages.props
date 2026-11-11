@@ -6,14 +6,14 @@
     <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Console.Lib" Version="4.33.*" />
-    <PackageVersion Include="coverlet.collector" Version="10.0.1" />
-    <PackageVersion Include="DIR.Lib" Version="9.0.*" />
+    <PackageVersion Include="Console.Lib" Version="5.12.*" />
+    <PackageVersion Include="coverlet.collector" Version="10.1.0" />
+    <PackageVersion Include="DIR.Lib" Version="11.56.*" />
     <!-- Chess.Web's Blazor WebAssembly deps. They used to ride inline in Chess.Web.csproj, which
          opted out of CPM entirely; that also hid the WebGl.Renderer pin below from every
          solution-wide sweep, which is how it twice ended up two minors behind DIR.Lib. -->
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.10" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.10" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.15" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.15" />
     <!-- LAN.Lib: the LAN peer discovery (UDP announce beacon + self-expiring peer table) that was
          extracted OUT of this repo's Chess.Net — chess is now a consumer, keeping only the
          chess-specific TCP session layer on top. Same pin as tianwen's — and here the MAJOR is
@@ -21,7 +21,7 @@
          Windows dynamic range, where Hyper-V/WSL carve their exclusions, so bind failed WSAEACCES),
          which means a 1.x node and a 2.0 node never see each other. Both ends of a LAN game must be
          on the same major, so this pin and tianwen's move together or not at all. -->
-    <PackageVersion Include="LAN.Lib" Version="2.0.*" />
+    <PackageVersion Include="LAN.Lib" Version="2.5.*" />
     <!-- SharpAstro.Png is a DIRECT reference (Chess.MCP renders board snapshots, Chess.Tests asserts on
          them) that ALSO arrives transitively under DIR.Lib via SharpAstro.Fonts, so its pin has to keep
          up with that transitive floor: a direct pin BELOW it is NU1605 "package downgrade", which this
@@ -32,22 +32,22 @@
          It recurred verbatim on the DIR.Lib 8.13 repin: SharpAstro.Fonts moved its floor to 3.14, the pin
          stayed at 3.11, and NU1605 took out Chess.MCP — which is the chess MCP server, so the failure
          surfaced as "MCP server chess: Connection closed" rather than as a build error. 3.11.* -> 3.14.*. -->
-    <PackageVersion Include="SharpAstro.Png" Version="3.14.*" />
-    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.8.0" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
+    <PackageVersion Include="SharpAstro.Png" Version="3.34.*" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.11.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.11.1" />
     <!-- Browser automation for Chess.Web.E2E.Tests. That project stays OUT of Chess.sln on purpose
          (it needs a browser and a running dev server), but it is under CPM like everything else:
          solution membership and central versions are independent, and keeping it out of CPM only
          meant its Microsoft.NET.Test.Sdk / xunit.v3 / xunit.runner.visualstudio pins duplicated the
          ones here, free to drift the moment either side moved. -->
-    <PackageVersion Include="Microsoft.Playwright" Version="1.61.0" />
+    <PackageVersion Include="Microsoft.Playwright" Version="1.64.1" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
     <PackageVersion Include="SDL3-CS" Version="3.5.0-preview.20260213-150035" />
-    <PackageVersion Include="SdlVulkan.Renderer" Version="7.37.*" />
+    <PackageVersion Include="SdlVulkan.Renderer" Version="7.86.*" />
     <!-- Single-instance gate + window activation for chess:// hand-off. It already arrived
          transitively under SdlVulkan.Renderer (which implements IActivatableWindow); Chess.GUI now
          uses InstanceGate directly, and a type you call by name deserves a reference you can see. -->
-    <PackageVersion Include="SharpAstro.AppShell" Version="1.1.*" />
+    <PackageVersion Include="SharpAstro.AppShell" Version="1.2.*" />
     <PackageVersion Include="SDL3-CS.Native" Version="3.5.0-preview.20260205-174353" />
     <PackageVersion Include="Vortice.Vulkan" Version="3.2.3" />
     <PackageVersion Include="Vortice.VulkanMemoryAllocator" Version="1.7.0" />
@@ -62,13 +62,13 @@
          flagged BEHAVIOUR CHANGE in the range, 8.13's text baseline moving onto the FACE, chess
          already absorbed. Console.Lib 4.31 also carries cell glyphs for the three IconKinds DIR.Lib
          added (Search/Pan/IBeam), which had been falling back to a "?" placeholder. -->
-    <PackageVersion Include="WebGl.Renderer" Version="1.29.*" />
+    <PackageVersion Include="WebGl.Renderer" Version="1.38.*" />
     <!-- Vortice.ShaderCompiler pin removed: SdlVulkan.Renderer 6.29+ embeds pre-baked SPIR-V and no
          longer compiles GLSL at runtime, and no chess project ever referenced the package directly. -->
-    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.10" />
-    <PackageVersion Include="ModelContextProtocol" Version="2.2.0" />
-    <PackageVersion Include="System.CommandLine" Version="2.0.10" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
-    <PackageVersion Include="xunit.v3" Version="3.2.2" />
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.15" />
+    <PackageVersion Include="ModelContextProtocol" Version="2.4.0" />
+    <PackageVersion Include="System.CommandLine" Version="2.0.15" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
+    <PackageVersion Include="xunit.v3" Version="4.0.3" />
   </ItemGroup>
 </Project>
