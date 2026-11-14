@@ -45,7 +45,7 @@
     <PackageVersion Include="Microsoft.Playwright" Version="1.64.1" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
     <PackageVersion Include="SDL3-CS" Version="3.5.0-preview.20260213-150035" />
-    <PackageVersion Include="SdlVulkan.Renderer" Version="7.90.*" />
+    <PackageVersion Include="SdlVulkan.Renderer" Version="7.92.*" />
     <!-- Single-instance gate + window activation for chess:// hand-off. It already arrived
          transitively under SdlVulkan.Renderer (which implements IActivatableWindow); Chess.GUI now
          uses InstanceGate directly, and a type you call by name deserves a reference you can see. -->
