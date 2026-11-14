@@ -40,10 +40,10 @@
     <PackageReference Include="SDL3-CS.Android" VersionOverride="3.4.16" />
   </ItemGroup>
 
+  <!-- The game itself is Chess.Touch, shared with Chess.iOS; it brings Chess.Lib, Chess.UCI and
+       Chess.Net with it. This head is only what Android does differently (MainActivity). -->
   <ItemGroup>
-    <ProjectReference Include="..\Chess.Lib\Chess.Lib.csproj" />
-    <ProjectReference Include="..\Chess.UCI\Chess.UCI.csproj" />
-    <ProjectReference Include="..\Chess.Net\Chess.Net.csproj" />
+    <ProjectReference Include="..\Chess.Touch\Chess.Touch.csproj" />
   </ItemGroup>
 
   <!-- Bundle the glyph fonts as APK assets (assets/Fonts/*.ttf); MainActivity.StageFonts copies

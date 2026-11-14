@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The touch front-end that the tablet heads share: Chess.Droid (Android) and Chess.iOS (iPad).
+       Everything a game on a touch screen does lives here (the startup menu, taps, the shared
+       GameSession, across-the-table turning, LAN and cloud lobbies, the save); each head supplies
+       only what its OS does differently, through ITouchPlatform. Plain net10.0 and IN Chess.sln, so
+       the `test` job compiles it on every push without either mobile workload. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Chess.Lib\Chess.Lib.csproj" />
+    <ProjectReference Include="..\Chess.UCI\Chess.UCI.csproj" />
+    <ProjectReference Include="..\Chess.Net\Chess.Net.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseLocalSiblings)' == 'true'">
+    <ProjectReference Include="..\..\DIR.Lib\src\DIR.Lib\DIR.Lib.csproj" />
+    <ProjectReference Include="..\..\SdlVulkan.Renderer\src\SdlVulkan.Renderer\SdlVulkan.Renderer.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
+    <PackageReference Include="DIR.Lib" />
+    <PackageReference Include="SdlVulkan.Renderer" />
+  </ItemGroup>
+
+</Project>

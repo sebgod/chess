@@ -1,0 +1,78 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-ios</TargetFramework>
+    <!-- MoltenVK's iOS slice needs 15, and iPadOS 15 is what any iPad Pro still in use can run. -->
+    <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
+    <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Chess.iOS</RootNamespace>
+    <ApplicationTitle>Chess</ApplicationTitle>
+    <ApplicationId>org.sebgod.chess</ApplicationId>
+    <ApplicationVersion>1</ApplicationVersion>
+    <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <!-- The iPad head. Like Chess.Droid it lives OUTSIDE Chess.sln, so a solution build needs no iOS
+         workload (which exists only on macOS anyway). The `ios` job in .github/workflows/dotnet-desktop.yml
+         builds it on a macOS runner into an UNSIGNED .ipa, which AltStore or SideStore signs with the
+         installer's own free Apple ID: no certificate, team or provisioning profile is involved here.
+         See docs/ios.md. -->
+  </PropertyGroup>
+
+  <!-- SDL's managed bindings pinned to the native SDL3.xcframework the app bundles
+       (scripts/fetch-ios-frameworks.sh), the same coherent pair Chess.Droid pins, and for the same
+       reason: SDL3-CS ships no iOS natives, so the framework comes from SDL's own 3.4.16 release, and
+       a binding newer than the native would bind functions the native does not have. -->
+  <ItemGroup>
+    <PackageReference Include="SDL3-CS" VersionOverride="3.4.16" />
+  </ItemGroup>
+
+  <!-- The game itself is Chess.Touch, shared with Chess.Droid. -->
+  <ItemGroup>
+    <ProjectReference Include="..\Chess.Touch\Chess.Touch.csproj" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(UseLocalSiblings)' == 'true'">
+    <ProjectReference Include="..\..\DIR.Lib\src\DIR.Lib\DIR.Lib.csproj" />
+    <ProjectReference Include="..\..\SdlVulkan.Renderer\src\SdlVulkan.Renderer\SdlVulkan.Renderer.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
+    <PackageReference Include="DIR.Lib" />
+    <PackageReference Include="SdlVulkan.Renderer" />
+  </ItemGroup>
+
+  <!-- iOS has no Vulkan and SDL3-CS has no iOS natives, so the app carries both as DYNAMIC frameworks.
+       The build copies each into Chess.iOS.app/Frameworks/, where SdlVulkan.Renderer looks for them
+       (its AppleVulkan class). Not committed: scripts/fetch-ios-frameworks.sh downloads the pinned
+       releases into Chess.iOS/Frameworks/ (gitignored). -->
+  <ItemGroup>
+    <NativeReference Include="Frameworks\SDL3.xcframework">
+      <Kind>Framework</Kind>
+      <SmartLink>False</SmartLink>
+    </NativeReference>
+    <NativeReference Include="Frameworks\MoltenVK.xcframework">
+      <Kind>Framework</Kind>
+      <SmartLink>False</SmartLink>
+    </NativeReference>
+  </ItemGroup>
+
+  <!-- The fonts, at the path FontPaths looks in (AppContext.BaseDirectory/Fonts, the bundle's root on
+       iOS). The bundle is read-only and these are in it from the install, so nothing is staged at
+       startup the way Chess.Droid copies its APK assets out. -->
+  <ItemGroup>
+    <BundleResource Include="..\Chess.Lib\Fonts\DejaVuSans.ttf" LogicalName="Fonts/DejaVuSans.ttf" />
+    <BundleResource Include="..\Chess.Lib\Fonts\Merida.ttf" LogicalName="Fonts/Merida.ttf" />
+  </ItemGroup>
+
+  <!-- The cloud backend's config, exactly as Chess.Droid takes it: absent from the repository, written
+       by CI from the FIREBASE_CONFIG secret, and a build without it simply never offers "Online game". -->
+  <ItemGroup>
+    <BundleResource Include="firebase-config.json" LogicalName="firebase-config.json" Condition="Exists('firebase-config.json')" />
+  </ItemGroup>
+
+  <Target Name="RequireIosFrameworks" BeforeTargets="PrepareForBuild"
+          Condition="!Exists('Frameworks\SDL3.xcframework') Or !Exists('Frameworks\MoltenVK.xcframework')">
+    <Error Text="Chess.iOS needs Frameworks/SDL3.xcframework and Frameworks/MoltenVK.xcframework. Run scripts/fetch-ios-frameworks.sh (macOS) first." />
+  </Target>
+
+</Project>

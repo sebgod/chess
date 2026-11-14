@@ -8,7 +8,7 @@
   <ItemGroup>
     <PackageVersion Include="Console.Lib" Version="5.12.*" />
     <PackageVersion Include="coverlet.collector" Version="10.1.0" />
-    <PackageVersion Include="DIR.Lib" Version="11.56.*" />
+    <PackageVersion Include="DIR.Lib" Version="11.58.*" />
     <!-- Chess.Web's Blazor WebAssembly deps. They used to ride inline in Chess.Web.csproj, which
          opted out of CPM entirely; that also hid the WebGl.Renderer pin below from every
          solution-wide sweep, which is how it twice ended up two minors behind DIR.Lib. -->
@@ -45,7 +45,7 @@
     <PackageVersion Include="Microsoft.Playwright" Version="1.64.1" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
     <PackageVersion Include="SDL3-CS" Version="3.5.0-preview.20260213-150035" />
-    <PackageVersion Include="SdlVulkan.Renderer" Version="7.86.*" />
+    <PackageVersion Include="SdlVulkan.Renderer" Version="7.90.*" />
     <!-- Single-instance gate + window activation for chess:// hand-off. It already arrived
          transitively under SdlVulkan.Renderer (which implements IActivatableWindow); Chess.GUI now
          uses InstanceGate directly, and a type you call by name deserves a reference you can see. -->
