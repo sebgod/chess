@@ -19,13 +19,14 @@
          See docs/ios.md. -->
   </PropertyGroup>
 
-  <!-- SDL's managed bindings pinned to the native SDL3.xcframework the app bundles
-       (scripts/fetch-ios-frameworks.sh), the same coherent pair Chess.Droid pins, and for the same
-       reason: SDL3-CS ships no iOS natives, so the framework comes from SDL's own 3.4.16 release, and
-       a binding newer than the native would bind functions the native does not have. -->
-  <ItemGroup>
-    <PackageReference Include="SDL3-CS" VersionOverride="3.4.16" />
-  </ItemGroup>
+  <!-- SDL's managed bindings are NOT pinned to the native framework's version here, unlike Chess.Droid.
+       The renderer's net10.0 asset (the one an iOS head consumes) is built against the repo-wide SDL3-CS
+       3.5 preview, so a 3.4.16 override is a package downgrade (NU1605). No iOS SDL3.xcframework exists
+       for that preview, so the native is SDL's 3.4.16 release (scripts/fetch-ios-frameworks.sh). That
+       pairing is safe because SDL3 keeps its ABI stable across minor versions and the renderer only
+       calls what 3.4.16 has: its android build compiles the same source against 3.4.16 bindings. A
+       newer binding the renderer does not call is never resolved. Chess.Droid must pin, because SDL's
+       Java half checks its native's version at startup; iOS has no such check. -->
 
   <!-- The game itself is Chess.Touch, shared with Chess.Droid. -->
   <ItemGroup>

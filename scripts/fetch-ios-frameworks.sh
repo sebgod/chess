@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Downloads the two dynamic frameworks Chess.iOS bundles into Chess.iOS/Frameworks/ (gitignored):
-#   SDL3.xcframework     from SDL's own release .dmg, the version Chess.iOS pins SDL3-CS to
+#   SDL3.xcframework     from SDL's own release .dmg, the version Chess.Droid's SDL pair uses (see
+#                        Chess.iOS.csproj for why the managed bindings may be newer)
 #   MoltenVK.xcframework from Khronos's MoltenVK release (Vulkan on Metal; iOS has no Vulkan)
-# macOS only (hdiutil). Idempotent: a framework already present is kept. Bump a version here and in
-# the csproj's SDL3-CS VersionOverride together.
+# macOS only (hdiutil). Idempotent: a framework already present is kept.
 set -euo pipefail
 
 SDL_VERSION="3.4.16"
