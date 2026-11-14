@@ -40,6 +40,30 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<!-- The icon files at the bundle root (Chess.iOS.csproj says why they are not an asset catalog).
+	     iOS adds the @2x and ~ipad suffixes itself when it looks a base name up. -->
+	<key>CFBundleIcons</key>
+	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconFiles</key>
+			<array>
+				<string>AppIcon60x60</string>
+			</array>
+		</dict>
+	</dict>
+	<key>CFBundleIcons~ipad</key>
+	<dict>
+		<key>CFBundlePrimaryIcon</key>
+		<dict>
+			<key>CFBundleIconFiles</key>
+			<array>
+				<string>AppIcon60x60</string>
+				<string>AppIcon76x76</string>
+				<string>AppIcon83.5x83.5</string>
+			</array>
+		</dict>
+	</dict>
 	<!-- Asked once, the first time the LAN lobby opens a socket on the local network. -->
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Chess looks for other players on your network for a LAN game.</string>

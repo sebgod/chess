@@ -145,12 +145,12 @@ jobs:
         set -euo pipefail
         app="$(find Chess.iOS/bin/Release -type d -name 'Chess.iOS.app' | head -n 1)"
         [ -n "$app" ] || { echo "::error::no Chess.iOS.app was built"; exit 1; }
-        for f in Frameworks/SDL3.framework/SDL3 Frameworks/MoltenVK.framework/MoltenVK Fonts/DejaVuSans.ttf Fonts/Merida.ttf Info.plist Assets.car; do
+        for f in Frameworks/SDL3.framework/SDL3 Frameworks/MoltenVK.framework/MoltenVK Fonts/DejaVuSans.ttf Fonts/Merida.ttf Info.plist AppIcon60x60@2x.png AppIcon76x76@2x~ipad.png AppIcon83.5x83.5@2x~ipad.png; do
           [ -e "$app/$f" ] || { echo "::error::the app bundle has no $f"; ls -R "$app" | head -100; exit 1; }
         done
-        # actool names the icon in Info.plist; without it the home screen shows a blank one.
-        icon="$(plutil -extract CFBundleIconName raw -o - "$app/Info.plist" 2>/dev/null || true)"
-        [ "$icon" = "AppIcon" ] || { echo "::error::Info.plist has no CFBundleIconName AppIcon (got '$icon')"; plutil -p "$app/Info.plist"; exit 1; }
+        # The icon files are only used if Info.plist names them; without it the home screen shows a blank one.
+        icons="$(plutil -extract 'CFBundleIcons~ipad.CFBundlePrimaryIcon.CFBundleIconFiles' json -o - "$app/Info.plist" 2>/dev/null || true)"
+        case "$icons" in *AppIcon83.5x83.5*) ;; *) echo "::error::Info.plist names no iPad icon files (got '$icons')"; plutil -p "$app/Info.plist"; exit 1 ;; esac
         mkdir -p ipa/Payload
         cp -R "$app" ipa/Payload/
         (cd ipa && zip -qry ../Chess.ipa Payload)
