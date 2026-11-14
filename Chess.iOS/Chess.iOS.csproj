@@ -1,7 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0-ios</TargetFramework>
+    <!-- The iOS SDK pinned to 26.5, which needs Xcode 26.5: the newest .NET for iOS (27.x) wants Xcode 27,
+         which GitHub's macOS runners offer only as a preview image. The `ios` job selects Xcode 26.5 to
+         match. Move both together once a stable runner carries Xcode 27. -->
+    <TargetFramework>net10.0-ios26.5</TargetFramework>
     <!-- MoltenVK's iOS slice needs 15, and iPadOS 15 is what any iPad Pro still in use can run. -->
     <SupportedOSPlatformVersion>15.0</SupportedOSPlatformVersion>
     <OutputType>Exe</OutputType>
