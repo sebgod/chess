@@ -105,6 +105,58 @@ jobs:
     - name: Build Chess.Droid
       run: dotnet build Chess.Droid/Chess.Droid.csproj -c Release -p:UseLocalSiblings=false --nologo
 
+  # The iPad head, outside Chess.sln for the same reason as Chess.Droid, and buildable only on macOS.
+  # It is both the gate (a change to Chess.Touch must still compile for iOS) and the installer: the
+  # artifact is an UNSIGNED .ipa, which AltStore or SideStore signs on install with the tester's own
+  # free Apple ID. No certificate, team or profile is involved, so the job needs no secret beyond the
+  # optional backend config. See docs/ios.md.
+  ios:
+    runs-on: macos-26
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-dotnet@v6
+      with:
+        dotnet-version: 10.0.x
+    - run: dotnet workload install ios
+    - name: Fetch SDL3 and MoltenVK
+      run: ./scripts/fetch-ios-frameworks.sh
+    # Same secret, same shape and same NATIVE key as the aab job's step; absent is normal.
+    - name: Write the backend config
+      env:
+        FIREBASE_CONFIG: ${{ secrets.FIREBASE_CONFIG }}
+      run: |
+        if [ -z "$FIREBASE_CONFIG" ]; then
+          echo "::notice::No FIREBASE_CONFIG secret. Online play will be absent from this build."
+          exit 0
+        fi
+        printf '%s' "$FIREBASE_CONFIG" > Chess.iOS/firebase-config.json
+        python3 -c "import json; json.load(open('Chess.iOS/firebase-config.json'))"
+    # A device build (ios-arm64 is AOT-compiled; iOS allows no JIT) with signing switched off.
+    - name: Build Chess.iOS
+      run: >
+        dotnet build Chess.iOS/Chess.iOS.csproj -c Release -r ios-arm64 --nologo
+        -p:UseLocalSiblings=false -p:EnableCodeSigning=false
+    # An .ipa is the .app in a Payload folder, zipped. Packed by hand so nothing asks for a
+    # signature; the checks are what a launch on the iPad would otherwise be the first to find.
+    - name: Pack and check the .ipa
+      run: |
+        set -euo pipefail
+        app="$(find Chess.iOS/bin/Release -type d -name 'Chess.iOS.app' | head -n 1)"
+        [ -n "$app" ] || { echo "::error::no Chess.iOS.app was built"; exit 1; }
+        for f in Frameworks/SDL3.framework/SDL3 Frameworks/MoltenVK.framework/MoltenVK Fonts/DejaVuSans.ttf Fonts/Merida.ttf Info.plist; do
+          [ -e "$app/$f" ] || { echo "::error::the app bundle has no $f"; ls -R "$app" | head -100; exit 1; }
+        done
+        mkdir -p ipa/Payload
+        cp -R "$app" ipa/Payload/
+        (cd ipa && zip -qry ../Chess.ipa Payload)
+        echo "### Chess for iPad (unsigned)" >> "$GITHUB_STEP_SUMMARY"
+        echo "Install with AltStore or SideStore, which sign it with your own Apple ID. See docs/ios.md." >> "$GITHUB_STEP_SUMMARY"
+    - uses: actions/upload-artifact@v7
+      with:
+        name: chess-ios-ipa
+        path: Chess.ipa
+        retention-days: 14
+
   # The database security rules are the ONLY logic in this repository that does not live in the C#
   # tree, and the only part a client cannot re-check for itself: a client that believes the history
   # is append-only is no use if the server disagrees. Nothing else can catch a regression in them,

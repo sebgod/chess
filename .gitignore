@@ -373,3 +373,7 @@ Chess.Droid/firebase-config.json
 # the next tool's token is covered too; the value belongs in a repo secret and nowhere on disk.
 *.token
 *.secret
+
+# Chess.iOS: the native frameworks scripts/fetch-ios-frameworks.sh downloads, and the backend config CI writes
+Chess.iOS/Frameworks/
+Chess.iOS/firebase-config.json
