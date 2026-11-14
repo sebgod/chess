@@ -17,6 +17,12 @@
     <ApplicationId>org.sebgod.chess</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+    <!-- The home-screen icon: Assets.xcassets/AppIcon.appiconset (picked up by the SDK's default
+         ImageAsset items), one 1024x1024 universal image from which actool makes every size. It is
+         the white knight on a checkerboard that Chess.GUI, Chess.Droid and the web favicon use, drawn
+         at 1024 by DIR.Lib's RenderChess_WhiteKnightOnCheckerboard recipe, opaque RGB because an iOS
+         icon may carry no alpha. -->
+    <AppIcon>AppIcon</AppIcon>
     <!-- The iPad head. Like Chess.Droid it lives OUTSIDE Chess.sln, so a solution build needs no iOS
          workload (which exists only on macOS anyway). The `ios` job in .github/workflows/dotnet-desktop.yml
          builds it on a macOS runner into an UNSIGNED .ipa, which AltStore or SideStore signs with the
