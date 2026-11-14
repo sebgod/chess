@@ -145,9 +145,12 @@ jobs:
         set -euo pipefail
         app="$(find Chess.iOS/bin/Release -type d -name 'Chess.iOS.app' | head -n 1)"
         [ -n "$app" ] || { echo "::error::no Chess.iOS.app was built"; exit 1; }
-        for f in Frameworks/SDL3.framework/SDL3 Frameworks/MoltenVK.framework/MoltenVK Fonts/DejaVuSans.ttf Fonts/Merida.ttf Info.plist; do
+        for f in Frameworks/SDL3.framework/SDL3 Frameworks/MoltenVK.framework/MoltenVK Fonts/DejaVuSans.ttf Fonts/Merida.ttf Info.plist Assets.car; do
           [ -e "$app/$f" ] || { echo "::error::the app bundle has no $f"; ls -R "$app" | head -100; exit 1; }
         done
+        # actool names the icon in Info.plist; without it the home screen shows a blank one.
+        icon="$(plutil -extract CFBundleIconName raw -o - "$app/Info.plist" 2>/dev/null || true)"
+        [ "$icon" = "AppIcon" ] || { echo "::error::Info.plist has no CFBundleIconName AppIcon (got '$icon')"; plutil -p "$app/Info.plist"; exit 1; }
         mkdir -p ipa/Payload
         cp -R "$app" ipa/Payload/
         (cd ipa && zip -qry ../Chess.ipa Payload)

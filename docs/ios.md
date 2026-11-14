@@ -55,12 +55,16 @@ from the iPad itself.
 The app writes the renderer's diagnostics to `Documents/chess.log`, replaced on each launch, which the
 Files app shows under On My iPad > Chess. Send that file with any report.
 
+`chess.log` only starts once SDL and Vulkan are up. A crash before that, or any exception that reaches
+native code, is appended to `Documents/chess-crash.log` next to it (hooked first thing in `Main`). If the
+app closes the moment it opens, that is the file to send. With no Chess folder at all, send the newest
+`Chess.iOS-...ips` from Settings > Privacy & Security > Analytics & Improvements > Analytics Data.
+
 ## Known gaps
 
 - **LAN play is not expected to work in a sideloaded build.** Receiving UDP broadcast on iOS 14+ needs
   Apple's multicast networking entitlement, which is granted on request and which a free signing
   account cannot carry. The online (cloud) game does not depend on it, and works when the build carries
   the backend config (the `FIREBASE_CONFIG` secret, as for Android).
-- No app icon yet: the home screen shows a blank one.
 - No back gesture on iOS. An attached keyboard's Esc steps back from a game to the menu, as Android's
   back does; at the menu it does nothing, since an iOS app never sends itself home.
