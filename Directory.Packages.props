@@ -8,7 +8,7 @@
   <ItemGroup>
     <PackageVersion Include="Console.Lib" Version="5.12.*" />
     <PackageVersion Include="coverlet.collector" Version="10.1.0" />
-    <PackageVersion Include="DIR.Lib" Version="11.58.*" />
+    <PackageVersion Include="DIR.Lib" Version="11.59.*" />
     <!-- Chess.Web's Blazor WebAssembly deps. They used to ride inline in Chess.Web.csproj, which
          opted out of CPM entirely; that also hid the WebGl.Renderer pin below from every
          solution-wide sweep, which is how it twice ended up two minors behind DIR.Lib. -->
