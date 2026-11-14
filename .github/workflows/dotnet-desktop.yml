@@ -123,7 +123,12 @@ jobs:
     - name: Fetch SDL3 and MoltenVK
       run: bash scripts/fetch-ios-frameworks.sh
     # Same secret, same shape and same NATIVE key as the aab job's step; absent is normal.
+    # NOT on a pull request: this job runs on every PR (that is how a test .ipa is made), and its
+    # chess-ios-ipa artifact can be downloaded by any signed-in GitHub user, since the repo is public.
+    # The config carries the native API key, so a PR build packs without it and has no Online game;
+    # the aab job never runs on a PR at all. Found by the review of #68.
     - name: Write the backend config
+      if: github.event_name != 'pull_request'
       env:
         FIREBASE_CONFIG: ${{ secrets.FIREBASE_CONFIG }}
       run: |

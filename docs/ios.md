@@ -65,6 +65,8 @@ app closes the moment it opens, that is the file to send. With no Chess folder a
 - **LAN play is not expected to work in a sideloaded build.** Receiving UDP broadcast on iOS 14+ needs
   Apple's multicast networking entitlement, which is granted on request and which a free signing
   account cannot carry. The online (cloud) game does not depend on it, and works when the build carries
-  the backend config (the `FIREBASE_CONFIG` secret, as for Android).
+  the backend config (the `FIREBASE_CONFIG` secret, as for Android). Only a build from `main` (or a manual
+  run) carries it: a pull request's `.ipa` is downloadable by anyone signed in to GitHub, and the config
+  holds the native API key, so a PR build has no Online game.
 - No back gesture on iOS. An attached keyboard's Esc steps back from a game to the menu, as Android's
   back does; at the menu it does nothing, since an iOS app never sends itself home.
