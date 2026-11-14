@@ -15,7 +15,8 @@ public interface ITouchPlatform
 
     /// <summary>
     /// Asks for the player's display name in a native dialog, opened with <paramref name="current"/>.
-    /// Exactly one of <paramref name="join"/> (with the trimmed name, never empty) or
+    /// Exactly one of <paramref name="join"/> (with the text as typed, which may be blank or padded:
+    /// the game trims it and falls back to a default name, so a platform need not) or
     /// <paramref name="cancel"/> is called, possibly on another thread, so both may only set flags
     /// the game picks up on its own thread.
     /// </summary>

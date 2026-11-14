@@ -31,7 +31,7 @@ player's point of view).
 
 The 180° turn is one instance of the constrained **content→device transform** — see
 [`docs/content-transform.md`](../../docs/content-transform.md). Per committed move,
-`MainActivity.UpdateAcrossTheTableTransform` computes one flag (`flip = Black to move`) and drives
+`TouchChessGame.UpdateAcrossTheTableTransform` (Chess.Touch) computes one flag (`flip = Black to move`) and drives
 three things off it:
 
 1. **`renderer.ContentTransform = CenteredRotation(Half)` / Identity** — turns the whole frame
@@ -70,7 +70,7 @@ Safe-area insets and the camera cutout are mapped device→content by `DeviceCon
 
 - Mechanism: `ContentTransform` on the abstract renderer + backend support — a sibling-repo change (see
   [`docs/content-transform.md`](../../docs/content-transform.md), phases 1 & 3).
-- Chess wiring: `MainActivity` sets the transform/FlipBoard/MirrorChrome triple per committed move
+- Chess wiring: `TouchChessGame` (Chess.Touch, shared with Chess.iOS) sets the transform/FlipBoard/MirrorChrome triple per committed move
   and maps tap coordinates through the inverse (phase 2). The mode itself is a shared-enum value
   (`GameMode.AcrossTheTable`); other heads don't offer it (a desktop monitor isn't flat between two
   players), but the transform primitive is cross-cutting.

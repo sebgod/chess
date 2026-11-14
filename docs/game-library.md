@@ -27,7 +27,8 @@ evidence about where the real seam sits:
 | WebGl.Renderer | WebGL2 backend, MSDF text |
 | LAN.Lib | UDP peer discovery |
 
-That is why Chess.Droid is essentially one `MainActivity`. A board-game library is therefore not
+That is why the touch game is essentially one class, `TouchChessGame` (Chess.Touch), with `MainActivity`
+(Chess.Droid) and `ChessIosApp` (Chess.iOS) as thin platform heads. A board-game library is therefore not
 "extract everything" — it is a fairly specific residue, most of which we cannot yet design well
 because we have exactly one game to generalise from.
 

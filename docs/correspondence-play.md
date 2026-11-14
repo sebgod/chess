@@ -325,7 +325,7 @@ The correction is not a small widening. Browser-only struck five things out; And
 **native** front-end that already runs a lobby, puts four of them back:
 
 - **The `ILobby` extraction — the design risk of the whole phase — is back on.** `Chess.Droid` already
-  has a LAN lobby (`StartLobby`/`RenderLobby`/`HandleLobbyTap` in `MainActivity.cs`, hand-rendered
+  has a LAN lobby (`StartLobby`/`RenderLobby`/`HandleLobbyTap` in `Chess.Touch/TouchChessGame.cs`, hand-rendered
   menus and all), so a cloud lobby beside it forks that UI unless both sit behind one interface. What
   looked like the phase's design risk — LAN's *invite → accept* against the cloud's *post → claim a
   seat* — turned out not to be one: give the cloud invites and the handshakes are the same, so
