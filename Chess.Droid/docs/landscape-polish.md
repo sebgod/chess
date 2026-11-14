@@ -13,7 +13,7 @@ the open items from task #31 so they aren't lost.
 ## What's already in place (grounding)
 
 - **Safe area drives the shift.** `PixelGameDisplay.SafeAreaInsets` is re-queried on every resize
-  (`MainActivity.OnResize` → `SdlWindow.GetSafeAreaInsets()`). In **portrait** the cutout is a `Top`
+  (`TouchChessGame.OnResize` → `SdlWindow.GetSafeAreaInsets()`). In **portrait** the cutout is a `Top`
   inset; in **landscape** it becomes a `Left` inset and the board draws to its right
   (`Chess.Lib/UI/PixelGameDisplay.cs`, `SafeAreaInsets` setter + `leftOffset` threading).
 - **The stats strip is portrait-only today.** `RenderTopStrip` is called only when
@@ -41,7 +41,7 @@ the open items from task #31 so they aren't lost.
 
 - `Chess.Lib/UI/PixelGameDisplay.cs` — the layout funnel: `Render`, `RenderTopStrip` (→ generalize
   to a side-aware stats strip), the history-panel rect math, and the margin/`ChromeFontSize` terms.
-- No host change expected: `MainActivity` already re-sets `SafeAreaInsets` / `TopStripLabel` /
+- No host change expected: `TouchChessGame` (Chess.Touch) already re-sets `SafeAreaInsets` / `TopStripLabel` /
   `TopCutout` on resize, so a landscape strip lights up automatically once the display renders it.
 
 ## Offline test hook

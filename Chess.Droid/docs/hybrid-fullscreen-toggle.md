@@ -19,7 +19,7 @@ Most of the plumbing already exists from the safe-area work:
 - **`SdlVulkanWindow.ToggleFullscreen()`** already flips `WindowFlags.Fullscreen`
   (`SdlVulkan.Renderer/src/SdlVulkan.Renderer/SdlVulkanWindow.cs`). No renderer change needed.
 - **Safe-area relayout is automatic on the resulting resize.** A fullscreen toggle fires a
-  `WindowResized`/`WindowPixelSizeChanged` event; `MainActivity.OnResize` already re-queries
+  `WindowResized`/`WindowPixelSizeChanged` event; `TouchChessGame.OnResize` (Chess.Touch) already re-queries
   `SdlWindow.GetSafeAreaInsets()` + `QueryTopCutout()` and calls `_display.OnResize(...)`. So going
   bars-visible→fullscreen (and back) already re-insets the board, notch strip, and status bar
   correctly — this was verified end-to-end for rotation, which is the same resize path.
@@ -28,7 +28,7 @@ Most of the plumbing already exists from the safe-area work:
 
 ## What to build
 
-1. **Gesture detection** in `MainActivity.HandleTap` (or a new tap handler): detect a double-tap
+1. **Gesture detection** in `TouchChessGame.HandleTap` (Chess.Touch, or a new tap handler): detect a double-tap
    **outside the 8×8 board** (in the margins / notch strip / status bar / history area) so it can't
    be confused with piece selection or a history-row tap. SDL delivers tap count in the mouse-down
    event (the `clickCount` arg already threaded through `loop.OnMouseDown = (button, x, y, count, _)`

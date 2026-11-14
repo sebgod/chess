@@ -141,7 +141,7 @@ verified* end-to-end (the across-the-table flip), not a GPU-side limitation. The
   whenever Black is to move (identity on White's turn; recomputed on resize), so the whole frame —
   board, history, status, text — faces the player to move. It's an explicit mode, not a guess: plain
   same-seat *Player vs Player* never turns, and vs-AI and LAN (a single local side) keep the identity
-  transform. `MainActivity.UpdateAcrossTheTableTransform` drives three things off one flag
+  transform. `TouchChessGame.UpdateAcrossTheTableTransform` (Chess.Touch, shared by Chess.Droid and Chess.iOS) drives three things off one flag
   (`flip = Black to move`):
   - **`renderer.ContentTransform`** — the frame rotation; text turns with it via the GPU projection.
   - **`GameUI.FlipBoard` tracks the frame flip** — the two 180° rotations cancel for the board, so the
@@ -151,7 +151,7 @@ verified* end-to-end (the across-the-table flip), not a GPU-side limitation. The
     instead of visibly jumping side each move.
 
   The committed live side drives the flag, so playback scrubbing never spins the frame.
-- `MainActivity` maps tap coordinates through `M.Invert` at the SDL boundary; Chess.GUI's unified
+- `TouchChessGame` maps tap coordinates through `ContentTransform.Invert` at the SDL boundary; Chess.GUI's unified
   `OnPointerInput` does the same (identity on the desktop today — correct by construction).
 - Safe-area insets and the camera cutout come from the OS in device space and are mapped into content
   space by `DeviceContentMapping` (Chess.Lib.UI): insets permute edges (180° swaps top↔bottom,
