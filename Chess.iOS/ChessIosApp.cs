@@ -22,6 +22,14 @@ public sealed class ChessIosApp : SdlVulkanIosApp, ITouchPlatform
     // paints don't band (same rationale as the desktop GUI and Chess.Droid).
     protected override RGBAColor32 BackgroundColor => PixelGameDisplay<VulkanContext>.Background;
 
+    // SQUARE on purpose. SDL on iOS allows only the orientations matching the window's initial shape
+    // unless the window is resizable or SDL_HINT_ORIENTATIONS is set (UIKit_GetSupportedOrientations:
+    // landscape when w >= h, portrait when h >= w). The base's 1024x1366 therefore pinned the app to
+    // portrait, and the first iPad run drew sideways in a landscape iPad. A square allows both, and iOS
+    // applies Info.plist's four. The size itself is ignored: the window fills the screen. Until the
+    // renderer creates its iOS window resizable.
+    protected override (int Width, int Height) DesignSize => (1024, 1024);
+
     protected override void OnRendererReady(VkRenderer renderer, SdlEventLoop loop)
     {
         StartLog();
@@ -31,6 +39,7 @@ public sealed class ChessIosApp : SdlVulkanIosApp, ITouchPlatform
                 SdlEventLoop.DiagnosticLog?.Invoke($"[chess] the bundle has no font at {font}; the board will draw without it");
         }
         new TouchChessGame(this, TryLoadCloudConfig()).Attach(renderer, loop, SdlWindow);
+        IosDiagnostics.Start(loop);
     }
 
     // ── The log ─────────────────────────────────────────────────────────────────────────────────
@@ -42,11 +51,12 @@ public sealed class ChessIosApp : SdlVulkanIosApp, ITouchPlatform
     private static void StartLog()
     {
         var stderr = SdlEventLoop.DiagnosticLog;
-        StreamWriter? file = null;
+        TextWriter? file = null;
         try
         {
             var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "chess.log");
-            file = new StreamWriter(path, append: false) { AutoFlush = true };
+            // Synchronized: IosDiagnostics writes from its own thread too.
+            file = TextWriter.Synchronized(new StreamWriter(path, append: false) { AutoFlush = true });
             file.WriteLine($"Chess {NSBundle.MainBundle.InfoDictionary["CFBundleShortVersionString"]} on {UIDevice.CurrentDevice.Model} iPadOS {UIDevice.CurrentDevice.SystemVersion}, started {DateTimeOffset.Now:O}");
         }
         catch (Exception ex)
