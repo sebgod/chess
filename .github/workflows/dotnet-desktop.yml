@@ -119,7 +119,7 @@ jobs:
         dotnet-version: 10.0.x
     - run: dotnet workload install ios
     - name: Fetch SDL3 and MoltenVK
-      run: ./scripts/fetch-ios-frameworks.sh
+      run: bash scripts/fetch-ios-frameworks.sh
     # Same secret, same shape and same NATIVE key as the aab job's step; absent is normal.
     - name: Write the backend config
       env:
