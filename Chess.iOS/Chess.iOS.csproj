@@ -17,12 +17,6 @@
     <ApplicationId>org.sebgod.chess</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
-    <!-- The home-screen icon: Assets.xcassets/AppIcon.appiconset (picked up by the SDK's default
-         ImageAsset items), one 1024x1024 universal image from which actool makes every size. It is
-         the white knight on a checkerboard that Chess.GUI, Chess.Droid and the web favicon use, drawn
-         at 1024 by DIR.Lib's RenderChess_WhiteKnightOnCheckerboard recipe, opaque RGB because an iOS
-         icon may carry no alpha. -->
-    <AppIcon>AppIcon</AppIcon>
     <!-- The iPad head. Like Chess.Droid it lives OUTSIDE Chess.sln, so a solution build needs no iOS
          workload (which exists only on macOS anyway). The `ios` job in .github/workflows/dotnet-desktop.yml
          builds it on a macOS runner into an UNSIGNED .ipa, which AltStore or SideStore signs with the
@@ -74,6 +68,20 @@
   <ItemGroup>
     <BundleResource Include="..\Chess.Lib\Fonts\DejaVuSans.ttf" LogicalName="Fonts/DejaVuSans.ttf" />
     <BundleResource Include="..\Chess.Lib\Fonts\Merida.ttf" LogicalName="Fonts/Merida.ttf" />
+  </ItemGroup>
+
+  <!-- The home-screen icon, as loose PNGs at the bundle root that Info.plist's CFBundleIcons names,
+       NOT an asset catalog: Xcode 26's actool will not compile one without an iOS SIMULATOR runtime
+       matching the SDK (26.0, 23A339), which the macOS runner does not carry ("No simulator runtime
+       version ... available to use with iphonesimulator SDK version 23A339"). Loose icons are the
+       pre-catalog way, still honoured; only the App Store insists on a catalog, and this app is
+       sideloaded. The names are the ones actool itself would emit. It is the white knight on a
+       checkerboard that Chess.GUI, Chess.Droid and the web favicon use, drawn at each size by DIR.Lib's
+       RenderChess_WhiteKnightOnCheckerboard recipe, opaque RGB because an iOS icon may carry no alpha. -->
+  <ItemGroup>
+    <BundleResource Include="Icons\AppIcon60x60@2x.png" LogicalName="AppIcon60x60@2x.png" />
+    <BundleResource Include="Icons\AppIcon76x76@2x~ipad.png" LogicalName="AppIcon76x76@2x~ipad.png" />
+    <BundleResource Include="Icons\AppIcon83.5x83.5@2x~ipad.png" LogicalName="AppIcon83.5x83.5@2x~ipad.png" />
   </ItemGroup>
 
   <!-- The cloud backend's config, exactly as Chess.Droid takes it: absent from the repository, written
