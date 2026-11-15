@@ -298,6 +298,12 @@
     // The startup menu reuses DIR.Lib's backend-neutral PixelMenuWidget — the same widget the
     // desktop Vulkan GUI draws.
     PixelMenuWidget<WebGlContext>? _menu;
+    // Every menu event, click or key, goes through this router (MenuRouting), built with the menu. Since DIR.Lib 10
+    // the widget's own HandleInput takes keys only, so a click handed straight to it was dropped: the web menu
+    // answered the keyboard and ignored the mouse.
+    InputRouter? _menuRouter;
+    readonly BackgroundTaskTracker _uiTasks = new();
+    readonly ActionLogger _uiTaskLog = new(m => Console.WriteLine($"[chess-web] {m}"));
 
     Screen _screen = Screen.Menu;
     // The shared wizard state machine (Chess.Lib.UI) — same flow/content as desktop + console;
@@ -398,6 +404,7 @@
         }
 
         _menu = new PixelMenuWidget<WebGlContext>(_webGl, FontPaths.DejaVuSans);
+        _menuRouter = MenuRouting.For(_menu, _uiTasks, () => _ = RenderMenuAsync());
         _display = new PixelGameDisplay<WebGlContext>(_webGl);
 
         _ready = true;
@@ -609,7 +616,13 @@
     // (A hit/Enter/digit both selects and confirms; an arrow only moves the selection.)
     int? DispatchMenu(InputEvent ev)
     {
-        _menu!.HandleInput(ev);
+        // Both exist once WebGL is up; before that (or in a browser without WebGL2) there is no menu to drive.
+        if (_menu is null || _menuRouter is null) return null;
+
+        _menuRouter.Handle(ev);
+        // No frame loop here to poll the tracker, so it is collected after each event (a menu row's click runs
+        // synchronously; anything it starts in the background is reported here, a fault logged).
+        _uiTasks.ProcessCompletions(_uiTaskLog);
         return _menu.IsConfirmed ? _menu.SelectedIndex : null;
     }
 
