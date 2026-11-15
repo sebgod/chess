@@ -163,6 +163,15 @@ void SaveCurrentGame()
 
 VkStartupMenu? menu = null;
 
+// The app's background work and the redraw it asks for. Every menu host builds its InputRouter with these
+// (MenuRouting): the tracker is polled once a frame in CheckNeedsRedraw (logging a fault, repainting for a
+// finished task) and drained on exit. The loop does not exist yet when the first menu is built, so the redraw
+// goes through redrawTarget; no input can arrive before the loop runs.
+var uiTasks = new BackgroundTaskTracker();
+var uiTaskLog = new ActionLogger(m => Console.Error.WriteLine($"[chess] {m}"));
+SdlEventLoop? redrawTarget = null;
+void RequestRedraw() => redrawTarget?.RequestRedraw();
+
 // Set by the drain in CheckNeedsRedraw, consumed by the next OnRender. The two are separate because
 // the drain runs in a phase where nothing may touch the display -- and because a minimized window
 // reaches the drain but not the render, which is the entire point of the arrangement below.
@@ -309,7 +318,7 @@ void AcceptPendingLink(string source)
 
 // A link on argv skips the wizard entirely, exactly as the web does (Play.razor:323). Asking someone
 // to choose a game mode for a game that already has one is a question with a wrong answer available.
-menu = pendingLinkGame is null ? new(CanContinue()) : null;
+menu = pendingLinkGame is null ? new(uiTasks, RequestRedraw, CanContinue()) : null;
 
 // Map a pointer event's pixel coordinates from device space into content space through the renderer's
 // ContentTransform — the inverse of what the projection applies, so draw and hit-test can never drift
@@ -480,7 +489,9 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             return true;
         }
 
-        return display is { HasPendingUpdate: true } || gameTask is { IsCompleted: true }
+        // Collect the app's finished background work first (logging a fault): a finished task wants a frame.
+        var tasksFinished = uiTasks.ProcessCompletions(uiTaskLog);
+        return tasksFinished || display is { HasPendingUpdate: true } || gameTask is { IsCompleted: true }
             || lobby is not null || picker is not null;
     },
 
@@ -547,7 +558,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             {
                 lobby.Dispose();
                 lobby = null;
-                menu = new VkStartupMenu(CanContinue());
+                menu = new VkStartupMenu(uiTasks, RequestRedraw, CanContinue());
                 // Paint the fresh menu in THIS frame: once lobby is null the CheckNeedsRedraw
                 // predicate goes false, so SDL parks in WaitEventTimeout and no further frame comes
                 // until the next input — without this the menu would stay invisible (blank window)
@@ -579,7 +590,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             else if (picker.IsAborted)
             {
                 picker = null;
-                menu = new VkStartupMenu(CanContinue());
+                menu = new VkStartupMenu(uiTasks, RequestRedraw, CanContinue());
                 // Paint the fresh menu in THIS frame — same reason as the lobby's abort path: once
                 // picker is null the redraw predicate goes false and SDL parks until the next input.
                 menu.Render(renderer);
@@ -598,14 +609,14 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                 // Hand off to the LAN lobby; the game starts once a peer connects (handled above).
                 // ComputerSide is the remote peer's colour, so our preferred colour is the opposite.
                 var preferredColor = computerSide == Side.White ? Side.Black : Side.White;
-                lobby = new VkLanLobby(renderer, dataDir, preferredColor);
+                lobby = new VkLanLobby(renderer, dataDir, preferredColor, uiTasks, RequestRedraw);
                 menu = null;
             }
             else if (gameMode is GameMode.Continue)
             {
                 // Which save to resume is now a choice, so it gets a screen of its own rather than
                 // the wizard silently loading the only slot there used to be.
-                picker = new VkGamePicker(dataDir, TimeProvider.System);
+                picker = new VkGamePicker(dataDir, TimeProvider.System, uiTasks, RequestRedraw);
                 menu = null;
             }
             else
@@ -621,6 +632,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
         bus.ProcessPending();
     }
 };
+redrawTarget = loop;
 
 // Signal handlers (placed after `loop` so they can poke it for a redraw).
 bus.Subscribe<RequestRestartSignal>(_ =>
@@ -641,7 +653,7 @@ bus.Subscribe<RequestRestartSignal>(_ =>
         return;
     }
 
-    menu = new VkStartupMenu(CanContinue());
+    menu = new VkStartupMenu(uiTasks, RequestRedraw, CanContinue());
     // Display→menu state swap happens during OnPostFrame, after this frame's
     // render. Without an explicit nudge, SDL would park in WaitEventTimeout
     // until the next input event, leaving the menu invisible until then.
@@ -709,6 +721,7 @@ loop.Run(cts.Token);
 // Persist an in-progress game on exit too, so closing the window and relaunching offers Continue.
 SaveCurrentGame();
 cts.Cancel();
+await uiTasks.DrainAsync(); // let background work a click started finish (its faults are logged) before teardown
 lobby?.Dispose(); // tears down discovery/sockets if the user quit while still in the lobby
 display?.Dispose();
 renderer.Dispose();

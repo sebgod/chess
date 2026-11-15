@@ -33,6 +33,10 @@ internal sealed class VkGamePicker : IWidget
     private readonly string _localName;
 
     private PixelMenuWidget<VulkanContext>? _menu;
+    // Built with the menu: the app's task tracker and the loop's redraw (see MenuRouting).
+    private InputRouter? _router;
+    private readonly BackgroundTaskTracker _tasks;
+    private readonly System.Action _requestRedraw;
     private List<InboxEntry> _rows = [];
     private int _hiddenCount;
     private bool _showOlder;
@@ -57,8 +61,10 @@ internal sealed class VkGamePicker : IWidget
     public int RowCount => _rows.Count;
 #endif
 
-    public VkGamePicker(string dataDir, TimeProvider time)
+    public VkGamePicker(string dataDir, TimeProvider time, BackgroundTaskTracker tasks, System.Action requestRedraw)
     {
+        _tasks = tasks;
+        _requestRedraw = requestRedraw;
         _dataDir = dataDir;
         _time = time;
         _localName = LanProfile.Load(dataDir).Name;
@@ -80,7 +86,11 @@ internal sealed class VkGamePicker : IWidget
 
     public void Render(VkRenderer renderer)
     {
-        _menu ??= new PixelMenuWidget<VulkanContext>(renderer, FontPaths.DejaVuSans);
+        if (_menu is null)
+        {
+            _menu = new PixelMenuWidget<VulkanContext>(renderer, FontPaths.DejaVuSans);
+            _router = MenuRouting.For(_menu, _tasks, _requestRedraw);
+        }
         RefreshMenuContent();
         _menu.Render();
     }
@@ -112,7 +122,7 @@ internal sealed class VkGamePicker : IWidget
 
     public bool HandleInput(InputEvent evt)
     {
-        if (_menu is null || !MenuInput.Handle(_menu, evt)) return false;
+        if (_menu is null || _router is null || !_router.Handle(evt)) return false;
         if (!_menu.IsConfirmed) return true;
 
         var selected = _menu.SelectedIndex;

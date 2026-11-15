@@ -42,6 +42,7 @@ public sealed class TouchChessGame(ITouchPlatform platform, string? cloudConfig)
     private SdlVulkanWindow _window = null!;
     private StartupWizard? _wizard;
     private PixelMenuWidget<VulkanContext>? _menu;
+    private InputRouter? _menuRouter;
     private PixelGameDisplay<VulkanContext>? _display;
     private Game? _game;
 
@@ -81,6 +82,7 @@ public sealed class TouchChessGame(ITouchPlatform platform, string? cloudConfig)
     private CloudPlayStack? _netCloud;
     private ILobby? _netLobby;
     private PixelMenuWidget<VulkanContext>? _lobbyMenu;
+    private InputRouter? _lobbyRouter;
     private NetworkSession? _netSession;
     private Side _netLocalSide;
     private volatile bool _pendingLobbyStart;
@@ -98,6 +100,15 @@ public sealed class TouchChessGame(ITouchPlatform platform, string? cloudConfig)
     private Vector2? _pointerDown;
     private Vector2 _pointerLast;
     private volatile bool _menuNeedsRedraw;
+
+    // The game's background work, for the menus' routers (MenuRouting): polled once a frame in CheckNeedsRedraw,
+    // which logs a fault and repaints for a finished task. It lives as long as the game, which on a device is the
+    // process, so there is no shutdown to drain it at.
+    private readonly BackgroundTaskTracker _uiTasks = new();
+    private readonly ActionLogger _uiTaskLog = new(m => SdlEventLoop.DiagnosticLog?.Invoke($"[chess] {m}"));
+
+    // A menu's router asks for a frame through the same flag a released menu tap sets.
+    private void RequestMenuRedraw() => _menuNeedsRedraw = true;
 
     /// <summary>Consumes the "a released menu tap changed something" flag (see OnMouseUp).</summary>
     private bool TakeMenuRedraw()
@@ -197,7 +208,8 @@ public sealed class TouchChessGame(ITouchPlatform platform, string? cloudConfig)
         // transition (set from the name dialog's thread), and an incoming network move all need the
         // ~16ms WaitEventTimeout poll to drive a redraw with no input event.
         loop.CheckNeedsRedraw = () =>
-            TakeMenuRedraw()
+            // Non-short-circuit: the tracker is collected every frame, whatever else wants one.
+            _uiTasks.ProcessCompletions(_uiTaskLog) | TakeMenuRedraw()
             || (_display?.HasPendingUpdate ?? false)
             || _pendingLobbyStart || _pendingShowMenu || _netLobby is not null
             || (_netSession is { } s && (s.HasIncomingMove || s.PeerLeft))
@@ -279,6 +291,7 @@ public sealed class TouchChessGame(ITouchPlatform platform, string? cloudConfig)
             | (cloudConfig is null ? StartupWizardOptions.None : StartupWizardOptions.OnlinePlay)
             | StartupWizardOptions.AcrossTheTable);
         _menu = new PixelMenuWidget<VulkanContext>(_renderer, FontPaths.DejaVuSans);
+        _menuRouter = MenuRouting.For(_menu, _uiTasks, RequestMenuRedraw);
         var (title, prompt, items) = _wizard.Current;
         _menu.Reset(title, prompt, [.. items]);
     }
@@ -315,8 +328,8 @@ public sealed class TouchChessGame(ITouchPlatform platform, string? cloudConfig)
     // row confirmed by Return does exactly what a row confirmed by a tap does.
     private bool HandleMenuInput(InputEvent evt)
     {
-        if (_menu is null || _wizard is null) return false;
-        if (!MenuInput.Handle(_menu, evt))
+        if (_menu is null || _wizard is null || _menuRouter is null) return false;
+        if (!_menuRouter.Handle(evt))
             return false;
         if (_menu.IsConfirmed)
         {
@@ -600,6 +613,7 @@ public sealed class TouchChessGame(ITouchPlatform platform, string? cloudConfig)
 
         _netLobby.Start();
         _lobbyMenu = new PixelMenuWidget<VulkanContext>(_renderer, FontPaths.DejaVuSans);
+        _lobbyRouter = MenuRouting.For(_lobbyMenu, _uiTasks, RequestMenuRedraw);
         _lobbyShownKey = "";
     }
 
@@ -656,8 +670,8 @@ public sealed class TouchChessGame(ITouchPlatform platform, string? cloudConfig)
     // The lobby's menu, from a tap or a key (one body, as for the startup menu).
     private void HandleLobbyInput(InputEvent evt)
     {
-        if (_lobbyMenu is null || _netLobby is null) return;
-        if (!MenuInput.Handle(_lobbyMenu, evt)) return;
+        if (_lobbyMenu is null || _netLobby is null || _lobbyRouter is null) return;
+        if (!_lobbyRouter.Handle(evt)) return;
         if (!_lobbyMenu.IsConfirmed) return;
 
         var selected = _lobbyMenu.SelectedIndex;
