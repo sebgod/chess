@@ -31,7 +31,7 @@ public sealed class ChessIosApp : SdlVulkanIosApp, ITouchPlatform
                 SdlEventLoop.DiagnosticLog?.Invoke($"[chess] the bundle has no font at {font}; the board will draw without it");
         }
         new TouchChessGame(this, TryLoadCloudConfig()).Attach(renderer, loop, SdlWindow);
-        IosDiagnostics.Start(loop);
+        IosDiagnostics.Start(loop, renderer, SdlWindow);
     }
 
     // ── The log ─────────────────────────────────────────────────────────────────────────────────
