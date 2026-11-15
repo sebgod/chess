@@ -11,6 +11,10 @@ Usage: /solve-puzzles [--output DIR]
 
 Note: MCP supports drawing boards — use `chess-render_board_png` with `savePath` to save images directly.
 
+**Shortcut for steps 1-3:** `python -I .claude/skills/solve-puzzles/annotate_pdf.py parse file.pdf` prints one
+JSON object per diagram (`number`, `side`, `fen`, optional `mateIn`, board `geometry`). Steps 1-3 below describe
+what it does and remain the fallback when a worksheet's layout defeats it.
+
 Steps:
 
 1. **Extract PDF text** — Use `pdftotext` or `python -c "import PyPDF2; ..."` to get plaintext:
@@ -132,14 +136,40 @@ Steps:
    pf[0].save(out_gif, save_all=True, append_images=pf[1:], duration=durations, loop=0, disposal=1)
    ```
 
-8. **Output layout.** Default to `C:/temp/chess/<pdf-stem>/` (or `--output DIR`); confirm the folder name with the user — they tweak it. Deliverables at top level: `puzzle-01.png … ` (mate-in-1 stills) and `puzzle-NN.gif` (mate-in-N animations). Tuck the per-ply stills + overlay summaries into a `frames/` subfolder.
+8. **Annotate the PDF itself** — the worksheet says "draw an arrow showing your answer", so do that on a copy.
+   Write the solved lines to `OUT/solutions.json`, UCI for the geometry and SAN for the words:
+   ```json
+   {"1": {"uci": ["f7a7"], "san": ["Qxa7#"]},
+    "7": {"uci": ["h2h8", "f8g7", "d8f6"], "san": ["Rh8+", "Kg7", "Qf6#"]}}
+   ```
+   ```bash
+   python -I .claude/skills/solve-puzzles/annotate_pdf.py annotate file.pdf OUT/solutions.json -o OUT/<pdf-stem>-solved.pdf
+   ```
+   The original is never written to. Each puzzle gets real PDF annotations (author `chess-mcp`, so they can be
+   selected, edited or deleted in any PDF app): a `/Line` arrow per ply — numbered, with the defender's replies
+   dashed, when the line is longer than one move — and a `/FreeText` key move left of the "Puzzle N" title. The
+   whole line is each annotation's comment text. Every one carries its own appearance stream; without one,
+   several viewers draw nothing.
 
-9. **Validate every parse** with `chess-solve_mate_in`: a *forced* mate of exactly the stated length confirms the diagram parsed correctly. If no mate is found, re-check the parse (or fall back to `chess-find_best_move` at depth 6+). Then report all solutions in a table:
+   **Then look at it.** No `pdftoppm`/`pymupdf`/Ghostscript here; render with the Windows PDF engine
+   (WINDOWS PowerShell 5.1 — `pwsh` 7 cannot load WinRT) and Read the PNGs:
+   ```bash
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .claude/skills/solve-puzzles/render-pdf-page.ps1 -Pdf OUT/<pdf-stem>-solved.pdf -OutDir <scratchpad>/solved
+   ```
+   Check every arrow starts on the moving piece and ends on the right square. Board placement is read from the
+   content stream's own text operators, **not** from pypdf's `visitor_text` positions: those are wrong on these
+   PDFs (pypdf 6.9 multiplies the leading by the font size on every `T*`, so y runs off to -7000; PyPDF2 3.0 lags
+   one line behind). The script refuses, rather than guesses, when a page's diagrams are not ten separate text
+   lines in one column.
+
+9. **Output layout.** Default to `C:/temp/chess/<pdf-stem>/` (or `--output DIR`); confirm the folder name with the user — they tweak it. Deliverables at top level: `<pdf-stem>-solved.pdf` (the annotated worksheet), `puzzle-01.png … ` (mate-in-1 stills) and `puzzle-NN.gif` (mate-in-N animations), plus `solutions.json`. Tuck the per-ply stills + overlay summaries into a `frames/` subfolder.
+
+10. **Validate every parse** with `chess-solve_mate_in`: a *forced* mate of exactly the stated length confirms the diagram parsed correctly. If no mate is found, re-check the parse (or fall back to `chess-find_best_move` at depth 6+). Then report all solutions in a table:
    | # | Side | Mate in | Key Move | Sequence |
    |---|------|---------|----------|----------|
    Include UCI and algebraic notation, plus a brief explanation. Present all solutions together at the end.
 
-10. **If the `chess` MCP server is listed as failed at session start** (`CONNECTION_CLOSED`), it is almost
+11. **If the `chess` MCP server is listed as failed at session start** (`CONNECTION_CLOSED`), it is almost
     always a *build break*, not a flaky pipe — the server is `dotnet run --project Chess.MCP`, so a
     compile/restore error surfaces only as a dead MCP server. Build it first: `dotnet build Chess.MCP -c Release`.
     The recurring culprit is NU1605 on `SharpAstro.Png`, a DIRECT pin that must keep up with the
@@ -164,7 +194,7 @@ Steps:
     — and cheaper than chasing a phantom. Point the client's `stderr` at a log file rather than
     `DEVNULL`; the server logs each `tools/call` there and it is the only detail you get.
 
-11. **Pass `sideToMove` to `render_board_png`.** A placement-only FEN does not carry it, and the
+12. **Pass `sideToMove` to `render_board_png`.** A placement-only FEN does not carry it, and the
     parameter decides check/checkmate detection *and* the game-over banner. It matters most on the
     closing "mate executed" frame: get it wrong and the frame either draws no banner at all (the
     mated side never gets evaluated) or captions the wrong winner. `play_moves` reports the final
