@@ -112,7 +112,7 @@ internal sealed class VkGamePicker : IWidget
 
     public bool HandleInput(InputEvent evt)
     {
-        if (_menu is null || !_menu.HandleInput(evt)) return false;
+        if (_menu is null || !MenuInput.Handle(_menu, evt)) return false;
         if (!_menu.IsConfirmed) return true;
 
         var selected = _menu.SelectedIndex;
