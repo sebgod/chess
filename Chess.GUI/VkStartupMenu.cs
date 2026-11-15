@@ -11,7 +11,7 @@ namespace Chess.GUI;
 /// and input. The web (Chess.Web) and console (Chess.Console) drive the same wizard through
 /// their own widgets.
 /// </summary>
-internal sealed class VkStartupMenu(bool includeContinue = false) : IWidget
+internal sealed class VkStartupMenu(BackgroundTaskTracker tasks, System.Action requestRedraw, bool includeContinue = false) : IWidget
 {
     // includeContinue prepends a "Continue game" entry (resumes the persisted in-progress game);
     // the host passes true only when a resumable save exists, exactly as the Android head does.
@@ -27,6 +27,8 @@ internal sealed class VkStartupMenu(bool includeContinue = false) : IWidget
     // Lazy: PixelMenuWidget<VulkanContext> is constructed on first Render call so we have a
     // VkRenderer instance to pass to the PixelWidgetBase ctor.
     private PixelMenuWidget<VulkanContext>? _menu;
+    // Built with the menu: the app's task tracker and the loop's redraw (see MenuRouting).
+    private InputRouter? _router;
 
     public bool IsComplete => _wizard.IsComplete;
     public (GameMode Mode, Side ComputerSide, Side SideToMove, Difficulty Difficulty) Result => _wizard.Result;
@@ -42,6 +44,7 @@ internal sealed class VkStartupMenu(bool includeContinue = false) : IWidget
         if (_menu is null)
         {
             _menu = new PixelMenuWidget<VulkanContext>(renderer, FontPaths.DejaVuSans);
+            _router = MenuRouting.For(_menu, tasks, requestRedraw);
             var (title, prompt, items) = _wizard.Current;
             _menu.Reset(title, prompt, [..items]);
         }
@@ -50,7 +53,7 @@ internal sealed class VkStartupMenu(bool includeContinue = false) : IWidget
 
     public bool HandleInput(InputEvent evt)
     {
-        if (IsComplete || _menu is null) return false;
+        if (IsComplete || _menu is null || _router is null) return false;
 
         // Esc on a later wizard step goes back one step, as the step's "Back" row does. On the first step it is
         // not consumed, so the host's own Esc handling (if any) still applies.
@@ -61,7 +64,7 @@ internal sealed class VkStartupMenu(bool includeContinue = false) : IWidget
             return true;
         }
 
-        if (!MenuInput.Handle(_menu, evt))
+        if (!_router.Handle(evt))
             return false;
 
         if (_menu.IsConfirmed)

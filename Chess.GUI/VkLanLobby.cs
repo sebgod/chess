@@ -28,6 +28,10 @@ internal sealed class VkLanLobby : IWidget, IDisposable
     private readonly Side _preferredColor;
 
     private PixelMenuWidget<VulkanContext>? _menu;
+    // Built with the menu: the app's task tracker and the loop's redraw (see MenuRouting).
+    private InputRouter? _router;
+    private readonly BackgroundTaskTracker _tasks;
+    private readonly System.Action _requestRedraw;
     private string _typedName;
     private bool _nameCommitted;
 
@@ -56,8 +60,10 @@ internal sealed class VkLanLobby : IWidget, IDisposable
     public System.Collections.Generic.IReadOnlyList<LobbyPeer> Peers => _lobby?.Peers ?? [];
 #endif
 
-    public VkLanLobby(VkRenderer renderer, string saveDir, Side preferredColor)
+    public VkLanLobby(VkRenderer renderer, string saveDir, Side preferredColor, BackgroundTaskTracker tasks, System.Action requestRedraw)
     {
+        _tasks = tasks;
+        _requestRedraw = requestRedraw;
         _saveDir = saveDir;
         _preferredColor = preferredColor;
         _typedName = LanProfile.Load(saveDir).Name;
@@ -65,7 +71,11 @@ internal sealed class VkLanLobby : IWidget, IDisposable
 
     public void Render(VkRenderer renderer)
     {
-        _menu ??= new PixelMenuWidget<VulkanContext>(renderer, FontPaths.DejaVuSans);
+        if (_menu is null)
+        {
+            _menu = new PixelMenuWidget<VulkanContext>(renderer, FontPaths.DejaVuSans);
+            _router = MenuRouting.For(_menu, _tasks, _requestRedraw);
+        }
         RefreshMenuContent();
         _menu.Render();
     }
@@ -132,7 +142,7 @@ internal sealed class VkLanLobby : IWidget, IDisposable
         if (!_nameCommitted)
             return HandleNameEntry(evt);
 
-        if (_menu is null || !MenuInput.Handle(_menu, evt))
+        if (_menu is null || _router is null || !_router.Handle(evt))
             return false;
 
         if (!_menu.IsConfirmed)
