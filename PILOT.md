@@ -40,7 +40,9 @@ dotnet test -c Release --no-build
   `CLAUDE.md`.
 - `Chess.Web.E2E.Tests` sits outside the solution: it starts the web app and drives a browser with Playwright. With
   no Playwright browser installed, run it against the system Edge with `CHESS_E2E_CHANNEL=msedge`. `CloudPlayTests`
-  skip without the Firebase emulator. A leg that changes `Chess.Web` runs this suite as well.
+  skip without the Firebase emulator. A leg whose diff touches `Chess.Web` runs this suite too: `dotnet test` from
+  the root does not reach it, and CI runs it only nightly (`e2e.yml`), not on the PR, so nothing else would catch a
+  broken web menu before it ships (as happened with mouse clicks in #83).
 - `firebase/` holds the database rules and their tests (`npm test`, which needs Node and a JDK 21). CI's `rules` job
   runs them; a plane without Node names a rules change in the leg's report instead.
 - Package versions live in `Directory.Packages.props`, never in a `.csproj`. SharpAstro libraries are pinned
