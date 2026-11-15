@@ -36,9 +36,9 @@ TUI's inspector.
 dotnet run --project Chess.GUI -c Debug -p:UseLocalSiblings=true 2> gui.log
 ```
 
-On start it prints `[inspector] 'Chess.GUI' command server on 0.0.0.0:<PORT>` to **stderr**.
-Bind defaults to `Any`, so grep the port without pinning to 127.0.0.1
-(`command server on [0-9.]+:([0-9]+)`) and then connect to `127.0.0.1:PORT`.
+On start it prints `[inspector] 'Chess.GUI' command server on <ADDRESS>:<PORT>` to **stderr**.
+The server is loopback-only (the old `Any` default is gone, with no opt-out), but grep the port
+without pinning the address (`command server on [0-9.]+:([0-9]+)`) and connect to `127.0.0.1:PORT`.
 
 Tools: `list_instances`, `ping`, `describe_ui`, `describe_layout`, `screenshot`, `click`,
 `click_label`, `press_key`, `type_text`, `scroll`, `drag`, `press_hold`, `minimize`,
