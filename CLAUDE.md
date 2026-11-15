@@ -16,6 +16,14 @@ dotnet run --project Chess.GUI -c Release                           # Run the Vu
 
 CI runs `dotnet test --configuration Release` on ubuntu-latest with .NET 10.0.
 
+## Pinning
+
+The SharpAstro libraries are pinned `X.Y.*` in `Directory.Packages.props`, and every library chess loads must be built
+against the DIR.Lib (and other shared dependencies) chess pins, or an additive step behind: never an older MAJOR, which
+compiles and then fails at run time. `python scripts/check-pins.py` checks both against nuget.org (CI runs it into the
+summary). The rule, the findings and what to do with each: [docs/pinning.md](docs/pinning.md). The release train
+itself: the `release-lib` skill.
+
 ## Architecture
 
 Chess game with multiple rendering backends. Seven projects in the solution:

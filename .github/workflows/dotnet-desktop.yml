@@ -66,6 +66,17 @@ jobs:
         echo "prefix=${MM}.${{ github.run_number }}" >> "$GITHUB_OUTPUT"
         echo "Resolved VERSION_PREFIX=${MM}.${{ github.run_number }}"
     - run: dotnet test --configuration Release
+    # Every pin against nuget.org, and every library's published build against the shared
+    # dependencies chess pins (docs/pinning.md). Information, not a gate: a MAJOR gap (a library
+    # built against an older major of DIR.Lib than chess loads it with) shows as a warning and in
+    # the run's summary, where it is read.
+    - name: Check pins
+      continue-on-error: true
+      run: |
+        if ! python3 scripts/check-pins.py --markdown > pins.md; then
+          echo "::warning::A library is built against a different MAJOR of a dependency chess pins; see the summary and docs/pinning.md."
+        fi
+        cat pins.md >> "$GITHUB_STEP_SUMMARY"
 
   # The Android head is deliberately outside Chess.sln: an Android TFM in the solution
   # would force the android workload (and a JDK, and the Android SDK) on everyone who
