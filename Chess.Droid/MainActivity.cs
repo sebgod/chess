@@ -7,6 +7,7 @@ using Chess.Lib.UI;
 using Chess.Touch;
 using DIR.Lib;
 using SdlVulkan.Renderer;
+using SharpAstro.AppShell;
 using static Android.Content.PM.ConfigChanges;
 using File = System.IO.File;
 
@@ -51,6 +52,15 @@ public sealed class MainActivity : SdlVulkanActivity, ITouchPlatform
     protected override RGBAColor32 BackgroundColor => PixelGameDisplay<VulkanContext>.Background;
 
     private WifiManager.MulticastLock? _multicastLock;
+
+    // First thing, before SDL starts: an uncaught exception (on any thread, or a faulted task nobody awaited) goes to
+    // logcat under the app's tag. Until this the Android head had no trace of a crash at all: the renderer's
+    // diagnostics only reach logcat from OnRendererReady on, and an exception before that left nothing.
+    protected override void OnCreate(Android.OS.Bundle? savedInstanceState)
+    {
+        CrashTrace.Install(text => Android.Util.Log.Error("chessdroid", text));
+        base.OnCreate(savedInstanceState);
+    }
 
     protected override void OnRendererReady(VkRenderer renderer, SdlEventLoop loop)
     {

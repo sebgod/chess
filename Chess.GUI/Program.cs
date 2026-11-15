@@ -9,6 +9,10 @@ using SdlVulkan.Renderer;
 using SharpAstro.AppShell;
 using System.Numerics;
 
+// First: an uncaught exception (any thread, or a faulted task nobody awaited) leaves a trace on stderr, which the
+// GUI's runs redirect to a log. AppShell's CrashTrace, shared with the iOS and Android heads.
+CrashTrace.Install(text => Console.Error.WriteLine($"[chess] {text}"));
+
 // ---- Before any window exists: the two jobs that must not open one. --------------------------
 
 // Registering the scheme is an explicit action with an explicit result, never a silent write on first
