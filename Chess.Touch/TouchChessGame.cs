@@ -29,11 +29,13 @@ namespace Chess.Touch;
 /// thing doing the driving differs.
 /// </summary>
 /// <param name="platform">What the head's OS does for the game.</param>
-/// <param name="cloudConfig">This build's backend config (<c>firebase-config.json</c>), or null when
-/// it has none -- which is the normal state of a fork, a PR build and any checkout that has not opted
-/// in. Absent means the "Online game" entry never appears and nothing else changes.</param>
-public sealed class TouchChessGame(ITouchPlatform platform, string? cloudConfig)
+public sealed class TouchChessGame(ITouchPlatform platform)
 {
+    // This build's backend config (firebase-config.json, bundled by CI from the FIREBASE_CONFIG secret), or null when
+    // it has none: the normal state of a fork, a pull request's build (#71) and any checkout that has not opted in.
+    // Absent means the "Online game" entry never appears and nothing else changes.
+    private readonly string? _cloudConfig = TryLoadCloudConfig(platform);
+
     // Chosen in the startup wizard. Capped by Difficulty's own ladder, which stops at depth 4 partly
     // because this host searches on the UI thread — see DifficultyExtensions.ToSearchDepth.
     private Difficulty _difficulty = Difficulty.Normal;
@@ -288,7 +290,7 @@ public sealed class TouchChessGame(ITouchPlatform platform, string? cloudConfig)
         _wizard = new StartupWizard(
             (canContinue ? StartupWizardOptions.Continue : StartupWizardOptions.None)
             | StartupWizardOptions.NetworkPlay
-            | (cloudConfig is null ? StartupWizardOptions.None : StartupWizardOptions.OnlinePlay)
+            | (_cloudConfig is null ? StartupWizardOptions.None : StartupWizardOptions.OnlinePlay)
             | StartupWizardOptions.AcrossTheTable);
         _menu = new PixelMenuWidget<VulkanContext>(_renderer, FontPaths.DejaVuSans);
         _menuRouter = MenuRouting.For(_menu, _uiTasks, RequestMenuRedraw);
@@ -600,7 +602,7 @@ public sealed class TouchChessGame(ITouchPlatform platform, string? cloudConfig)
             // only fail here if the config went missing since the menu was built, since the entry is
             // gated on it — but "no backend" is a state this app returns to the menu for, never an
             // exception.
-            _netCloud = CloudPlayStack.TryCreate(cloudConfig, name, _pendingLobbyPreferred);
+            _netCloud = CloudPlayStack.TryCreate(_cloudConfig, name, _pendingLobbyPreferred);
             _netLobby = _netCloud?.Lobby;
             if (_netLobby is null) { ShowMenu(); return; }
         }
@@ -789,6 +791,26 @@ public sealed class TouchChessGame(ITouchPlatform platform, string? cloudConfig)
     // Worth resuming when the game isn't over — or when it is still being set up, where "finished"
     // means nothing: a board with no pieces on it has no legal moves and reads as a dead position.
     private static bool IsResumable(SavedGame s) => !s.Game.IsFinished || IsMidSetup(s);
+
+    // The bundled backend config, read through the platform (an APK asset, a file in the iOS bundle) and checked
+    // once here, where both heads used to repeat it: it must be a JSON object, anything else (an empty or
+    // placeholder file) reads as absent.
+    private static string? TryLoadCloudConfig(ITouchPlatform platform)
+    {
+        try
+        {
+            using var stream = platform.OpenBundled("firebase-config.json");
+            if (stream is null) return null;
+            using var reader = new StreamReader(stream);
+            var text = reader.ReadToEnd().Trim();
+            return text.StartsWith('{') ? text : null;
+        }
+        catch (Exception ex)
+        {
+            SdlEventLoop.DiagnosticLog?.Invoke($"[chess] the bundled firebase-config.json could not be read: {ex.Message}");
+            return null;
+        }
+    }
 
     private void SaveGame()
     {
