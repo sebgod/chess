@@ -14,7 +14,7 @@ namespace Chess.GUI;
 /// through the same <see cref="PixelMenuWidget{TSurface}"/> as the startup menu and the LAN lobby.
 ///
 /// <para>A screen the wizard routes <em>into</em>, rather than a wizard phase, following
-/// <see cref="VkLanLobby"/>. <see cref="StartupWizard"/> is a state machine over a FIXED set of
+/// <see cref="VkNetworkLobby"/>. <see cref="StartupWizard"/> is a state machine over a FIXED set of
 /// items — its <c>Confirm(int)</c> switches on the index — and a list whose length is however many
 /// games you happen to have is data, not a phase. Bending the wizard around it would put the one
 /// thing every front-end shares at the mercy of one host's disk.</para>
@@ -42,7 +42,7 @@ internal sealed class VkGamePicker : IWidget
     private bool _showOlder;
 
     // What the widget currently shows, so Reset() (which snaps the selection back to 0) only runs
-    // when the content actually changed — the same guard VkLanLobby uses.
+    // when the content actually changed — the same guard VkNetworkLobby uses.
     private string _shownPrompt = "";
     private string[] _shownItems = [];
 

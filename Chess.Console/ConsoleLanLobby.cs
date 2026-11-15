@@ -10,7 +10,7 @@ namespace Chess.Console;
 /// the same <c>HasInput()/TryReadInput()</c> poll primitives the game loop and <see cref="MenuBase{T}"/>
 /// use — so invites that arrive while browsing surface without the user pressing anything. Owns the
 /// Chess.Net stack for its lifetime and returns the connected <see cref="NetworkSession"/> (or null if
-/// the user backs out). The desktop GUI's <c>VkLanLobby</c> is the pixel equivalent.
+/// the user backs out). The desktop GUI's <c>VkNetworkLobby</c> is the pixel equivalent.
 /// </summary>
 internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
 {

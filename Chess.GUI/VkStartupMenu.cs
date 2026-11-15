@@ -11,7 +11,7 @@ namespace Chess.GUI;
 /// and input. The web (Chess.Web) and console (Chess.Console) drive the same wizard through
 /// their own widgets.
 /// </summary>
-internal sealed class VkStartupMenu(BackgroundTaskTracker tasks, System.Action requestRedraw, bool includeContinue = false) : IWidget
+internal sealed class VkStartupMenu(BackgroundTaskTracker tasks, System.Action requestRedraw, bool includeContinue = false, bool online = false) : IWidget
 {
     // includeContinue prepends a "Continue game" entry (resumes the persisted in-progress game);
     // the host passes true only when a resumable save exists, exactly as the Android head does.
@@ -19,10 +19,13 @@ internal sealed class VkStartupMenu(BackgroundTaskTracker tasks, System.Action r
     // "Network game" entry that routes into the LAN lobby. LinkPlay is always on too: a game link
     // needs a clipboard, not a network, and SDL gives the desktop one — so correspondence play works
     // on a machine with no connectivity at all, which is the point of encoding the game in the URL.
+    // online adds "Online game", only when there is a backend config (CloudConfigFile): every fork and
+    // PR build has none, and the menu then looks exactly as it did.
     private readonly StartupWizard _wizard = new(
         (includeContinue ? StartupWizardOptions.Continue : StartupWizardOptions.None)
         | StartupWizardOptions.LinkPlay
-        | StartupWizardOptions.NetworkPlay);
+        | StartupWizardOptions.NetworkPlay
+        | (online ? StartupWizardOptions.OnlinePlay : StartupWizardOptions.None));
 
     // Lazy: PixelMenuWidget<VulkanContext> is constructed on first Render call so we have a
     // VkRenderer instance to pass to the PixelWidgetBase ctor.

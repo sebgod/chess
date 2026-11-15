@@ -59,11 +59,13 @@
        without it matches this glob nothing and simply never offers "Online game" — which is the
        normal state of every fork and PR build. CI writes it from the FIREBASE_CONFIG secret.
 
-       To build one locally that DOES offer it, drop the same JSON here as Chess.Droid/firebase-config.json
-       (gitignored); ../Chess.Web/wwwroot/firebase-config.example.json documents the shape, including the
-       apiKeyNative field this head needs and the browser does not. -->
+       To build one locally that DOES offer it, keep the JSON as your own copy outside the checkout
+       (%APPDATA%\chess\firebase-config.json, ~/.config/chess/ elsewhere; ChessCloudConfig in
+       Directory.Build.props), or drop it here as Chess.Droid/firebase-config.json (gitignored), which wins.
+       ../Chess.Web/wwwroot/firebase-config.example.json documents the shape, including the apiKeyNative
+       field this head needs and the browser does not. -->
   <ItemGroup>
-    <AndroidAsset Include="firebase-config.json" Link="Assets\firebase-config.json" Condition="Exists('firebase-config.json')" />
+    <AndroidAsset Include="$(ChessCloudConfig)" Link="Assets\firebase-config.json" Condition="'$(ChessCloudConfig)' != ''" />
   </ItemGroup>
 
   <!-- Renderer + DIR.Lib: sibling working copies for local iteration, NuGet otherwise (mirrors

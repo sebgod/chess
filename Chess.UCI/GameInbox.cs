@@ -58,6 +58,7 @@ public readonly record struct InboxEntry(
         GameMode.PlayByLink => "Link game",
         GameMode.PlayerVsComputer => "vs Computer",
         GameMode.NetworkGame => "LAN game",
+        GameMode.OnlineGame => "Online game",
         GameMode.AcrossTheTable => "Across the table",
         GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard => "Custom game",
         _ => "Hot seat",

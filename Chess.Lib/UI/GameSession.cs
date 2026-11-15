@@ -247,12 +247,13 @@ public sealed class GameSession
 
         _humanPlayer = _playerFactory();
 
-        // The "other" player is opponent-shaped for PvC/custom AND for a LAN game: a remote peer is a
-        // drop-in IGamePlayer (Chess.Net.NetworkPlayer) here, with computerSide = the peer's colour,
-        // so the pairing below wires the local human to the local colour automatically.
+        // The "other" player is opponent-shaped for PvC/custom AND for a LAN or online game: a remote
+        // peer is a drop-in IGamePlayer (Chess.Net.NetworkPlayer) here, with computerSide = the peer's
+        // colour, so the pairing below wires the local human to the local colour automatically. The two
+        // remote modes differ only in the courier behind the session.
         if (_opponentFactory is not null
             && _gameMode is GameMode.PlayerVsComputer or GameMode.CustomGameEmpty
-                or GameMode.CustomGameStandardBoard or GameMode.NetworkGame)
+                or GameMode.CustomGameStandardBoard or GameMode.NetworkGame or GameMode.OnlineGame)
         {
             _opponent = _opponentFactory(_computerSide, timeProvider);
 
