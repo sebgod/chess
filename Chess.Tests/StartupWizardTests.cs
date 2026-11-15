@@ -99,8 +99,8 @@ public class StartupWizardTests
         wizard.Confirm(0); // play as White
 
         // Generated from DifficultyExtensions.All, so a new level cannot appear in one front-end's
-        // menu and not another's.
-        wizard.Current.Items.ShouldBe(["Easy", "Normal", "Hard"]);
+        // menu and not another's. A later step ends with the wizard's Back row (StartupWizardBackTests).
+        wizard.Current.Items.ShouldBe(["Easy", "Normal", "Hard", StartupWizard.BackItem]);
     }
 
     [Theory]
