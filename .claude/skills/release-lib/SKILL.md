@@ -51,7 +51,8 @@ Consequences:
   `Directory.Packages.props` to the new `X.Y.*` pin.
 - The pinned `X.Y` must have at least one published version on NuGet before any
   downstream repo referencing it is **pushed** (CI restores from NuGet only).
-- **Run `python scripts/check-pins.py` before a train and after it** ([docs/pinning.md](../../../docs/pinning.md)).
+- **Run the org's check-pins before a train and after it**: `python ../../sharpastro/.github/scripts/check-pins.py
+  Directory.Packages.props` from this repo's root, or read the `pins` job's summary ([docs/pinning.md](../../../docs/pinning.md)).
   It reads each pinned package's published `.nuspec` for what it was BUILT against, so a library
   the train skipped shows up as a gap: WebGl.Renderer sat on DIR.Lib 10.4 for the whole 11.x line,
   compiling and passing tests in chess the entire time, until this check found it (2026-11-15).

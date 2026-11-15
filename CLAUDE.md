@@ -20,9 +20,10 @@ CI runs `dotnet test --configuration Release` on ubuntu-latest with .NET 10.0.
 
 The SharpAstro libraries are pinned `X.Y.*` in `Directory.Packages.props`, and every library chess loads must be built
 against the DIR.Lib (and other shared dependencies) chess pins, or an additive step behind: never an older MAJOR, which
-compiles and then fails at run time. `python scripts/check-pins.py` checks both against nuget.org (CI runs it into the
-summary). The rule, the findings and what to do with each: [docs/pinning.md](docs/pinning.md). The release train
-itself: the `release-lib` skill.
+compiles and then fails at run time. The org's `check-pins` checks both against nuget.org (CI's `pins` job runs its
+reusable workflow into the summary; locally `python ../../sharpastro/.github/scripts/check-pins.py
+Directory.Packages.props`). The rule, the findings and what to do with each: [docs/pinning.md](docs/pinning.md), which
+points at the org's. The release train itself: the `release-lib` skill.
 
 ## Architecture
 
