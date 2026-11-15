@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using DIR.Lib;
 using SdlVulkan.Renderer;
 using UIKit;
 
@@ -18,17 +19,29 @@ namespace Chess.iOS;
 /// </summary>
 internal static class IosDiagnostics
 {
-    private static long _iterations, _frames, _pointer, _mouseDown, _keyDown, _text;
-    private static int _probePending;
+    private static long _iterations, _frames, _pointer, _mouseDown, _mouseUp, _keyDown, _text;
+    private static int _probePending, _pointerLogged;
 
-    internal static void Start(SdlEventLoop loop)
+    internal static void Start(SdlEventLoop loop, VkRenderer renderer, SdlVulkanWindow window)
     {
+        Log($"[ios-diag] renderer {renderer.Width}x{renderer.Height} px, window pixel density {window.PixelDensity}");
         var iteration = loop.OnLoopIteration;
         loop.OnLoopIteration = () => { Interlocked.Increment(ref _iterations); iteration?.Invoke(); };
         var postFrame = loop.OnPostFrame;
         loop.OnPostFrame = () => { Interlocked.Increment(ref _frames); postFrame?.Invoke(); };
         if (loop.OnPointerInput is { } pointer)
             loop.OnPointerInput = e => { Interlocked.Increment(ref _pointer); return pointer(e); };
+        else
+            // The game sets none, so this one only looks: it logs where each press and release lands (in the pixels
+            // the game hit-tests in, after the renderer's scaling) and never consumes. The first 60 are enough.
+            loop.OnPointerInput = e =>
+            {
+                if (e is InputEvent.MouseDown or InputEvent.MouseUp && Interlocked.Increment(ref _pointerLogged) <= 60)
+                    Log($"[ios-diag] {e} (renderer {renderer.Width}x{renderer.Height})");
+                return false;
+            };
+        var mouseUp = loop.OnMouseUp;
+        loop.OnMouseUp = b => { Interlocked.Increment(ref _mouseUp); mouseUp?.Invoke(b); };
         if (loop.OnMouseDown is { } mouseDown)
             loop.OnMouseDown = (b, x, y, c, m) => { Interlocked.Increment(ref _mouseDown); return mouseDown(b, x, y, c, m); };
         if (loop.OnKeyDown is { } keyDown)
@@ -52,7 +65,7 @@ internal static class IosDiagnostics
             {
                 Log($"[ios-diag] t={clock.Elapsed.TotalSeconds:F0}s iterations={Interlocked.Read(ref _iterations)} "
                     + $"frames={Interlocked.Read(ref _frames)} pointer={Interlocked.Read(ref _pointer)} "
-                    + $"mouseDown={Interlocked.Read(ref _mouseDown)} keyDown={Interlocked.Read(ref _keyDown)} "
+                    + $"mouseDown={Interlocked.Read(ref _mouseDown)} mouseUp={Interlocked.Read(ref _mouseUp)} keyDown={Interlocked.Read(ref _keyDown)} "
                     + $"text={Interlocked.Read(ref _text)} mainThreadProbeOutstanding={Volatile.Read(ref _probePending) == 1}");
 
                 if (Interlocked.Exchange(ref _probePending, 1) == 0)
