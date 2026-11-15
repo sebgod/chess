@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!-- Predictive back is on by default for an app targeting API 36 on Android 16: the system then
+       neither calls onBackPressed nor dispatches KEYCODE_BACK. SDL's Java activity listens only
+       there, so Back never became AC_BACK (InputKey.Escape) and did nothing. Opting out restores the
+       old path. A stopgap: Google will retire this opt-out, and the lasting fix is an
+       OnBackInvokedCallback in SdlVulkan.Renderer's SdlVulkanActivity (Move upstream milestone).
+       The rest of the manifest comes from the [Application] and [Activity] attributes. -->
+  <application android:enableOnBackInvokedCallback="false" />
+</manifest>
