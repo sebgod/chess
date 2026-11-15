@@ -74,6 +74,27 @@ public sealed class StartupWizard(StartupWizardOptions options = StartupWizardOp
     private Side _computerSide;
     private Side _sideToMove = Side.White;
     private Difficulty _difficulty = Difficulty.Normal;
+    // The steps already answered, newest on top, so Back can return to each in turn.
+    private readonly Stack<Phase> _history = new();
+
+    /// <summary>The last item of every step after the first: picking it returns to the previous step.</summary>
+    public const string BackItem = "Back";
+
+    /// <summary>True on any step after the first: <see cref="Back"/> (or the <see cref="BackItem"/> row) has
+    /// somewhere to go. On the first step a host's own "back" (Esc, Android's back) leaves the wizard instead.</summary>
+    public bool CanGoBack => !IsComplete && _history.Count > 0;
+
+    /// <summary>
+    /// Returns to the previous step. A touch-only device has no other way back once a mode is picked (iPadOS has no
+    /// back gesture), and every front-end gets it through the <see cref="BackItem"/> row with no code of its own; a
+    /// host maps its Esc/back key here too. False, and nothing changes, on the first step.
+    /// </summary>
+    public bool Back()
+    {
+        if (!CanGoBack) return false;
+        _phase = _history.Pop();
+        return true;
+    }
 
     /// <summary>True once the flow has produced a <see cref="Result"/>; <see cref="Confirm"/>
     /// must not be called after this.</summary>
@@ -88,8 +109,18 @@ public sealed class StartupWizard(StartupWizardOptions options = StartupWizardOp
     public (GameMode Mode, Side ComputerSide, Side SideToMove, Difficulty Difficulty) Result =>
         (_gameMode, _computerSide, _sideToMove, _difficulty);
 
-    /// <summary>The current step's menu content.</summary>
-    public (string Title, string Prompt, string[] Items) Current => _phase switch
+    /// <summary>The current step's menu content: the step's own items, then <see cref="BackItem"/> on any step
+    /// after the first. Appended LAST, so every index <see cref="Confirm"/> switches on is unchanged.</summary>
+    public (string Title, string Prompt, string[] Items) Current
+    {
+        get
+        {
+            var (title, prompt, items) = Step;
+            return CanGoBack ? (title, prompt, [.. items, BackItem]) : (title, prompt, items);
+        }
+    }
+
+    private (string Title, string Prompt, string[] Items) Step => _phase switch
     {
         Phase.GameMode => (Title, "Select game mode:",
             [.. Has(StartupWizardOptions.Continue) ? new[] { "Continue game" } : [],
@@ -113,6 +144,13 @@ public sealed class StartupWizard(StartupWizardOptions options = StartupWizardOp
     /// </summary>
     public void Confirm(int selected)
     {
+        if (CanGoBack && selected == Step.Items.Length)
+        {
+            Back();
+            return;
+        }
+
+        var answered = _phase;
         switch (_phase)
         {
             case Phase.GameMode:
@@ -233,5 +271,8 @@ public sealed class StartupWizard(StartupWizardOptions options = StartupWizardOp
                 IsComplete = true;
                 break;
         }
+
+        if (!IsComplete && _phase != answered)
+            _history.Push(answered);
     }
 }

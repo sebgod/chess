@@ -52,6 +52,15 @@ internal sealed class VkStartupMenu(bool includeContinue = false) : IWidget
     {
         if (IsComplete || _menu is null) return false;
 
+        // Esc on a later wizard step goes back one step, as the step's "Back" row does. On the first step it is
+        // not consumed, so the host's own Esc handling (if any) still applies.
+        if (evt is InputEvent.KeyDown { Key: InputKey.Escape } && _wizard.Back())
+        {
+            var (backTitle, backPrompt, backItems) = _wizard.Current;
+            _menu.Reset(backTitle, backPrompt, [.. backItems]);
+            return true;
+        }
+
         if (!MenuInput.Handle(_menu, evt))
             return false;
 

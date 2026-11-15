@@ -241,7 +241,14 @@ public sealed class TouchChessGame(ITouchPlatform platform, string? cloudConfig)
                     ShowMenu();
                 return true;
             }
-            platform.LeaveToHome(); // menu: hand back to the launcher
+            // A later wizard step (side, difficulty, board): back one step, as its "Back" row does.
+            if (_menu is not null && _wizard is not null && _wizard.Back())
+            {
+                var (title, prompt, items) = _wizard.Current;
+                _menu.Reset(title, prompt, [.. items]);
+                return true;
+            }
+            platform.LeaveToHome(); // the first menu step: hand back to the launcher (nothing on iOS)
             return true;
         };
     }
