@@ -212,7 +212,18 @@ public sealed class TouchChessGame(ITouchPlatform platform, string? cloudConfig)
         // keyboard attached reaches the same ladder through Esc.
         loop.OnKeyDown = keyEvent =>
         {
-            if (keyEvent.Key != InputKey.Escape) return false;
+            // An attached keyboard (an iPad's, a Chromebook's) drives the menus as the desktop's does: arrows move
+            // the highlight, Enter confirms. The widget handles the keys itself; returning true repaints.
+            if (keyEvent.Key != InputKey.Escape)
+            {
+                if (_menu is not null && _wizard is not null) return HandleMenuInput(keyEvent);
+                if (_lobbyMenu is not null && _netLobby is not null)
+                {
+                    HandleLobbyInput(keyEvent);
+                    return true;
+                }
+                return false;
+            }
             // Back is a one-shot. Held, the OS repeats it, and each repeat would take another step
             // down this ladder — a long press would walk playback, game and menu in one gesture and
             // drop the player at the launcher, which is not what holding a button means.
@@ -293,53 +304,59 @@ public sealed class TouchChessGame(ITouchPlatform platform, string? cloudConfig)
             _menu?.Render();
     }
 
+    // The startup wizard's menu, from a tap (a press built at the release point) or a key. One body, so a
+    // row confirmed by Return does exactly what a row confirmed by a tap does.
+    private bool HandleMenuInput(InputEvent evt)
+    {
+        if (_menu is null || _wizard is null) return false;
+        if (!MenuInput.Handle(_menu, evt))
+            return false;
+        if (_menu.IsConfirmed)
+        {
+            _wizard.Confirm(_menu.SelectedIndex);
+            if (_wizard.IsComplete)
+            {
+                var (mode, computerSide, sideToMove, difficulty) = _wizard.Result;
+                // Continue/network keep whatever is already set; the wizard only asks when an
+                // engine is actually involved.
+                _difficulty = difficulty;
+                _menu = null;
+                _wizard = null;
+                if (mode == GameMode.Continue)
+                {
+                    // The menu only offers Continue when the save parsed moments ago; if it
+                    // fails NOW, re-showing the menu (without Continue) is the safe move — a
+                    // silent fresh StartGame would overwrite the very game being continued.
+                    if (TryLoadGame() is { } saved)
+                        StartGame(saved.Game, saved.ComputerSide, saved.Mode, setUp: IsMidSetup(saved));
+                    else
+                        ShowMenu();
+                }
+                else if (mode is GameMode.NetworkGame or GameMode.OnlineGame)
+                    EnterNetworkLobby(computerSide, cloud: mode == GameMode.OnlineGame);
+                else if (mode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard)
+                {
+                    // Both wizard answers are honoured: the board it starts from and who moves
+                    // first. Then setup mode, exactly like the desktop's GameLoop does it.
+                    var board = mode == GameMode.CustomGameEmpty ? new Board() : Board.StandardBoard;
+                    StartGame(new Game(board, sideToMove, []), computerSide, mode, setUp: true);
+                }
+                else
+                    StartGame(new Game(), mode == GameMode.AcrossTheTable ? Side.None : computerSide, mode);
+            }
+            else
+            {
+                var (title, prompt, items) = _wizard.Current;
+                _menu.Reset(title, prompt, [.. items]);
+            }
+        }
+        return true;
+    }
+
     private bool HandleTap(int x, int y)
     {
         if (_menu is not null && _wizard is not null)
-        {
-            if (!_menu.HandleInput(new InputEvent.MouseDown(x, y)))
-                return false;
-            if (_menu.IsConfirmed)
-            {
-                _wizard.Confirm(_menu.SelectedIndex);
-                if (_wizard.IsComplete)
-                {
-                    var (mode, computerSide, sideToMove, difficulty) = _wizard.Result;
-                    // Continue/network keep whatever is already set; the wizard only asks when an
-                    // engine is actually involved.
-                    _difficulty = difficulty;
-                    _menu = null;
-                    _wizard = null;
-                    if (mode == GameMode.Continue)
-                    {
-                        // The menu only offers Continue when the save parsed moments ago; if it
-                        // fails NOW, re-showing the menu (without Continue) is the safe move — a
-                        // silent fresh StartGame would overwrite the very game being continued.
-                        if (TryLoadGame() is { } saved)
-                            StartGame(saved.Game, saved.ComputerSide, saved.Mode, setUp: IsMidSetup(saved));
-                        else
-                            ShowMenu();
-                    }
-                    else if (mode is GameMode.NetworkGame or GameMode.OnlineGame)
-                        EnterNetworkLobby(computerSide, cloud: mode == GameMode.OnlineGame);
-                    else if (mode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard)
-                    {
-                        // Both wizard answers are honoured: the board it starts from and who moves
-                        // first. Then setup mode, exactly like the desktop's GameLoop does it.
-                        var board = mode == GameMode.CustomGameEmpty ? new Board() : Board.StandardBoard;
-                        StartGame(new Game(board, sideToMove, []), computerSide, mode, setUp: true);
-                    }
-                    else
-                        StartGame(new Game(), mode == GameMode.AcrossTheTable ? Side.None : computerSide, mode);
-                }
-                else
-                {
-                    var (title, prompt, items) = _wizard.Current;
-                    _menu.Reset(title, prompt, [.. items]);
-                }
-            }
-            return true;
-        }
+            return HandleMenuInput(new InputEvent.MouseDown(x, y));
 
         // LAN lobby: taps drive the peer list / accept-decline menu.
         if (_lobbyMenu is not null && _netLobby is not null)
@@ -627,10 +644,13 @@ public sealed class TouchChessGame(ITouchPlatform platform, string? cloudConfig)
         _lobbyMenu.Render();
     }
 
-    private void HandleLobbyTap(int x, int y)
+    private void HandleLobbyTap(int x, int y) => HandleLobbyInput(new InputEvent.MouseDown(x, y));
+
+    // The lobby's menu, from a tap or a key (one body, as for the startup menu).
+    private void HandleLobbyInput(InputEvent evt)
     {
         if (_lobbyMenu is null || _netLobby is null) return;
-        if (!_lobbyMenu.HandleInput(new InputEvent.MouseDown(x, y))) return;
+        if (!MenuInput.Handle(_lobbyMenu, evt)) return;
         if (!_lobbyMenu.IsConfirmed) return;
 
         var selected = _lobbyMenu.SelectedIndex;

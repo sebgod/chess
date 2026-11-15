@@ -52,7 +52,7 @@ internal sealed class VkStartupMenu(bool includeContinue = false) : IWidget
     {
         if (IsComplete || _menu is null) return false;
 
-        if (!_menu.HandleInput(evt))
+        if (!MenuInput.Handle(_menu, evt))
             return false;
 
         if (_menu.IsConfirmed)

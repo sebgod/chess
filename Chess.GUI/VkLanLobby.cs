@@ -132,7 +132,7 @@ internal sealed class VkLanLobby : IWidget, IDisposable
         if (!_nameCommitted)
             return HandleNameEntry(evt);
 
-        if (_menu is null || !_menu.HandleInput(evt))
+        if (_menu is null || !MenuInput.Handle(_menu, evt))
             return false;
 
         if (!_menu.IsConfirmed)
