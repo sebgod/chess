@@ -30,7 +30,7 @@ public sealed class ChessIosApp : SdlVulkanIosApp, ITouchPlatform
             if (!File.Exists(font))
                 SdlEventLoop.DiagnosticLog?.Invoke($"[chess] the bundle has no font at {font}; the board will draw without it");
         }
-        new TouchChessGame(this, TryLoadCloudConfig()).Attach(renderer, loop, SdlWindow);
+        new TouchChessGame(this).Attach(renderer, loop, SdlWindow);
         IosDiagnostics.Start(loop, renderer, SdlWindow);
     }
 
@@ -140,15 +140,11 @@ public sealed class ChessIosApp : SdlVulkanIosApp, ITouchPlatform
 
     // ── The bundle ──────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// This build's <c>firebase-config.json</c>, bundled at the app's root, or null when it has none.
-    /// Absent is the normal state and costs nothing: the "Online game" entry does not appear.
-    /// </summary>
-    private static string? TryLoadCloudConfig()
+    // A bundled file is a file in the app bundle here (AppContext.BaseDirectory is the bundle's root, where
+    // Chess.iOS.csproj's BundleResource items land).
+    Stream? ITouchPlatform.OpenBundled(string path)
     {
-        var path = Path.Combine(AppContext.BaseDirectory, "firebase-config.json");
-        if (!File.Exists(path)) return null;
-        var text = File.ReadAllText(path).Trim();
-        return text.StartsWith('{') ? text : null;
+        var full = Path.Combine(AppContext.BaseDirectory, path);
+        return File.Exists(full) ? File.OpenRead(full) : null;
     }
 }

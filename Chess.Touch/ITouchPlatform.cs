@@ -42,4 +42,12 @@ public interface ITouchPlatform
     /// platform with no back gesture never gets here, and may do nothing.
     /// </summary>
     void LeaveToHome();
+
+    /// <summary>
+    /// Opens a file the build bundled with the app, by its path inside the bundle (<c>firebase-config.json</c>,
+    /// <c>Fonts/Merida.ttf</c>), or returns null when this build has no such file. The one OS-specific part of
+    /// reading one: an APK asset on Android, a file in the app bundle on iOS. What a file means, and how to check it,
+    /// stays in the game.
+    /// </summary>
+    Stream? OpenBundled(string path);
 }

@@ -73,7 +73,7 @@ public sealed class MainActivity : SdlVulkanActivity, ITouchPlatform
         // (AppContext.BaseDirectory/Fonts). That path is empty in the APK sandbox, so stage the
         // bundled asset copies into it first — the Android analog of Chess.Web's LoadFontsAsync.
         StageFonts();
-        new TouchChessGame(this, TryLoadCloudConfig()).Attach(renderer, loop, SdlWindow);
+        new TouchChessGame(this).Attach(renderer, loop, SdlWindow);
     }
 
     // ── ITouchPlatform ──────────────────────────────────────────────────────────────────────────
@@ -138,23 +138,16 @@ public sealed class MainActivity : SdlVulkanActivity, ITouchPlatform
 
     // ── APK assets ──────────────────────────────────────────────────────────────────────────────
 
-    /// <summary>
-    /// This build's <c>firebase-config.json</c>, bundled as an APK asset, or null when it has none.
-    /// Absent is the normal state and costs nothing: the "Online game" entry does not appear and the
-    /// app plays LAN, hot-seat and vs-computer games exactly as before.
-    /// </summary>
-    private string? TryLoadCloudConfig()
+    // A bundled file is an APK asset here; a build without it (no FIREBASE_CONFIG secret) has no such asset.
+    Stream? ITouchPlatform.OpenBundled(string path)
     {
         try
         {
-            using var stream = Assets!.Open("firebase-config.json");
-            using var reader = new StreamReader(stream);
-            var text = reader.ReadToEnd().Trim();
-            return text.StartsWith('{') ? text : null;
+            return Assets!.Open(path);
         }
-        catch
+        catch (Java.IO.FileNotFoundException)
         {
-            return null; // no such asset in this build
+            return null;
         }
     }
 
