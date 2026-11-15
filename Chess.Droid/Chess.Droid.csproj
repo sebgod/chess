@@ -75,6 +75,7 @@
   <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
     <PackageReference Include="DIR.Lib" />
     <PackageReference Include="SdlVulkan.Renderer" />
+    <PackageReference Include="SharpAstro.AppShell" />
   </ItemGroup>
 
 </Project>

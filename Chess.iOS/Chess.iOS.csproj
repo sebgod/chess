@@ -45,6 +45,7 @@
   <ItemGroup Condition="'$(UseLocalSiblings)' != 'true'">
     <PackageReference Include="DIR.Lib" />
     <PackageReference Include="SdlVulkan.Renderer" />
+    <PackageReference Include="SharpAstro.AppShell" />
   </ItemGroup>
 
   <!-- iOS has no Vulkan and SDL3-CS has no iOS natives, so the app carries both as DYNAMIC frameworks.
