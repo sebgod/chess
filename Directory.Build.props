@@ -50,4 +50,21 @@
       AND Exists('$(MSBuildThisFileDirectory)..\Firebase\src\SharpAstro.Firebase\SharpAstro.Firebase.csproj')">true</UseLocalSiblings>
   </PropertyGroup>
 
+  <!--
+    ChessCloudConfig: the firebase-config.json a mobile head bundles, which turns on "Online game".
+    The project's own copy wins (CI writes Chess.Droid/ and Chess.iOS/firebase-config.json from the
+    FIREBASE_CONFIG secret). Without one, the user's own copy, in the same place Chess.GUI reads it at
+    run time (Chess.Net.Cloud.CloudConfigFile.UserPath): %APPDATA%\chess\ on Windows, ~/.config/chess/
+    (or $XDG_CONFIG_HOME/chess/) elsewhere. That file is outside every checkout, so a local build on a
+    machine of ours offers online play and a fork, a clone or a PR build does not. Empty when there is
+    neither, and the head then never offers "Online game".
+  -->
+  <PropertyGroup>
+    <ChessUserConfigDir Condition="'$(APPDATA)' != ''">$(APPDATA)\chess</ChessUserConfigDir>
+    <ChessUserConfigDir Condition="'$(APPDATA)' == '' And '$(XDG_CONFIG_HOME)' != ''">$(XDG_CONFIG_HOME)/chess</ChessUserConfigDir>
+    <ChessUserConfigDir Condition="'$(APPDATA)' == '' And '$(XDG_CONFIG_HOME)' == ''">$(HOME)/.config/chess</ChessUserConfigDir>
+    <ChessCloudConfig Condition="Exists('$(MSBuildProjectDirectory)/firebase-config.json')">$(MSBuildProjectDirectory)/firebase-config.json</ChessCloudConfig>
+    <ChessCloudConfig Condition="'$(ChessCloudConfig)' == '' And Exists('$(ChessUserConfigDir)/firebase-config.json')">$(ChessUserConfigDir)/firebase-config.json</ChessCloudConfig>
+  </PropertyGroup>
+
 </Project>

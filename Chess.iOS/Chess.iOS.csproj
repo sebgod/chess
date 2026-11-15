@@ -86,9 +86,11 @@
   </ItemGroup>
 
   <!-- The cloud backend's config, exactly as Chess.Droid takes it: absent from the repository, written
-       by CI from the FIREBASE_CONFIG secret, and a build without it simply never offers "Online game". -->
+       by CI from the FIREBASE_CONFIG secret, and a build without it simply never offers "Online game". A
+       local build takes your own copy outside the checkout when there is no project copy (ChessCloudConfig
+       in Directory.Build.props). -->
   <ItemGroup>
-    <BundleResource Include="firebase-config.json" LogicalName="firebase-config.json" Condition="Exists('firebase-config.json')" />
+    <BundleResource Include="$(ChessCloudConfig)" LogicalName="firebase-config.json" Condition="'$(ChessCloudConfig)' != ''" />
   </ItemGroup>
 
   <Target Name="RequireIosFrameworks" BeforeTargets="PrepareForBuild"

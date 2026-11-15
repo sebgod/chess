@@ -196,6 +196,23 @@ public sealed class GameSessionTests
         session.Tick().Outcome.ShouldBe(SessionOutcome.NeedsRestart);
     }
 
+    [Theory]
+    [InlineData(GameMode.NetworkGame)]
+    [InlineData(GameMode.OnlineGame)]
+    public async Task Create_RemoteModes_BuildThePeerAsTheOpponent(GameMode mode)
+    {
+        // A LAN game and an online game differ only in the courier behind the NetworkSession; to the
+        // session both are a remote peer playing computerSide. OnlineGame was left out of the opponent
+        // modes, so an online game had no peer at all: the remote's moves were never applied and its
+        // leaving went unnoticed.
+        var peer = new FakePeer { Left = true };
+        var session = GameSession.Create(
+            new FakeDisplay(), mode, Side.Black, Side.White, () => new ScriptedPlayer(), (_, _) => peer);
+        await session.StartAsync(TimeProvider.System, TestContext.Current.CancellationToken);
+
+        session.Tick().Outcome.ShouldBe(SessionOutcome.NeedsRestart);
+    }
+
     [Fact]
     public async Task Tick_DoesNotPollTheOpponentOffTurnDuringPlayback()
     {

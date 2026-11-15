@@ -2,6 +2,7 @@
 using Chess.Lib;
 using Chess.Lib.UI;
 using Chess.Net;
+using Chess.Net.Cloud;
 using Chess.UCI;
 using DIR.Lib;
 using SDL3;
@@ -135,9 +136,12 @@ var currentOpponent = "";
 // The game picker sits between the menu and the game while the user chooses which save to resume.
 VkGamePicker? picker = null;
 
-// The LAN lobby sits between the menu and the game while the user picks/invites a peer.
-VkLanLobby? lobby = null;
-// A LAN game can't be resumed later (no peer to reconnect), so it's never written to the save.
+// The LAN or online lobby sits between the menu and the game while the user picks/invites a peer.
+VkNetworkLobby? lobby = null;
+// The backend config that turns on "Online game": next to the app, else the user's own copy outside any
+// checkout (CloudConfigFile). Read once; null on every machine that has not opted in.
+var cloudConfig = CloudConfigFile.TryLoad();
+// A LAN or online game can't be resumed later (no channel behind the board), so it's never written to the save.
 var currentGameIsNetwork = false;
 
 // Anything in the inbox is worth offering, finished games included: the picker labels them, and
@@ -542,9 +546,10 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
         {
             if (lobby.IsConnected)
             {
-                // A peer connected: take the session (its socket outlives the lobby) and start a LAN
-                // game — the local human relays each move, the remote peer IS the "engine" opponent.
+                // A peer connected: take the session (its socket or subscription outlives the lobby) and
+                // start the game. The local human relays each move, the remote peer IS the "engine" opponent.
                 var session = lobby.Session!;
+                var netMode = lobby.IsOnline ? GameMode.OnlineGame : GameMode.NetworkGame;
                 lobby.Dispose();
                 lobby = null;
 
@@ -554,15 +559,15 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                 var (netLoop, computerSide, sideToMove) =
                     NetworkGame.CreateLoop(TimeProvider.System, () => display, () => player, session);
                 currentComputerSide = computerSide;
-                currentGameMode = GameMode.NetworkGame;
+                currentGameMode = netMode;
 
-                gameTask = netLoop.RunAsync(GameMode.NetworkGame, computerSide, sideToMove, cts.Token);
+                gameTask = netLoop.RunAsync(netMode, computerSide, sideToMove, cts.Token);
             }
             else if (lobby.IsAborted)
             {
                 lobby.Dispose();
                 lobby = null;
-                menu = new VkStartupMenu(uiTasks, RequestRedraw, CanContinue());
+                menu = new VkStartupMenu(uiTasks, RequestRedraw, CanContinue(), online: cloudConfig is not null);
                 // Paint the fresh menu in THIS frame: once lobby is null the CheckNeedsRedraw
                 // predicate goes false, so SDL parks in WaitEventTimeout and no further frame comes
                 // until the next input — without this the menu would stay invisible (blank window)
@@ -594,7 +599,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             else if (picker.IsAborted)
             {
                 picker = null;
-                menu = new VkStartupMenu(uiTasks, RequestRedraw, CanContinue());
+                menu = new VkStartupMenu(uiTasks, RequestRedraw, CanContinue(), online: cloudConfig is not null);
                 // Paint the fresh menu in THIS frame — same reason as the lobby's abort path: once
                 // picker is null the redraw predicate goes false and SDL parks until the next input.
                 menu.Render(renderer);
@@ -608,12 +613,13 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
         {
             var (gameMode, computerSide, sideToMove, difficulty) = menu.Result;
 
-            if (gameMode is GameMode.NetworkGame)
+            if (gameMode is GameMode.NetworkGame or GameMode.OnlineGame)
             {
-                // Hand off to the LAN lobby; the game starts once a peer connects (handled above).
+                // Hand off to the lobby; the game starts once a peer connects (handled above).
                 // ComputerSide is the remote peer's colour, so our preferred colour is the opposite.
                 var preferredColor = computerSide == Side.White ? Side.Black : Side.White;
-                lobby = new VkLanLobby(renderer, dataDir, preferredColor, uiTasks, RequestRedraw);
+                lobby = new VkNetworkLobby(renderer, dataDir, preferredColor,
+                    gameMode is GameMode.OnlineGame ? cloudConfig : null, uiTasks, RequestRedraw);
                 menu = null;
             }
             else if (gameMode is GameMode.Continue)
@@ -657,7 +663,7 @@ bus.Subscribe<RequestRestartSignal>(_ =>
         return;
     }
 
-    menu = new VkStartupMenu(uiTasks, RequestRedraw, CanContinue());
+    menu = new VkStartupMenu(uiTasks, RequestRedraw, CanContinue(), online: cloudConfig is not null);
     // Display→menu state swap happens during OnPostFrame, after this frame's
     // render. Without an explicit nudge, SDL would park in WaitEventTimeout
     // until the next input event, leaving the menu invisible until then.
