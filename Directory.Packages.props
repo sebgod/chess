@@ -64,7 +64,7 @@
          flagged BEHAVIOUR CHANGE in the range, 8.13's text baseline moving onto the FACE, chess
          already absorbed. Console.Lib 4.31 also carries cell glyphs for the three IconKinds DIR.Lib
          added (Search/Pan/IBeam), which had been falling back to a "?" placeholder. -->
-    <PackageVersion Include="WebGl.Renderer" Version="1.38.*" />
+    <PackageVersion Include="WebGl.Renderer" Version="1.39.*" />
     <!-- Vortice.ShaderCompiler pin removed: SdlVulkan.Renderer 6.29+ embeds pre-baked SPIR-V and no
          longer compiles GLSL at runtime, and no chess project ever referenced the package directly. -->
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.15" />

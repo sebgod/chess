@@ -31,6 +31,8 @@ public sealed class PixelGameDisplayLayoutTests
     [Theory]
     [InlineData(1080, 2408, "portrait")]   // Samsung A14 5G — the layout that used to give a negative board width
     [InlineData(1600, 1000, "landscape")]  // desktop / web — board-left, history-right (must stay unchanged)
+    [InlineData(2360, 1640, "ipad-landscape")] // iPad Air 11" (iPad15,3), the iOS head's first device
+    [InlineData(1640, 2360, "ipad-portrait")]
     public void Board_renders_on_both_orientations(int width, int height, string label)
     {
         using var renderer = new RgbaImageRenderer((uint)width, (uint)height);
