@@ -179,6 +179,9 @@ var uiTasks = new BackgroundTaskTracker();
 var uiTaskLog = new ActionLogger(m => Console.Error.WriteLine($"[chess] {m}"));
 SdlEventLoop? redrawTarget = null;
 void RequestRedraw() => redrawTarget?.RequestRedraw();
+// Every startup menu comes from here, so the first one and every return to the menu offer the same entries
+// (the first was once built separately and lacked "Online game" until the user came back to the menu).
+VkStartupMenu NewMenu() => new(uiTasks, RequestRedraw, CanContinue(), online: cloudConfig is not null);
 
 // Set by the drain in CheckNeedsRedraw, consumed by the next OnRender. The two are separate because
 // the drain runs in a phase where nothing may touch the display -- and because a minimized window
@@ -326,7 +329,7 @@ void AcceptPendingLink(string source)
 
 // A link on argv skips the wizard entirely, exactly as the web does (Play.razor:323). Asking someone
 // to choose a game mode for a game that already has one is a question with a wrong answer available.
-menu = pendingLinkGame is null ? new(uiTasks, RequestRedraw, CanContinue()) : null;
+menu = pendingLinkGame is null ? NewMenu() : null;
 
 // Map a pointer event's pixel coordinates from device space into content space through the renderer's
 // ContentTransform — the inverse of what the projection applies, so draw and hit-test can never drift
@@ -567,7 +570,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             {
                 lobby.Dispose();
                 lobby = null;
-                menu = new VkStartupMenu(uiTasks, RequestRedraw, CanContinue(), online: cloudConfig is not null);
+                menu = NewMenu();
                 // Paint the fresh menu in THIS frame: once lobby is null the CheckNeedsRedraw
                 // predicate goes false, so SDL parks in WaitEventTimeout and no further frame comes
                 // until the next input — without this the menu would stay invisible (blank window)
@@ -599,7 +602,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             else if (picker.IsAborted)
             {
                 picker = null;
-                menu = new VkStartupMenu(uiTasks, RequestRedraw, CanContinue(), online: cloudConfig is not null);
+                menu = NewMenu();
                 // Paint the fresh menu in THIS frame — same reason as the lobby's abort path: once
                 // picker is null the redraw predicate goes false and SDL parks until the next input.
                 menu.Render(renderer);
@@ -663,7 +666,7 @@ bus.Subscribe<RequestRestartSignal>(_ =>
         return;
     }
 
-    menu = new VkStartupMenu(uiTasks, RequestRedraw, CanContinue(), online: cloudConfig is not null);
+    menu = NewMenu();
     // Display→menu state swap happens during OnPostFrame, after this frame's
     // render. Without an explicit nudge, SDL would park in WaitEventTimeout
     // until the next input event, leaving the menu invisible until then.
