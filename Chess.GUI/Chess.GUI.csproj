@@ -6,9 +6,6 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <PublishAot>true</PublishAot>
-    <!-- DIR.Lib 11.73 turns the inspector off whenever PublishAot is set, on a plain build too (SharpAstro/DIR.Lib#259),
-         which cut the GUI smoke test off. Keep it in builds and runs; a publish still drops it. Remove with #259. -->
-    <DirInspectorSupport Condition="'$(_IsPublishing)' != 'true'">true</DirInspectorSupport>
     <InvariantGlobalization>true</InvariantGlobalization>
     <ApplicationIcon>Resources\chess.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
