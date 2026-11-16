@@ -97,6 +97,8 @@ internal sealed class VkGamePicker : IWidget
             _router = new InputRouter(menu.Ui, _tasks, _requestRedraw) { Widgets = () => [menu] };
         }
         RefreshMenuContent();
+        // Back to the menu is the panel's "< Back" control (and Esc or Backspace), not a row.
+        _menu.Back = () => IsAborted = true;
         // The panel is sized in design units, so it needs the window's display scale to keep its size on a
         // high-DPI screen.
         _menu.DpiScale = dpiScale;
@@ -118,7 +120,6 @@ internal sealed class VkGamePicker : IWidget
         [
             .. _rows.Select(e => e.Id == _currentId ? $"{e.Summary(now, _localName)} (current)" : e.Summary(now, _localName)),
             .. _hiddenCount > 0 ? new[] { $"Show {_hiddenCount} older game{(_hiddenCount == 1 ? "" : "s")}" } : [],
-            "Back",
         ];
 
         if (prompt == _shownPrompt && items.AsSpan().SequenceEqual(_shownItems)) return;
@@ -130,7 +131,7 @@ internal sealed class VkGamePicker : IWidget
 
     public bool HandleInput(InputEvent evt)
     {
-        // Esc or Backspace goes back to the menu, as the "Back" row does. Taken before the router, whose modal panel
+        // Esc or Backspace goes back to the menu, as the panel's Back control does. Taken before the router, whose modal panel
         // would swallow it.
         if (evt is InputEvent.KeyDown { Key: InputKey.Escape or InputKey.Backspace })
         {
@@ -153,10 +154,6 @@ internal sealed class VkGamePicker : IWidget
             // deleted, so this is the whole of getting one back.
             _showOlder = true;
             Reload();
-        }
-        else
-        {
-            IsAborted = true;
         }
 
         // Force a content rebuild next Render (also clears the widget's confirmed flag via Reset).

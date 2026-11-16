@@ -19,7 +19,8 @@ namespace Chess.Tests;
 
 /// <summary>
 /// Starts the real Chess.GUI window and drives it through the inspector: the menu panel over the saved game, Esc on the
-/// first step resuming that game, F8 back to the menu, the picker marking the game "(current)", Backspace out of it.
+/// first step resuming that game, F8 back to the menu, the picker marking the game "(current)", Backspace out of it,
+/// and the panel's close control closing onto the game.
 ///
 /// <para>Runs only in a GUI lane: a process started with <c>DIR_INSPECTOR=1</c> and a <c>DIR_INSPECTOR_TOKEN</c>, which
 /// the GUI inherits (on this machine, <c>pilot run --gui -- dotnet test ... --filter-trait Category=GUI</c>). Anywhere
@@ -101,6 +102,13 @@ public sealed class GuiSmokeTests : IDisposable
             // Backspace leaves the picker.
             await client.PressKeyAsync("Backspace", ct: ct);
             await WaitForScreenAsync(client, "menu", ct);
+            await SaveScreenshotAsync(client, "4-menu-close.png", ct);
+
+            // The panel's close control (top-right on the first step) closes onto the game, as Esc does.
+            var (closeX, closeY) = await FindRegionAsync(client, "MenuClose", ct);
+            await client.ClickAsync(closeX, closeY, ct: ct);
+            var closed = await WaitForScreenAsync(client, "game", ct);
+            closed.GetProperty("plyCount").GetInt32().ShouldBe(3);
         }
         finally
         {
@@ -151,6 +159,32 @@ public sealed class GuiSmokeTests : IDisposable
             if (DateTime.UtcNow >= deadline)
             {
                 throw new TimeoutException($"waited {StepBudget.TotalSeconds}s for screen '{screen}', still on '{last}'");
+            }
+            await Task.Delay(100, ct);
+        }
+    }
+
+    // The centre of the region whose label is <paramref name="label"/> (a ButtonHit's action), from describe.
+    private static async Task<(float X, float Y)> FindRegionAsync(InspectorClient client, string label, CancellationToken ct)
+    {
+        var deadline = DateTime.UtcNow + StepBudget;
+        while (true)
+        {
+            var ui = await client.DescribeUiAsync(ct);
+            if (ui.TryGetProperty("regions", out var regions))
+            {
+                foreach (var region in regions.EnumerateArray())
+                {
+                    if (region.TryGetProperty("label", out var l) && l.GetString() == label)
+                    {
+                        return (region.GetProperty("x").GetSingle() + region.GetProperty("w").GetSingle() / 2f,
+                            region.GetProperty("y").GetSingle() + region.GetProperty("h").GetSingle() / 2f);
+                    }
+                }
+            }
+            if (DateTime.UtcNow >= deadline)
+            {
+                throw new TimeoutException($"no region labelled '{label}' within {StepBudget.TotalSeconds}s");
             }
             await Task.Delay(100, ct);
         }

@@ -11,7 +11,8 @@ namespace Chess.GUI;
 /// and input. The web (Chess.Web) and console (Chess.Console) drive the same wizard through
 /// their own widgets.
 /// </summary>
-internal sealed class VkStartupMenu(BackgroundTaskTracker tasks, System.Action requestRedraw, bool includeContinue = false, bool online = false) : IWidget
+internal sealed class VkStartupMenu(BackgroundTaskTracker tasks, System.Action requestRedraw, bool includeContinue = false, bool online = false,
+    Func<bool>? canClose = null) : IWidget
 {
     // includeContinue prepends a "Continue game" entry (resumes the persisted in-progress game);
     // the host passes true only when a resumable save exists, exactly as the Android head does.
@@ -25,7 +26,9 @@ internal sealed class VkStartupMenu(BackgroundTaskTracker tasks, System.Action r
         (includeContinue ? StartupWizardOptions.Continue : StartupWizardOptions.None)
         | StartupWizardOptions.LinkPlay
         | StartupWizardOptions.NetworkPlay
-        | (online ? StartupWizardOptions.OnlinePlay : StartupWizardOptions.None));
+        | (online ? StartupWizardOptions.OnlinePlay : StartupWizardOptions.None)
+        // The panel's "< Back" control steps back, so the steps carry no "Back" row.
+        | StartupWizardOptions.HeaderBack);
 
     // Lazy: PixelMenuWidget<VulkanContext> is constructed on first Render call so we have a
     // VkRenderer instance to pass to the PixelWidgetBase ctor.
@@ -35,6 +38,10 @@ internal sealed class VkStartupMenu(BackgroundTaskTracker tasks, System.Action r
     private InputRouter? _router;
 
     public bool IsComplete => _wizard.IsComplete;
+
+    /// <summary>The panel's close control (or Esc) on the first step: the host closes the menu onto the game behind
+    /// it. Offered only while <c>canClose</c> says there is one.</summary>
+    public bool CloseRequested { get; private set; }
     public (GameMode Mode, Side ComputerSide, Side SideToMove, Difficulty Difficulty) Result => _wizard.Result;
 
     /// <summary>The underlying pixel widget, so the inspector can read its clickable regions +
@@ -51,10 +58,22 @@ internal sealed class VkStartupMenu(BackgroundTaskTracker tasks, System.Action r
             var (title, prompt, items) = _wizard.Current;
             _menu.Reset(title, prompt, [..items]);
         }
+        // Back top-left on a later step, close top-right on the first when there is a game behind to close onto.
+        _menu.Back = _wizard.CanGoBack ? () => StepBack() : null;
+        _menu.Close = !_wizard.CanGoBack && canClose?.Invoke() == true ? () => CloseRequested = true : null;
         // The panel is sized in design units, so it needs the window's display scale to keep its size on a
         // high-DPI screen.
         _menu.DpiScale = dpiScale;
         _menu.RenderPanel();
+    }
+
+    // One step back, from the Back control, Esc or Backspace. False on the first step.
+    private bool StepBack()
+    {
+        if (_menu is null || !_wizard.Back()) return false;
+        var (title, prompt, items) = _wizard.Current;
+        _menu.Reset(title, prompt, [.. items]);
+        return true;
     }
 
     public bool HandleInput(InputEvent evt)
@@ -66,10 +85,7 @@ internal sealed class VkStartupMenu(BackgroundTaskTracker tasks, System.Action r
         // the menu onto the game behind it on Esc.
         if (evt is InputEvent.KeyDown { Key: InputKey.Escape or InputKey.Backspace })
         {
-            if (!_wizard.Back()) return false;
-            var (backTitle, backPrompt, backItems) = _wizard.Current;
-            _menu.Reset(backTitle, backPrompt, [.. backItems]);
-            return true;
+            return StepBack();
         }
 
         if (!_router.Handle(evt))

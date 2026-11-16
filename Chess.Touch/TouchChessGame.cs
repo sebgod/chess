@@ -218,7 +218,7 @@ public sealed class TouchChessGame(ITouchPlatform platform)
             // Non-short-circuit: the tracker is collected every frame, whatever else wants one.
             _uiTasks.ProcessCompletions(_uiTaskLog) | TakeMenuRedraw()
             || (_display?.HasPendingUpdate ?? false)
-            || _pendingLobbyStart || _pendingShowMenu || _netLobby is not null
+            || _pendingLobbyStart || _pendingShowMenu || _pendingCloseMenu || _netLobby is not null
             || (_netSession is { } s && (s.HasIncomingMove || s.PeerLeft))
             // A tap queued for the session needs a frame to be applied in. Taps already force one, so
             // this is belt-and-braces for input that arrives by any other route.
@@ -237,11 +237,7 @@ public sealed class TouchChessGame(ITouchPlatform platform)
             // panel would swallow it. On the first step it does nothing.
             if (keyEvent.Key == InputKey.Backspace && _menu is not null && _wizard is not null)
             {
-                if (_wizard.Back())
-                {
-                    var (backTitle, backPrompt, backItems) = _wizard.Current;
-                    _menu.Reset(backTitle, backPrompt, [.. backItems]);
-                }
+                StepBack();
                 return true;
             }
             if (keyEvent.Key != InputKey.Escape)
@@ -272,12 +268,7 @@ public sealed class TouchChessGame(ITouchPlatform platform)
                 return true;
             }
             // A later wizard step (side, difficulty, board): back one step, as its "Back" row does.
-            if (_menu is not null && _wizard is not null && _wizard.Back())
-            {
-                var (title, prompt, items) = _wizard.Current;
-                _menu.Reset(title, prompt, [.. items]);
-                return true;
-            }
+            if (StepBack()) return true;
             // The first menu step closes the panel onto the game behind it, as Esc does on the desktop; with no saved
             // game to go back to, hand back to the launcher (nothing on iOS).
             if (TryLoadGame() is { } behind && IsResumable(behind))
@@ -286,6 +277,26 @@ public sealed class TouchChessGame(ITouchPlatform platform)
                 platform.LeaveToHome();
             return true;
         };
+    }
+
+    // Whether the menu's first step offers the close control: a saved game to close onto. Set when the menu opens.
+    private bool _menuCanClose;
+    private bool _pendingCloseMenu;
+
+    // One wizard step back, from the panel's Back control, the back key or Backspace. False on the first step.
+    private bool StepBack()
+    {
+        if (_menu is null || _wizard is null || !_wizard.Back()) return false;
+        var (title, prompt, items) = _wizard.Current;
+        _menu.Reset(title, prompt, [.. items]);
+        return true;
+    }
+
+    // The panel's close control on the first step: back to the saved game behind the menu, as the back key does there.
+    private void CloseMenu()
+    {
+        if (TryLoadGame() is { } behind && IsResumable(behind))
+            StartGame(behind.Game, behind.ComputerSide, behind.Mode, setUp: IsMidSetup(behind));
     }
 
     private void ShowMenu()
@@ -318,7 +329,10 @@ public sealed class TouchChessGame(ITouchPlatform platform)
             (canContinue ? StartupWizardOptions.Continue : StartupWizardOptions.None)
             | StartupWizardOptions.NetworkPlay
             | (_cloudConfig is null ? StartupWizardOptions.None : StartupWizardOptions.OnlinePlay)
-            | StartupWizardOptions.AcrossTheTable);
+            | StartupWizardOptions.AcrossTheTable
+            // The panel's "< Back" control steps back, so the steps carry no "Back" row.
+            | StartupWizardOptions.HeaderBack);
+        _menuCanClose = canContinue;
         var menu = new PixelMenuWidget<VulkanContext>(_renderer, FontPaths.DejaVuSans);
         _menu = menu;
         _menuRouter = new InputRouter(menu.Ui, _uiTasks, RequestMenuRedraw) { Widgets = () => [menu] };
@@ -331,6 +345,7 @@ public sealed class TouchChessGame(ITouchPlatform platform)
         // Transitions requested from the name dialog are actioned here on the SDL thread, so no
         // renderer object is ever touched across threads.
         if (_pendingShowMenu) { _pendingShowMenu = false; ShowMenu(); }
+        if (_pendingCloseMenu) { _pendingCloseMenu = false; CloseMenu(); }
         if (_pendingLobbyStart) { _pendingLobbyStart = false; StartLobby(); }
 
         if (_netLobby is not null)
@@ -355,6 +370,11 @@ public sealed class TouchChessGame(ITouchPlatform platform)
         else if (_menu is not null)
         {
             RenderBackdrop();
+            var canGoBack = _wizard?.CanGoBack == true;
+            _menu.Back = canGoBack ? () => StepBack() : null;
+            // Deferred to the next frame: the control runs inside the router, mid-dispatch, and StartGame replaces
+            // the menu it belongs to.
+            _menu.Close = !canGoBack && _menuCanClose ? () => _pendingCloseMenu = true : null;
             _menu.DpiScale = _window.DisplayScale;
             _menu.RenderPanel();
         }
