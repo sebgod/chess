@@ -75,6 +75,26 @@ public sealed class GameInboxTests : IDisposable
     }
 
     [Fact]
+    public void LatestUnfinished_SkipsAFinishedGameThatIsNewer()
+    {
+        // The board behind the menu (#84): the newest game still being played, not the newest file.
+        SaveLink("playing", Side.Black, Now.AddDays(-1), "Playing", "e2e4");
+        SaveLink("mated", Side.Black, Now, "Mated", "f2f3", "e7e5", "g2g4", "d8h4");
+
+        var latest = GameInbox.LatestUnfinished(GameInbox.Load(_dir));
+        latest.ShouldNotBeNull();
+        latest.Value.Id.ShouldBe("playing");
+    }
+
+    [Fact]
+    public void LatestUnfinished_OnlyFinishedGames_IsNone()
+    {
+        SaveLink("mated", Side.Black, Now, "Mated", "f2f3", "e7e5", "g2g4", "d8h4");
+
+        GameInbox.LatestUnfinished(GameInbox.Load(_dir)).ShouldBeNull();
+    }
+
+    [Fact]
     public void Load_OneCorruptEntry_DoesNotCostTheOthers()
     {
         // The reason each game is its own file. A half-written save loses that game, never the inbox.

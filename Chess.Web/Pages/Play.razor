@@ -298,7 +298,7 @@
     // The startup menu reuses DIR.Lib's backend-neutral PixelMenuWidget — the same widget the
     // desktop Vulkan GUI draws.
     PixelMenuWidget<WebGlContext>? _menu;
-    // Every menu event, click or key, goes through this router (MenuRouting), built with the menu. Since DIR.Lib 10
+    // Every menu event, click or key, goes through this router, built with the menu and listing it. Since DIR.Lib 10
     // the widget's own HandleInput takes keys only, so a click handed straight to it was dropped: the web menu
     // answered the keyboard and ignored the mouse.
     InputRouter? _menuRouter;
@@ -403,8 +403,9 @@
             return;
         }
 
-        _menu = new PixelMenuWidget<WebGlContext>(_webGl, FontPaths.DejaVuSans);
-        _menuRouter = MenuRouting.For(_menu, _uiTasks, () => _ = RenderMenuAsync());
+        var menu = new PixelMenuWidget<WebGlContext>(_webGl, FontPaths.DejaVuSans);
+        _menu = menu;
+        _menuRouter = new InputRouter(menu.Ui, _uiTasks, () => _ = RenderMenuAsync()) { Widgets = () => [menu] };
         _display = new PixelGameDisplay<WebGlContext>(_webGl);
 
         _ready = true;

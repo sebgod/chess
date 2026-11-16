@@ -171,8 +171,27 @@ void SaveCurrentGame()
 
 VkStartupMenu? menu = null;
 
+// The board the menu sits over (#84): the newest unfinished game in the inbox, else a fresh start. The menu, the
+// game picker and the lobby all draw as a panel on top of it. Built on the first frame without a game (so after the
+// game just left has been saved) and dropped when a game starts. It takes no input: the menu's panel is modal.
+PixelGameDisplay<VulkanContext>? backdrop = null;
+void RenderBackdrop()
+{
+    if (backdrop is null)
+    {
+        backdrop = new PixelGameDisplay<VulkanContext>(renderer);
+        backdrop.ResetGame(GameInbox.LatestUnfinished(GameInbox.Load(dataDir))?.Game ?? new Game());
+    }
+    backdrop.Render();
+}
+void DropBackdrop()
+{
+    backdrop?.Dispose();
+    backdrop = null;
+}
+
 // The app's background work and the redraw it asks for. Every menu host builds its InputRouter with these
-// (MenuRouting): the tracker is polled once a frame in CheckNeedsRedraw (logging a fault, repainting for a
+// (listing the menu, which declares its own keys): the tracker is polled once a frame in CheckNeedsRedraw (logging a fault, repainting for a
 // finished task) and drained on exit. The loop does not exist yet when the first menu is built, so the redraw
 // goes through redrawTarget; no input can arrive before the loop runs.
 var uiTasks = new BackgroundTaskTracker();
@@ -208,6 +227,7 @@ void StartGame(GameMode gameMode, Side computerSide, Side sideToMove, Difficulty
     currentComputerSide = computerSide;
     currentGameMode = gameMode;
 
+    DropBackdrop();
     display = new PixelGameDisplay<VulkanContext>(renderer) { Bus = bus, SetupStartRequested = FinishSetup };
     statusPly = -1;
 
@@ -464,7 +484,10 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
     },
 
     OnResize = (rw, rh) =>
-        display?.OnResize((int)rw, (int)rh),
+    {
+        display?.OnResize((int)rw, (int)rh);
+        backdrop?.OnResize((int)rw, (int)rh);
+    },
 
     // This is the drain, and its placement is the non-obvious part of the whole feature.
     //
@@ -543,7 +566,8 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
         }
         else if (menu is { IsComplete: false })
         {
-            menu.Render(renderer);
+            RenderBackdrop();
+            menu.Render(renderer, sdlWindow.DisplayScale);
         }
         else if (lobby is not null)
         {
@@ -557,6 +581,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                 lobby = null;
 
                 currentGameIsNetwork = true;
+                DropBackdrop();
                 display = new PixelGameDisplay<VulkanContext>(renderer) { Bus = bus, SetupStartRequested = FinishSetup };
 
                 var (netLoop, computerSide, sideToMove) =
@@ -576,11 +601,13 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                 // until the next input — without this the menu would stay invisible (blank window)
                 // until the user pressed a key. (The earlier menu branch already ran this frame with
                 // menu still null, so it won't repaint on its own.)
-                menu.Render(renderer);
+                RenderBackdrop();
+                menu.Render(renderer, sdlWindow.DisplayScale);
             }
             else
             {
-                lobby.Render(renderer);
+                RenderBackdrop();
+                lobby.Render(renderer, sdlWindow.DisplayScale);
             }
         }
         else if (picker is not null)
@@ -605,11 +632,13 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
                 menu = NewMenu();
                 // Paint the fresh menu in THIS frame — same reason as the lobby's abort path: once
                 // picker is null the redraw predicate goes false and SDL parks until the next input.
-                menu.Render(renderer);
+                RenderBackdrop();
+                menu.Render(renderer, sdlWindow.DisplayScale);
             }
             else
             {
-                picker.Render(renderer);
+                RenderBackdrop();
+                picker.Render(renderer, sdlWindow.DisplayScale);
             }
         }
         else if (menu is { IsComplete: true } && gameTask is null)
@@ -657,6 +686,7 @@ bus.Subscribe<RequestRestartSignal>(_ =>
     display?.Dispose();
     display = null;
     gameTask = null;
+    DropBackdrop(); // rebuilt on the next frame from the inbox, which now holds the game just left
 
     // A link pasted mid-game unwound us through this same path; resume into IT, not the menu.
     if (pendingLinkGame is not null)
