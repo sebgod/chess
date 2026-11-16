@@ -59,15 +59,13 @@ internal sealed class VkNetworkLobby : IWidget, IDisposable
     /// <summary>An online game (the backend) rather than a LAN one.</summary>
     public bool IsOnline => _cloudConfig is not null;
 
-#if DEBUG
-    /// <summary>The underlying pixel widget, so the DEBUG inspector can read its clickable regions +
+    /// <summary>The underlying pixel widget, so the inspector can read its clickable regions +
     /// captured layout (null until the first Render builds it).</summary>
     public PixelWidgetBase<VulkanContext>? InspectorWidget => _menu;
 
-    /// <summary>Lobby state exposed for the DEBUG inspector's appState snapshot.</summary>
+    /// <summary>Lobby state exposed for the inspector's appState snapshot.</summary>
     public LobbyState State => _lobby?.State ?? LobbyState.Browsing;
     public System.Collections.Generic.IReadOnlyList<LobbyPeer> Peers => _lobby?.Peers ?? [];
-#endif
 
     public VkNetworkLobby(VkRenderer renderer, string saveDir, Side preferredColor, string? cloudConfig,
         BackgroundTaskTracker tasks, System.Action requestRedraw)
