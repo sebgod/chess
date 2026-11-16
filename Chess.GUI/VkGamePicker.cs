@@ -132,6 +132,14 @@ internal sealed class VkGamePicker : IWidget
 
     public bool HandleInput(InputEvent evt)
     {
+        // Esc or Backspace goes back to the menu, as the "Back" row does. Taken before the router, whose modal panel
+        // would swallow it.
+        if (evt is InputEvent.KeyDown { Key: InputKey.Escape or InputKey.Backspace })
+        {
+            IsAborted = true;
+            return true;
+        }
+
         if (_menu is null || _router is null || !_router.Handle(evt)) return false;
         if (!_menu.IsConfirmed) return true;
 

@@ -63,10 +63,10 @@ internal sealed class VkStartupMenu(BackgroundTaskTracker tasks, System.Action r
     {
         if (IsComplete || _menu is null || _router is null) return false;
 
-        // Esc on a later wizard step goes back one step, as the step's "Back" row does. On the first step it is
-        // not consumed and never reaches the router (whose modal panel would swallow it), so the host closes the
-        // menu onto the game behind it.
-        if (evt is InputEvent.KeyDown { Key: InputKey.Escape })
+        // Esc or Backspace on a later wizard step goes back one step, as the step's "Back" row does. On the first
+        // step neither is consumed nor reaches the router (whose modal panel would swallow it), so the host can close
+        // the menu onto the game behind it on Esc.
+        if (evt is InputEvent.KeyDown { Key: InputKey.Escape or InputKey.Backspace })
         {
             if (!_wizard.Back()) return false;
             var (backTitle, backPrompt, backItems) = _wizard.Current;
