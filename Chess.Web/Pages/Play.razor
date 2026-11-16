@@ -287,6 +287,9 @@
     // hit-tests in this space (GameUI, menu widgets, clip rects).
     uint _backingW = BoardW;
     uint _backingH = BoardH;
+    // The canvas's devicePixelRatio: the menu panel is sized in design units, so it needs this to keep its size on a
+    // high-DPI screen (the backing buffer is CSS size x this).
+    float _dpr = 1f;
 
     Panel _panel = Panel.None;
     ElementReference _panelRef;
@@ -375,6 +378,7 @@
         var metrics = await _canvasReady.Task;
         _backingW = metrics.BackingWidth;
         _backingH = metrics.BackingHeight;
+        _dpr = (float)metrics.DevicePixelRatio;
 
         try
         {
@@ -407,6 +411,9 @@
         _menu = menu;
         _menuRouter = new InputRouter(menu.Ui, _uiTasks, () => _ = RenderMenuAsync()) { Widgets = () => [menu] };
         _display = new PixelGameDisplay<WebGlContext>(_webGl);
+        // The board the menu panel sits over (#84): a fresh start until a game is played, then the game just left
+        // (the display keeps it when the player goes back to the menu).
+        _display.ResetGame(new Game());
 
         _ready = true;
         _shareSupported = await JS.InvokeAsync<bool>("chessCanvas.isShareSupported");
@@ -464,6 +471,7 @@
 
         _backingW = metrics.BackingWidth;
         _backingH = metrics.BackingHeight;
+        _dpr = (float)metrics.DevicePixelRatio;
 
         _webGl!.Resize(_backingW, _backingH);
 
@@ -566,6 +574,18 @@
         {
             // Same key map as gameplay: MenuModel consumes arrows/Enter/digits, ignores the rest.
             if (MapGameKey(e.Key) is not { } key) return;
+
+            // Esc or Backspace goes back a wizard step, as the step's "Back" row does. Taken before the router,
+            // whose modal panel would swallow it.
+            if (_screen == Screen.Menu && key is InputKey.Escape or InputKey.Backspace)
+            {
+                if (_wizard.Back())
+                {
+                    ShowWizardStep();
+                    await RenderMenuAsync();
+                }
+                return;
+            }
 
             var confirmed = DispatchMenu(new InputEvent.KeyDown(key));
             if (confirmed is not { } sel)
@@ -970,8 +990,12 @@
 
     async Task RenderMenuAsync()
     {
-        _webGl!.Clear(Background);
-        _menu!.Render();
+        if (_webGl is null || _menu is null) return;
+        _webGl.Clear(Background);
+        // The menu is a panel over the board (#84): the board first, then the card and its dimming scrim.
+        _display.Render();
+        _menu.DpiScale = _dpr;
+        _menu.RenderPanel();
         _webGl.Present(); // synchronous [JSImport] flush — one interop call per frame
 
         // Focus the canvas (so arrow/Enter reach it without a click first) and suppress the
