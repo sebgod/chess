@@ -319,7 +319,9 @@
     // accurate enough while the browser had only one courier -- but Android now offers both, and a
     // host that lists "Network game" twice is no use to anyone. See StartupWizardOptions.OnlinePlay.
     StartupWizardOptions WizardOptions => StartupWizardOptions.LinkPlay
-        | (_cloudConfigured ? StartupWizardOptions.OnlinePlay : StartupWizardOptions.None);
+        | (_cloudConfigured ? StartupWizardOptions.OnlinePlay : StartupWizardOptions.None)
+        // The panel's "< Back" control steps back, so the steps carry no "Back" row.
+        | StartupWizardOptions.HeaderBack;
     bool _vsComputer = true;
     // Side to move for a custom game, from the wizard; consumed when setup finishes.
     Side _setupSideToMove = Side.White;
@@ -994,6 +996,9 @@
         _webGl.Clear(Background);
         // The menu is a panel over the board (#84): the board first, then the card and its dimming scrim.
         _display.Render();
+        // Back top-left on a later wizard step (the router repaints after it runs). The lobby shares this widget and
+        // keeps its own rows.
+        _menu.Back = _screen == Screen.Menu && _wizard.CanGoBack ? () => { _wizard.Back(); ShowWizardStep(); } : null;
         _menu.DpiScale = _dpr;
         _menu.RenderPanel();
         _webGl.Present(); // synchronous [JSImport] flush — one interop call per frame

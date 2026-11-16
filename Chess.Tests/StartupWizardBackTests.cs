@@ -84,4 +84,28 @@ public sealed class StartupWizardBackTests
         wizard.Result.Mode.ShouldBe(GameMode.PlayerVsComputer);
         wizard.Result.ComputerSide.ShouldBe(Side.White);
     }
+
+    [Fact]
+    public void With_a_header_back_a_later_step_has_no_back_row()
+    {
+        var wizard = new StartupWizard(StartupWizardOptions.HeaderBack);
+        wizard.Confirm(1); // Player vs Computer
+
+        wizard.Current.Prompt.ShouldBe("Play as:");
+        wizard.Current.Items.ShouldBe(["White", "Black"]);
+        wizard.CanGoBack.ShouldBeTrue();
+    }
+
+    [Fact]
+    public void With_a_header_back_the_last_row_is_an_answer_and_Back_still_steps_back()
+    {
+        var wizard = new StartupWizard(StartupWizardOptions.HeaderBack);
+        wizard.Confirm(1); // Player vs Computer
+
+        wizard.Confirm(1); // Black, not Back
+        wizard.Current.Prompt.ShouldBe("Difficulty:");
+
+        wizard.Back().ShouldBeTrue();
+        wizard.Current.Prompt.ShouldBe("Play as:");
+    }
 }

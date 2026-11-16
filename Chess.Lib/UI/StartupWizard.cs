@@ -38,6 +38,14 @@ public enum StartupWizardOptions
     /// moment a host offers the two side by side.</para>
     /// </summary>
     OnlinePlay = 16,
+
+    /// <summary>
+    /// The host shows a Back control of its own (the menu panel's "&lt; Back", DIR.Lib's <c>MenuModel.Back</c>), so the
+    /// steps carry no <see cref="StartupWizard.BackItem"/> row. A "Back" row among the answers read as one more answer
+    /// (White, Black, Back), and looks much like "Black". The host calls <see cref="StartupWizard.Back"/> from its
+    /// control and its back key.
+    /// </summary>
+    HeaderBack = 32,
 }
 
 /// <summary>
@@ -116,7 +124,7 @@ public sealed class StartupWizard(StartupWizardOptions options = StartupWizardOp
         get
         {
             var (title, prompt, items) = Step;
-            return CanGoBack ? (title, prompt, [.. items, BackItem]) : (title, prompt, items);
+            return CanGoBack && !Has(StartupWizardOptions.HeaderBack) ? (title, prompt, [.. items, BackItem]) : (title, prompt, items);
         }
     }
 
@@ -144,7 +152,7 @@ public sealed class StartupWizard(StartupWizardOptions options = StartupWizardOp
     /// </summary>
     public void Confirm(int selected)
     {
-        if (CanGoBack && selected == Step.Items.Length)
+        if (CanGoBack && !Has(StartupWizardOptions.HeaderBack) && selected == Step.Items.Length)
         {
             Back();
             return;

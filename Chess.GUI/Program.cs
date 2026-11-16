@@ -209,7 +209,8 @@ SdlEventLoop? redrawTarget = null;
 void RequestRedraw() => redrawTarget?.RequestRedraw();
 // Every startup menu comes from here, so the first one and every return to the menu offer the same entries
 // (the first was once built separately and lacked "Online game" until the user came back to the menu).
-VkStartupMenu NewMenu() => new(uiTasks, RequestRedraw, CanContinue(), online: cloudConfig is not null);
+VkStartupMenu NewMenu() => new(uiTasks, RequestRedraw, CanContinue(), online: cloudConfig is not null,
+    canClose: () => backdropEntry is not null);
 
 // Set by the drain in CheckNeedsRedraw, consumed by the next OnRender. The two are separate because
 // the drain runs in a phase where nothing may touch the display -- and because a minimized window
@@ -585,6 +586,11 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             }
         }
 
+        // The panel's close control asks the same as Esc on the first step: back to the game behind it.
+        if (menu is { CloseRequested: true } && backdropEntry is { } closedOnto)
+        {
+            resumeRequested = closedOnto;
+        }
         if (resumeRequested is { } resumed && display is null)
         {
             resumeRequested = null;
