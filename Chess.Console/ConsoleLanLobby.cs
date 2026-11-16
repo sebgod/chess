@@ -20,10 +20,16 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
     private readonly string _saveDir;
     private readonly Side _preferredColor;
     private string _lastContent = "";
+    // The board behind the lobby's panel (#84), redrawn whenever the card changes; null draws none.
+    private readonly System.Action? _drawBackdrop;
+    // The card on the alternate screen, built on first use.
+    private MenuWidget? _panel;
 
-    public ConsoleLanLobby(IVirtualTerminal terminal, TimeProvider timeProvider, string saveDir, Side preferredColor)
+    public ConsoleLanLobby(IVirtualTerminal terminal, TimeProvider timeProvider, string saveDir, Side preferredColor,
+        System.Action? drawBackdrop = null)
         : base(terminal, timeProvider)
     {
+        _drawBackdrop = drawBackdrop;
         _time = timeProvider;
         _saveDir = saveDir;
         _preferredColor = preferredColor;
@@ -53,6 +59,7 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
 
             if (!Terminal.HasInput())
             {
+                OnIdle();
                 await Task.Delay(TimeSpan.FromMilliseconds(100), _time, cancellationToken);
                 continue;
             }
@@ -173,6 +180,7 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
 
             if (!Terminal.HasInput())
             {
+                OnIdle();
                 await Task.Delay(TimeSpan.FromMilliseconds(50), _time, cancellationToken);
                 continue;
             }
@@ -201,10 +209,30 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
     private static bool IsNameChar(Rune r) =>
         Rune.IsLetterOrDigit(r) || r.Value == ' ' || r.Value == '-' || r.Value == '_';
 
-    // Full-screen redraw (only when the content changes) — works in both the alternate-screen (Sixel)
-    // and normal terminal modes, like MenuBase.
+#if CONSOLE_INSPECTOR
+    // Lets the inspector's queued commands run while the lobby waits for input.
+    protected override void OnIdle() => InspectorHooks.Pump();
+#endif
+
+    // Redraws only when the content changes. On the alternate screen the lobby is the menu panel's card over the
+    // board (#84), as the startup menu is; otherwise a plain list, like MenuBase's normal mode.
     private void RenderList(string[] header, IReadOnlyList<string> items, int selected)
     {
+        if (Terminal.IsAlternateScreen)
+        {
+            var key = $"{string.Join('|', header)}#{string.Join('|', items)}#{selected}";
+            if (key == _lastContent) return;
+            _lastContent = key;
+
+            // The card cannot restore the cells beneath it, so the board goes back first (it clears).
+            _drawBackdrop?.Invoke();
+            _panel ??= new MenuWidget(Terminal);
+            _panel.Reset(header[0], header.Length > 2 ? header[2] : "", [.. items], selected);
+            _panel.RenderPanel();
+            Terminal.Flush();
+            return;
+        }
+
         var sb = new StringBuilder();
         foreach (var line in header) sb.Append(line).Append('\n');
         for (var i = 0; i < items.Count; i++)
