@@ -10,11 +10,16 @@ namespace Chess.Console;
 /// The desktop (Chess.GUI) and web (Chess.Web) drive the same wizard through DIR.Lib's
 /// PixelMenuWidget.
 /// </summary>
-internal class StartupMenu(IVirtualTerminal terminal, TimeProvider timeProvider)
+internal class StartupMenu(IVirtualTerminal terminal, TimeProvider timeProvider, System.Action? drawBackdrop = null)
     : MenuBase<(GameMode Mode, Side ComputerSide, Side SideToMove, Difficulty Difficulty)>(terminal, timeProvider)
 {
     // On the alternate screen the menu is a card over the board the host drew first (#84), as on the other hosts.
     protected override bool UsePanel => true;
+
+#if CONSOLE_INSPECTOR
+    // Lets the inspector's queued commands run while this menu waits for input (Console.Lib 5.31).
+    protected override void OnIdle() => InspectorHooks.Pump();
+#endif
 
     protected override async Task<(GameMode Mode, Side ComputerSide, Side SideToMove, Difficulty Difficulty)> ShowAsyncCore(CancellationToken cancellationToken)
     {
@@ -28,6 +33,9 @@ internal class StartupMenu(IVirtualTerminal terminal, TimeProvider timeProvider)
         while (!wizard.IsComplete)
         {
             var (title, prompt, items) = wizard.Current;
+            // The panel paints its card over what is there and cannot restore the cells beneath, so a smaller card
+            // on the next step would leave the last one's edge showing: put the board back first.
+            drawBackdrop?.Invoke();
             var choice = await ShowMenuAsync(title, prompt, items,
                 wizard.CanGoBack ? MenuActions.Back : MenuActions.None, cancellationToken);
             if (choice.IsBack)
