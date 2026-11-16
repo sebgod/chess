@@ -175,12 +175,18 @@ VkStartupMenu? menu = null;
 // game picker and the lobby all draw as a panel on top of it. Built on the first frame without a game (so after the
 // game just left has been saved) and dropped when a game starts. It takes no input: the menu's panel is modal.
 PixelGameDisplay<VulkanContext>? backdrop = null;
+// The saved game the backdrop shows, null for a fresh start. Esc on the menu's first step resumes it, and the picker
+// marks its row "(current)".
+InboxEntry? backdropEntry = null;
+// Set by Esc on the menu's first step, taken by the next frame (StartGame belongs on the render path).
+InboxEntry? resumeRequested = null;
 void RenderBackdrop()
 {
     if (backdrop is null)
     {
+        backdropEntry = GameInbox.LatestUnfinished(GameInbox.Load(dataDir));
         backdrop = new PixelGameDisplay<VulkanContext>(renderer);
-        backdrop.ResetGame(GameInbox.LatestUnfinished(GameInbox.Load(dataDir))?.Game ?? new Game());
+        backdrop.ResetGame(backdropEntry?.Game ?? new Game());
     }
     backdrop.Render();
 }
@@ -188,6 +194,7 @@ void DropBackdrop()
 {
     backdrop?.Dispose();
     backdrop = null;
+    backdropEntry = null;
 }
 
 // The app's background work and the redraw it asks for. Every menu host builds its InputRouter with these
@@ -244,6 +251,20 @@ void StartGame(GameMode gameMode, Side computerSide, Side sideToMove, Difficulty
     );
 
     gameTask = gameLoop.RunAsync(gameMode, computerSide, sideToMove, cts.Token, resumeGame);
+}
+
+// Resumes a saved game, from the picker or from Esc on the menu's first step. The entry carries everything the loop
+// needs: the replayed game, whose colour the other player has, and the mode it was started in. A resumed custom game
+// is already set up, so it continues as a normal game rather than re-entering piece placement.
+void ResumeGame(InboxEntry chosen)
+{
+    var resumedMode = chosen.Mode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard
+        ? (chosen.ComputerSide == Side.None ? GameMode.PlayerVsPlayer : GameMode.PlayerVsComputer)
+        : chosen.Mode;
+
+    currentOpponent = chosen.Opponent;
+    StartGame(resumedMode, chosen.ComputerSide, chosen.Game.CurrentSide, Difficulty.Normal,
+        chosen.Game, chosen.Id, chosen.LastMove, chosen.Started);
 }
 
 // Turns a decoded link into the running game. "Receiving a link means it's your turn", so the
@@ -444,7 +465,15 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             : lobby is not null ? lobby
             : picker is not null ? picker
             : player;
-        return activeWidget.HandleInput(keyEvent);
+        if (activeWidget.HandleInput(keyEvent)) return true;
+        // Esc on the menu's first step (the menu leaves it unconsumed there) closes the menu onto the game behind it.
+        // A fresh board behind it has nothing to resume, so the menu stays.
+        if (inputKey is InputKey.Escape && activeWidget == menu && backdropEntry is { } behind)
+        {
+            resumeRequested = behind;
+            return true;
+        }
+        return false;
     },
 
     // One unified pointer path (SdlVulkan.Renderer 6.28) replaces the separate OnMouseDown +
@@ -554,6 +583,13 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             }
         }
 
+        if (resumeRequested is { } resumed && display is null)
+        {
+            resumeRequested = null;
+            menu = null;
+            ResumeGame(resumed);
+        }
+
         if (display is not null)
         {
             // Retire a transient host message once the game has moved past the ply it belonged to.
@@ -614,17 +650,8 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
         {
             if (picker.Picked is { } chosen)
             {
-                // The entry carries everything the loop needs: the replayed game, whose colour the
-                // other player has, and the mode it was started in. A resumed custom game is already
-                // set up, so it continues as a normal game rather than re-entering piece placement.
-                var resumedMode = chosen.Mode is GameMode.CustomGameEmpty or GameMode.CustomGameStandardBoard
-                    ? (chosen.ComputerSide == Side.None ? GameMode.PlayerVsPlayer : GameMode.PlayerVsComputer)
-                    : chosen.Mode;
-
-                currentOpponent = chosen.Opponent;
                 picker = null;
-                StartGame(resumedMode, chosen.ComputerSide, chosen.Game.CurrentSide, Difficulty.Normal,
-                    chosen.Game, chosen.Id, chosen.LastMove, chosen.Started);
+                ResumeGame(chosen);
             }
             else if (picker.IsAborted)
             {
@@ -658,7 +685,7 @@ var loop = new SdlEventLoop(sdlWindow, renderer)
             {
                 // Which save to resume is now a choice, so it gets a screen of its own rather than
                 // the wizard silently loading the only slot there used to be.
-                picker = new VkGamePicker(dataDir, TimeProvider.System, uiTasks, RequestRedraw);
+                picker = new VkGamePicker(dataDir, TimeProvider.System, uiTasks, RequestRedraw, backdropEntry?.Id);
                 menu = null;
             }
             else

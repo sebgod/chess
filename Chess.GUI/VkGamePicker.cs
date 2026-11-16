@@ -32,6 +32,9 @@ internal sealed class VkGamePicker : IWidget
     // asked again; an empty one reads as "You", which is true and needs no prompt.
     private readonly string _localName;
 
+    // The id of the game on screen behind the picker, whose row says "(current)"; null for a fresh board.
+    private readonly string? _currentId;
+
     private PixelMenuWidget<VulkanContext>? _menu;
     // Built with the menu, from the app's task tracker and the loop's redraw. The menu declares its own keys, so the
     // router lists it and needs no fallback.
@@ -62,8 +65,10 @@ internal sealed class VkGamePicker : IWidget
     public int RowCount => _rows.Count;
 #endif
 
-    public VkGamePicker(string dataDir, TimeProvider time, BackgroundTaskTracker tasks, System.Action requestRedraw)
+    public VkGamePicker(string dataDir, TimeProvider time, BackgroundTaskTracker tasks, System.Action requestRedraw,
+        string? currentId = null)
     {
+        _currentId = currentId;
         _tasks = tasks;
         _requestRedraw = requestRedraw;
         _dataDir = dataDir;
@@ -113,7 +118,7 @@ internal sealed class VkGamePicker : IWidget
 
         string[] items =
         [
-            .. _rows.Select(e => e.Summary(now, _localName)),
+            .. _rows.Select(e => e.Id == _currentId ? $"{e.Summary(now, _localName)} (current)" : e.Summary(now, _localName)),
             .. _hiddenCount > 0 ? new[] { $"Show {_hiddenCount} older game{(_hiddenCount == 1 ? "" : "s")}" } : [],
             "Back",
         ];
@@ -122,7 +127,7 @@ internal sealed class VkGamePicker : IWidget
 
         _shownPrompt = prompt;
         _shownItems = items;
-        _menu!.Reset(StartupWizard.Title, prompt, [.. items]);
+        _menu?.Reset(StartupWizard.Title, prompt, [.. items]);
     }
 
     public bool HandleInput(InputEvent evt)
