@@ -50,10 +50,12 @@ outside chess there is no `global.json`, so `dotnet test` falls back to VSTest a
 
 ```
 dotnet build -c Release -p:UseLocalSiblings=false
-pilot run --gui --whole-suite "MTP filter, one class" -- pwsh -NoProfile -Command "Set-Location chess; dotnet test Chess.Tests -c Release --no-build -p:UseLocalSiblings=false --filter-class Chess.Tests.GuiSmokeTests"
+pilot run --gui -- pwsh -NoProfile -Command "Set-Location chess; dotnet test Chess.Tests -c Release --no-build -p:UseLocalSiblings=false --filter-class Chess.Tests.GuiSmokeTests"
 ```
 
-(`--whole-suite` only because pilot's guard knows VSTest's `--filter`, not MTP's; reported to pilot.)
+(Pilot reads MTP's `--filter-*` options since pilot#1091; a node older than that refuses the run as a whole
+suite, and `--whole-suite "<why>"` gets past it. A bare short name matches nothing in xUnit v3: use the fully
+qualified class, or a leading `*`.)
 
 Tools: `list_instances`, `ping`, `describe_ui`, `describe_layout`, `screenshot`, `click`,
 `click_label`, `press_key`, `type_text`, `scroll`, `drag`, `press_hold`, `minimize`,
