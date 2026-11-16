@@ -35,7 +35,7 @@ public sealed class CloudConfigFileTests : IDisposable
         var shipped = Write("shipped.json", """{"projectId":"shipped"}""");
         var user = Write("user.json", """{"projectId":"user"}""");
 
-        CloudConfigFile.TryLoad(shipped, user).ShouldContain("shipped");
+        CloudConfigFile.TryLoad(shipped, user).ShouldNotBeNull().ShouldContain("shipped");
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public sealed class CloudConfigFileTests : IDisposable
         var user = Write("user.json", """{"projectId":"user"}""");
 
         CloudConfigFile.TryLoad(placeholder).ShouldBeNull();
-        CloudConfigFile.TryLoad(placeholder, user).ShouldContain("user");
+        CloudConfigFile.TryLoad(placeholder, user).ShouldNotBeNull().ShouldContain("user");
     }
 
     [Fact]

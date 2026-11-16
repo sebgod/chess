@@ -197,6 +197,19 @@ public static class GameInbox
         return entries;
     }
 
+    /// <summary>
+    /// The newest game that is still being played, or null: the board the menu panel sits over (#84). Relies on
+    /// <see cref="Load"/>'s order, most recently changed first.
+    /// </summary>
+    public static InboxEntry? LatestUnfinished(IReadOnlyList<InboxEntry> entries)
+    {
+        foreach (var entry in entries)
+        {
+            if (!entry.Game.IsFinished) return entry;
+        }
+        return null;
+    }
+
     /// <summary>One entry by id, or null when it is absent or unreadable.</summary>
     public static InboxEntry? TryLoad(string directory, string id, Action<string>? log = null) =>
         TryLoadFile(PathFor(directory, id), log);

@@ -103,7 +103,7 @@ public sealed class TouchChessGame(ITouchPlatform platform)
     private Vector2 _pointerLast;
     private volatile bool _menuNeedsRedraw;
 
-    // The game's background work, for the menus' routers (MenuRouting): polled once a frame in CheckNeedsRedraw,
+    // The game's background work, for the menus' routers: polled once a frame in CheckNeedsRedraw,
     // which logs a fault and repaints for a finished task. It lives as long as the game, which on a device is the
     // process, so there is no shutdown to drain it at.
     private readonly BackgroundTaskTracker _uiTasks = new();
@@ -292,8 +292,9 @@ public sealed class TouchChessGame(ITouchPlatform platform)
             | StartupWizardOptions.NetworkPlay
             | (_cloudConfig is null ? StartupWizardOptions.None : StartupWizardOptions.OnlinePlay)
             | StartupWizardOptions.AcrossTheTable);
-        _menu = new PixelMenuWidget<VulkanContext>(_renderer, FontPaths.DejaVuSans);
-        _menuRouter = MenuRouting.For(_menu, _uiTasks, RequestMenuRedraw);
+        var menu = new PixelMenuWidget<VulkanContext>(_renderer, FontPaths.DejaVuSans);
+        _menu = menu;
+        _menuRouter = new InputRouter(menu.Ui, _uiTasks, RequestMenuRedraw) { Widgets = () => [menu] };
         var (title, prompt, items) = _wizard.Current;
         _menu.Reset(title, prompt, [.. items]);
     }
@@ -614,8 +615,9 @@ public sealed class TouchChessGame(ITouchPlatform platform)
         }
 
         _netLobby.Start();
-        _lobbyMenu = new PixelMenuWidget<VulkanContext>(_renderer, FontPaths.DejaVuSans);
-        _lobbyRouter = MenuRouting.For(_lobbyMenu, _uiTasks, RequestMenuRedraw);
+        var lobbyMenu = new PixelMenuWidget<VulkanContext>(_renderer, FontPaths.DejaVuSans);
+        _lobbyMenu = lobbyMenu;
+        _lobbyRouter = new InputRouter(lobbyMenu.Ui, _uiTasks, RequestMenuRedraw) { Widgets = () => [lobbyMenu] };
         _lobbyShownKey = "";
     }
 

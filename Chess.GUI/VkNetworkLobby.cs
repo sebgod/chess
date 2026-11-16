@@ -33,7 +33,8 @@ internal sealed class VkNetworkLobby : IWidget, IDisposable
     private readonly string? _cloudConfig;
 
     private PixelMenuWidget<VulkanContext>? _menu;
-    // Built with the menu: the app's task tracker and the loop's redraw (see MenuRouting).
+    // Built with the menu, from the app's task tracker and the loop's redraw. The menu declares its own keys, so the
+    // router lists it and needs no fallback.
     private InputRouter? _router;
     private readonly BackgroundTaskTracker _tasks;
     private readonly System.Action _requestRedraw;
@@ -79,15 +80,19 @@ internal sealed class VkNetworkLobby : IWidget, IDisposable
         _typedName = LanProfile.Load(saveDir).Name;
     }
 
-    public void Render(VkRenderer renderer)
+    public void Render(VkRenderer renderer, float dpiScale)
     {
         if (_menu is null)
         {
-            _menu = new PixelMenuWidget<VulkanContext>(renderer, FontPaths.DejaVuSans);
-            _router = MenuRouting.For(_menu, _tasks, _requestRedraw);
+            var menu = new PixelMenuWidget<VulkanContext>(renderer, FontPaths.DejaVuSans);
+            _menu = menu;
+            _router = new InputRouter(menu.Ui, _tasks, _requestRedraw) { Widgets = () => [menu] };
         }
         RefreshMenuContent();
-        _menu.Render();
+        // The panel is sized in design units, so it needs the window's display scale to keep its size on a
+        // high-DPI screen.
+        _menu.DpiScale = dpiScale;
+        _menu.RenderPanel();
     }
 
     private void RefreshMenuContent()

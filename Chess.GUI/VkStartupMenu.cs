@@ -30,7 +30,8 @@ internal sealed class VkStartupMenu(BackgroundTaskTracker tasks, System.Action r
     // Lazy: PixelMenuWidget<VulkanContext> is constructed on first Render call so we have a
     // VkRenderer instance to pass to the PixelWidgetBase ctor.
     private PixelMenuWidget<VulkanContext>? _menu;
-    // Built with the menu: the app's task tracker and the loop's redraw (see MenuRouting).
+    // Built with the menu, from the app's task tracker and the loop's redraw. The menu declares its own keys, so the
+    // router lists it and needs no fallback.
     private InputRouter? _router;
 
     public bool IsComplete => _wizard.IsComplete;
@@ -42,16 +43,20 @@ internal sealed class VkStartupMenu(BackgroundTaskTracker tasks, System.Action r
     public PixelWidgetBase<VulkanContext>? InspectorWidget => _menu;
 #endif
 
-    public void Render(VkRenderer renderer)
+    public void Render(VkRenderer renderer, float dpiScale)
     {
         if (_menu is null)
         {
-            _menu = new PixelMenuWidget<VulkanContext>(renderer, FontPaths.DejaVuSans);
-            _router = MenuRouting.For(_menu, tasks, requestRedraw);
+            var menu = new PixelMenuWidget<VulkanContext>(renderer, FontPaths.DejaVuSans);
+            _menu = menu;
+            _router = new InputRouter(menu.Ui, tasks, requestRedraw) { Widgets = () => [menu] };
             var (title, prompt, items) = _wizard.Current;
             _menu.Reset(title, prompt, [..items]);
         }
-        _menu.Render();
+        // The panel is sized in design units, so it needs the window's display scale to keep its size on a
+        // high-DPI screen.
+        _menu.DpiScale = dpiScale;
+        _menu.RenderPanel();
     }
 
     public bool HandleInput(InputEvent evt)
