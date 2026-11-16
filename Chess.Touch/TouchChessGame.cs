@@ -46,6 +46,10 @@ public sealed class TouchChessGame(ITouchPlatform platform)
     private PixelMenuWidget<VulkanContext>? _menu;
     private InputRouter? _menuRouter;
     private PixelGameDisplay<VulkanContext>? _display;
+
+    // The board the menu and the lobby sit over as a panel (#84): the game just left, else the saved game, else a fresh
+    // board. It takes no input (the panel is modal) and goes when a game starts.
+    private PixelGameDisplay<VulkanContext>? _backdrop;
     private Game? _game;
 
     // The shared turn model, ticked from Render (see AdvanceSession). Taps are handed to _input rather
@@ -145,6 +149,7 @@ public sealed class TouchChessGame(ITouchPlatform platform)
         loop.OnRender = Render;
         loop.OnResize = (w, h) =>
         {
+            _backdrop?.OnResize((int)w, (int)h);
             if (_display is null) return;
             // Re-fit the across-the-table transform to the new surface size (its CenteredRotation
             // translation depends on w/h); this also re-queries the safe area on every resize — the
@@ -228,6 +233,17 @@ public sealed class TouchChessGame(ITouchPlatform platform)
         {
             // An attached keyboard (an iPad's, a Chromebook's) drives the menus as the desktop's does: arrows move
             // the highlight, Enter confirms. The widget handles the keys itself; returning true repaints.
+            // Backspace on a keyboard steps the wizard back, as Esc does; taken before the menu's router, whose modal
+            // panel would swallow it. On the first step it does nothing.
+            if (keyEvent.Key == InputKey.Backspace && _menu is not null && _wizard is not null)
+            {
+                if (_wizard.Back())
+                {
+                    var (backTitle, backPrompt, backItems) = _wizard.Current;
+                    _menu.Reset(backTitle, backPrompt, [.. backItems]);
+                }
+                return true;
+            }
             if (keyEvent.Key != InputKey.Escape)
             {
                 if (_menu is not null && _wizard is not null) return HandleMenuInput(keyEvent);
@@ -262,7 +278,12 @@ public sealed class TouchChessGame(ITouchPlatform platform)
                 _menu.Reset(title, prompt, [.. items]);
                 return true;
             }
-            platform.LeaveToHome(); // the first menu step: hand back to the launcher (nothing on iOS)
+            // The first menu step closes the panel onto the game behind it, as Esc does on the desktop; with no saved
+            // game to go back to, hand back to the launcher (nothing on iOS).
+            if (TryLoadGame() is { } behind && IsResumable(behind))
+                StartGame(behind.Game, behind.ComputerSide, behind.Mode, setUp: IsMidSetup(behind));
+            else
+                platform.LeaveToHome();
             return true;
         };
     }
@@ -278,7 +299,13 @@ public sealed class TouchChessGame(ITouchPlatform platform)
         _netSession = null;
 
         CleanupNetwork(); // tear down any lobby/discovery/lock before returning to the menu
-        _display = null;
+        // The game just left stays on screen behind the menu's panel.
+        if (_display is not null)
+        {
+            _backdrop?.Dispose();
+            _backdrop = _display;
+            _display = null;
+        }
         // The menu renders through the same projection — never let it inherit a turned frame.
         _renderer.ContentTransform = ContentTransform.Identity;
         // No Play-by-Link on a touch head (no link driver), but both network entries are on where
@@ -322,9 +349,15 @@ public sealed class TouchChessGame(ITouchPlatform platform)
         AdvanceSession();
 
         if (_display is not null)
+        {
             _display.Render();
-        else
-            _menu?.Render();
+        }
+        else if (_menu is not null)
+        {
+            RenderBackdrop();
+            _menu.DpiScale = _window.DisplayScale;
+            _menu.RenderPanel();
+        }
     }
 
     // The startup wizard's menu, from a tap (a press built at the release point) or a key. One body, so a
@@ -454,6 +487,7 @@ public sealed class TouchChessGame(ITouchPlatform platform)
 
         _menu = null;
         _wizard = null;
+        DropBackdrop();
         var display = new PixelGameDisplay<VulkanContext>(_renderer);
         _display = display;
         // Transform + safe area BEFORE ResetGame so the first layout already clears the notch and the
@@ -666,7 +700,27 @@ public sealed class TouchChessGame(ITouchPlatform platform)
             _lobbyShownKey = key;
             _lobbyMenu.Reset(title, prompt, [.. items]);
         }
-        _lobbyMenu.Render();
+        RenderBackdrop();
+        _lobbyMenu.DpiScale = _window.DisplayScale;
+        _lobbyMenu.RenderPanel();
+    }
+
+    // The board behind a menu panel. On a cold launch with no game left it is the saved game, else a fresh board; it is
+    // built on the first menu frame and kept until a game starts.
+    private void RenderBackdrop()
+    {
+        if (_backdrop is null)
+        {
+            _backdrop = new PixelGameDisplay<VulkanContext>(_renderer) { KeyboardHints = false };
+            _backdrop.ResetGame(TryLoadGame()?.Game ?? new Game());
+        }
+        _backdrop.Render();
+    }
+
+    private void DropBackdrop()
+    {
+        _backdrop?.Dispose();
+        _backdrop = null;
     }
 
     private void HandleLobbyTap(int x, int y) => HandleLobbyInput(new InputEvent.MouseDown(x, y));
@@ -721,6 +775,7 @@ public sealed class TouchChessGame(ITouchPlatform platform)
         _mode = cloud ? GameMode.OnlineGame : GameMode.NetworkGame;
         _vsComputer = false;
         _acrossTheTable = false; // a LAN game has a single local side — never turns the frame
+        DropBackdrop();
         var display = new PixelGameDisplay<VulkanContext>(_renderer);
         _display = display;
         UpdateAcrossTheTableTransform(); // identity here + insets/cutout
