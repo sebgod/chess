@@ -13,18 +13,29 @@ namespace Chess.Console;
 internal class StartupMenu(IVirtualTerminal terminal, TimeProvider timeProvider)
     : MenuBase<(GameMode Mode, Side ComputerSide, Side SideToMove, Difficulty Difficulty)>(terminal, timeProvider)
 {
+    // On the alternate screen the menu is a card over the board the host drew first (#84), as on the other hosts.
+    protected override bool UsePanel => true;
+
     protected override async Task<(GameMode Mode, Side ComputerSide, Side SideToMove, Difficulty Difficulty)> ShowAsyncCore(CancellationToken cancellationToken)
     {
         // The console can open sockets, so it offers LAN "Network game" (routes into ConsoleLanLobby),
         // and it can carry a link, so it offers "Play by Link" too. The link courier needs nothing
         // from the host but a clipboard and somewhere to type -- OSC 52 and a prompt, both of which a
         // terminal has.
-        var wizard = new StartupWizard(StartupWizardOptions.NetworkPlay | StartupWizardOptions.LinkPlay);
+        // HeaderBack: a later step's way back is the panel's "< Back" control and Esc (MenuActions.Back), not a row.
+        var wizard = new StartupWizard(
+            StartupWizardOptions.NetworkPlay | StartupWizardOptions.LinkPlay | StartupWizardOptions.HeaderBack);
         while (!wizard.IsComplete)
         {
             var (title, prompt, items) = wizard.Current;
-            var selected = await ShowMenuAsync(title, prompt, items, cancellationToken);
-            wizard.Confirm(selected);
+            var choice = await ShowMenuAsync(title, prompt, items,
+                wizard.CanGoBack ? MenuActions.Back : MenuActions.None, cancellationToken);
+            if (choice.IsBack)
+            {
+                wizard.Back();
+                continue;
+            }
+            wizard.Confirm(choice.Index);
         }
         return wizard.Result;
     }
