@@ -174,6 +174,35 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
         link.Pending = linkGame;
     }
 
+    // The game just played, for the board the next menu is drawn over (#84); a fresh board before the first.
+    Game? lastGame = null;
+    IGameDisplay? lastDisplay = null;
+
+    IGameDisplay NewDisplay()
+    {
+        var display = imageCapability is ImageDisplayCapability.Sixel
+            ? (IGameDisplay)new SixelGameDisplay(terminal)
+            : new AsciiDisplay(terminal);
+        // So a copied link, or a refused one, can say so in the status bar.
+        link.Display = display as IConsoleStatusDisplay;
+        lastDisplay = display;
+        return display;
+    }
+
+    // The board behind the menu's panel. Only on the alternate screen, where the menu is a card; the inline menu
+    // prints its lines below whatever is there.
+    void DrawBackdrop()
+    {
+        if (!terminal.IsAlternateScreen) return;
+        var game = lastGame ?? new Game();
+        // Not NewDisplay: the backdrop is drawn and dropped, and must not become the link's or the last game's display.
+        using var backdrop = imageCapability is ImageDisplayCapability.Sixel
+            ? (IGameDisplay)new SixelGameDisplay(terminal)
+            : new AsciiDisplay(terminal);
+        backdrop.ResetGame(game);
+        backdrop.RenderInitial(game);
+    }
+
     var restart = true;
     while (restart && !cancellationToken.IsCancellationRequested)
     {
@@ -197,6 +226,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
         }
         else if (modeArg is null)
         {
+            DrawBackdrop();
             var startupMenu = new StartupMenu(terminal, timeProvider);
             (gameMode, computerSide, sideToMove, difficulty) = await startupMenu.ShowAsync(cancellationToken);
         }
@@ -234,15 +264,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
             if (netSession is null) { restart = true; continue; }
         }
 
-        Func<IGameDisplay> displayFactory = () =>
-        {
-            var display = imageCapability is ImageDisplayCapability.Sixel
-                ? (IGameDisplay)new SixelGameDisplay(terminal)
-                : new AsciiDisplay(terminal);
-            // So a copied link, or a refused one, can say so in the status bar.
-            link.Display = display as IConsoleStatusDisplay;
-            return display;
-        };
+        Func<IGameDisplay> displayFactory = NewDisplay;
 
         GameLoop gameLoop;
         if (netSession is { } session)
@@ -261,6 +283,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
         }
 
         restart = await gameLoop.RunAsync(gameMode, computerSide, sideToMove, cancellationToken, resumeGame);
+        lastGame = lastDisplay?.UI.Game ?? lastGame;
 
         // Ctrl+O during a game ends the session and lands here, which is the only place a link can
         // become the next one. Cancelling the prompt simply falls through to the menu.
