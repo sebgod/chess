@@ -56,14 +56,12 @@ internal sealed class VkGamePicker : IWidget
     /// <summary>True when the user backed out; the host returns to the menu.</summary>
     public bool IsAborted { get; private set; }
 
-#if DEBUG
-    /// <summary>The underlying pixel widget, so the DEBUG inspector can read its clickable regions
+    /// <summary>The underlying pixel widget, so the inspector can read its clickable regions
     /// + captured layout (null until the first Render builds it).</summary>
     public PixelWidgetBase<VulkanContext>? InspectorWidget => _menu;
 
-    /// <summary>Row count exposed for the DEBUG inspector's appState snapshot.</summary>
+    /// <summary>Row count exposed for the inspector's appState snapshot.</summary>
     public int RowCount => _rows.Count;
-#endif
 
     public VkGamePicker(string dataDir, TimeProvider time, BackgroundTaskTracker tasks, System.Action requestRedraw,
         string? currentId = null)

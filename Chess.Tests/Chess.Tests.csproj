@@ -24,6 +24,8 @@
     <PackageReference Include="Shouldly" />
     <!-- PngWriter, for dumping the offline PixelGameDisplay renders as PNGs (PixelGameDisplayLayoutTests). -->
     <PackageReference Include="SharpAstro.Png" />
+    <!-- The inspector's typed client, for the GUI smoke test (GuiSmokeTests), which only runs in a GUI lane. -->
+    <PackageReference Include="SdlVulkan.Renderer.Inspector.Client" />
   </ItemGroup>
 
   <ItemGroup>

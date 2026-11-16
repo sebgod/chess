@@ -37,11 +37,9 @@ internal sealed class VkStartupMenu(BackgroundTaskTracker tasks, System.Action r
     public bool IsComplete => _wizard.IsComplete;
     public (GameMode Mode, Side ComputerSide, Side SideToMove, Difficulty Difficulty) Result => _wizard.Result;
 
-#if DEBUG
-    /// <summary>The underlying pixel widget, so the DEBUG inspector can read its clickable regions +
+    /// <summary>The underlying pixel widget, so the inspector can read its clickable regions +
     /// captured layout (null until the first Render builds it).</summary>
     public PixelWidgetBase<VulkanContext>? InspectorWidget => _menu;
-#endif
 
     public void Render(VkRenderer renderer, float dpiScale)
     {

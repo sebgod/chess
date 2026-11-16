@@ -22,23 +22,38 @@ for the actual .NET exception before drawing conclusions from the exit code.
 
 ## Driving it yourself: the SDL inspector
 
-Do **not** ask the user to click things you can drive. The renderer ships a DEBUG-only
-`DebugInspector` — a TCP command server running commands on the render thread — and chess
-registers its sidecar as the **`gui-inspector`** MCP (`dnx SdlVulkan.Renderer.Inspector`).
-It finds the app by UDP discovery, so there is no port to copy.
+Do **not** ask the user to click things you can drive. The renderer ships `DebugInspector`, a TCP
+command server running commands on the render thread, and chess registers its sidecar as the
+**`gui-inspector`** MCP (`dnx SdlVulkan.Renderer.Inspector`).
 
-**The launch line above is the WRONG build for this.** `-c Release` has no inspector in it at
-all: it is `#if DEBUG` *inside the renderer*, so the renderer itself must compile with DEBUG —
-meaning a local sibling, not the NuGet package (which is built in Release). Same rule as the
-TUI's inspector.
+**Since SdlVulkan.Renderer 7.96 the inspector is in every build, off unless opted in at run time:**
+`DIR_INSPECTOR=1` plus a `DIR_INSPECTOR_TOKEN` (every request must carry the token). A Debug build
+with `DIR_INSPECTOR` unset is still always on, which is the easy way to drive it by hand:
 
 ```
-dotnet run --project Chess.GUI -c Debug -p:UseLocalSiblings=true 2> gui.log
+dotnet run --project Chess.GUI -c Debug 2> gui.log
 ```
+
+`CHESS_DATA_DIR` points the GUI at another data folder, so a run never touches the user's saved games.
 
 On start it prints `[inspector] 'Chess.GUI' command server on <ADDRESS>:<PORT>` to **stderr**.
-The server is loopback-only (the old `Any` default is gone, with no opt-out), but grep the port
-without pinning the address (`command server on [0-9.]+:([0-9]+)`) and connect to `127.0.0.1:PORT`.
+The server is loopback-only; grep the port without pinning the address
+(`command server on [0-9.]+:([0-9]+)`) and connect to `127.0.0.1:PORT`.
+
+## The smoke test, in pilot's GUI lane
+
+`Chess.Tests/GuiSmokeTests.cs` starts the built Chess.GUI and drives it with
+`SdlVulkan.Renderer.Inspector.Client` (connect by pid and token). It skips unless `DIR_INSPECTOR=1` and a
+token are set, which `pilot run --gui` provides, with `PILOT_JOB_ARTIFACTS` for its screenshots. Build
+first against packages, then run it from the chess folder (pilot starts a job in the session's folder, and
+outside chess there is no `global.json`, so `dotnet test` falls back to VSTest and rejects `--filter-class`):
+
+```
+dotnet build -c Release -p:UseLocalSiblings=false
+pilot run --gui --whole-suite "MTP filter, one class" -- pwsh -NoProfile -Command "Set-Location chess; dotnet test Chess.Tests -c Release --no-build -p:UseLocalSiblings=false --filter-class Chess.Tests.GuiSmokeTests"
+```
+
+(`--whole-suite` only because pilot's guard knows VSTest's `--filter`, not MTP's; reported to pilot.)
 
 Tools: `list_instances`, `ping`, `describe_ui`, `describe_layout`, `screenshot`, `click`,
 `click_label`, `press_key`, `type_text`, `scroll`, `drag`, `press_hold`, `minimize`,
@@ -47,15 +62,10 @@ Tools: `list_instances`, `ping`, `describe_ui`, `describe_layout`, `screenshot`,
 
 - **`screenshot` returns an image block**, so a GUI frame lands directly in the conversation —
   this is the one host where you can just LOOK at the result instead of asserting on state.
-- **A screenshot taken while the window is MINIMIZED wedges every later screenshot.** `SdlEventLoop`
-  excludes minimized windows from `anyNeedsRedraw`, so `OnRender` never runs, the frame-waiting
-  capture never completes, and every subsequent call is refused with
-  `'screenshot' is already in progress` — including after the window comes back by hand. **`restore`
-  is the fix**: it un-minimizes and rendering resumes, which lets the stuck capture finish. `ping` and
-  `describe_ui` keep working throughout, so a live app that cannot screenshot is this, not a crash.
-- **The MCP wrapper reports failures as a bare `An error occurred invoking 'x'`.** The raw socket
-  returns the actual reason (`{"error": "InvalidOperationException: ..."}`), which is how the latch
-  above was identified. When a tool fails opaquely, re-send it over the socket before theorising.
+- **Fixed in 7.96:** a screenshot of a minimized window now fails within its budget saying so (it no
+  longer wedges later screenshots); the MCP tools pass the server's real error through instead of
+  `An error occurred invoking 'x'`; and `instance=0` with several apps running fails naming each app and
+  pid. Pass `instance=<chess pid>` when TianWen is also up.
 - **`move` IS an MCP tool since SdlVulkan.Renderer 7.27** (a raw verb since 7.25). It is the only verb
   that can drive hover — `click`, `drag` and `press_hold` all arrive with a button DOWN. It takes a
   PATH, `{"x1","y1","x2","y2","steps"}`, not a point; a bare `x`/`y` is rejected. Chess pins 7.30, but
@@ -71,9 +81,6 @@ Tools: `list_instances`, `ping`, `describe_ui`, `describe_layout`, `screenshot`,
   fails with the usual bare wrapper error, and a long `seconds` blocks you for that long.
   **You rarely need any of this**: setup mode is click-to-pick-up, so a plain `click` leaves the piece
   in hand with no button held, and `move` then drags it. That is the way to capture a mid-drag frame.
-- **`instance=0` means "the ONLY instance", not "the first one".** TianWen is built on the same
-  renderer and answers the same discovery, so the moment one is running every tool fails with the bare
-  `An error occurred invoking 'x'`. `list_instances` first, then pass `instance=<chess pid>`.
 - `describe_layout` shows the whole frame — `board`, `captured`, `history` and `status` by their slot
   `fillKey`, from `GameFrameLayout`'s tree. The board's own 8×8 is NOT in there: it is arranged and
   painted by hand, so only its bounding slot appears. `describe_ui` regions cover the history rows

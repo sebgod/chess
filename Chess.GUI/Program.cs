@@ -81,8 +81,10 @@ var renderer = new VkRenderer(ctx, (uint)w, (uint)h);
 // Saved games (shared Chess.UCI format) in the user's local app-data. A DIRECTORY of them since
 // phase 2: correspondence play means several games can be in flight at once, and the old single
 // slot silently evicted one when you started another.
-var dataDir = Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SharpAstro.Chess");
+// CHESS_DATA_DIR moves it, so the GUI smoke test runs on a folder of its own and never sees the user's games.
+var dataDir = Environment.GetEnvironmentVariable("CHESS_DATA_DIR") is { Length: > 0 } dataDirOverride
+    ? dataDirOverride
+    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SharpAstro.Chess");
 Directory.CreateDirectory(dataDir);
 
 // One-time move of any pre-inbox game.uci into the inbox. Idempotent, so it costs one File.Exists
@@ -736,10 +738,10 @@ bus.Subscribe<RequestResetSignal>(_ =>
     // the signal is available for future decoupling if needed.
 });
 
-#if DEBUG
-// Live UI debug inspector (DEBUG only — compiled out of Release, and the renderer only carries
-// DebugInspector in its own DEBUG build). Exposes this process to the SdlVulkan.Renderer.Inspector
-// MCP sidecar / any TCP driver: read the widget tree (describe/describeLayout), screenshot, inject
+// Live UI inspector. In every build since SdlVulkan.Renderer 7.96, and off unless the process is started with
+// DIR_INSPECTOR=1 and a DIR_INSPECTOR_TOKEN (a Debug build without DIR_INSPECTOR is on, as before). Off, it opens no
+// socket and adds nothing to a frame. Exposes this process to the SdlVulkan.Renderer.Inspector MCP sidecar, the GUI
+// smoke test (Chess.Tests/GuiSmokeTests.cs) and any TCP driver: read the widget tree (describe/describeLayout), screenshot, inject
 // input, and read a curated state snapshot. Mirrors tianwen's wiring — the machinery lives in the
 // framework; this block is the only glue, aggregating the active screen's regions + captured layout.
 PixelWidgetBase<VulkanContext>? ActiveInspectorWidget() =>
@@ -779,7 +781,6 @@ using var inspector = DebugInspector.Attach(loop, new DebugInspectorOptions
         }
     },
 });
-#endif
 
 // The link that came in on argv, now that the loop and its handlers exist. "Receiving a link means
 // it's your turn", so the correspondent is whoever is NOT to move — GameSession states that rule once
