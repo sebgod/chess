@@ -6,7 +6,7 @@
     <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Console.Lib" Version="5.30.*" />
+    <PackageVersion Include="Console.Lib" Version="5.31.*" />
     <PackageVersion Include="coverlet.collector" Version="10.1.0" />
     <PackageVersion Include="DIR.Lib" Version="11.76.*" />
     <!-- Chess.Web's Blazor WebAssembly deps. They used to ride inline in Chess.Web.csproj, which

@@ -194,6 +194,9 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
     void DrawBackdrop()
     {
         if (!terminal.IsAlternateScreen) return;
+        // A clear first: the board is a Sixel image, which writes no cells, so the last card's border cells would
+        // survive under it and show around a smaller card on the next step.
+        terminal.Clear();
         var game = lastGame ?? new Game();
         // Not NewDisplay: the backdrop is drawn and dropped, and must not become the link's or the last game's display.
         using var backdrop = imageCapability is ImageDisplayCapability.Sixel
@@ -226,8 +229,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
         }
         else if (modeArg is null)
         {
-            DrawBackdrop();
-            var startupMenu = new StartupMenu(terminal, timeProvider);
+            var startupMenu = new StartupMenu(terminal, timeProvider, DrawBackdrop);
             (gameMode, computerSide, sideToMove, difficulty) = await startupMenu.ShowAsync(cancellationToken);
         }
         else

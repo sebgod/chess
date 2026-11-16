@@ -14,9 +14,6 @@ namespace Chess.Console;
 /// </summary>
 internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
 {
-    // On the alternate screen the lobby is a card over the board behind it (#84), as the startup menu is.
-    protected override bool UsePanel => true;
-
     private const int MaxNameLength = 24;
 
     private readonly TimeProvider _time;
