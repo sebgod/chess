@@ -261,7 +261,7 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
             var lanDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "SharpAstro.Chess");
             var preferredColor = computerSide == Side.White ? Side.Black : Side.White;
-            netSession = await new ConsoleLanLobby(terminal, timeProvider, lanDir, preferredColor)
+            netSession = await new ConsoleLanLobby(terminal, timeProvider, lanDir, preferredColor, DrawBackdrop)
                 .ShowAsync(cancellationToken);
             if (netSession is null) { restart = true; continue; }
         }
