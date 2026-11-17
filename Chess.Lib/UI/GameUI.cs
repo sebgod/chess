@@ -609,10 +609,16 @@ public class GameUI
     public void Render<TSurface, TRenderer>(TRenderer renderer, in RectInt clip)
         where TRenderer : Renderer<TSurface>
     {
+        var boardRect = _layout.Board;
+
+        // The label margins first, so the squares and the drag ghost land on top of a clean frame.
+        if (!clip.IsContainedWithin(boardRect))
+        {
+            FillLabelFrame(renderer, clip);
+        }
+
         // board
         RenderBoard<TRenderer, TSurface>(renderer, clip);
-
-        var boardRect = _layout.Board;
 
         // If the clip is entirely within the board area, skip chrome rendering
         if (clip.IsContainedWithin(boardRect))
@@ -1079,6 +1085,43 @@ public class GameUI
         return bottom > top
             ? new RectInt(((int)area.LowerRight.X, bottom), (area.UpperLeft.X, top))
             : area;
+    }
+
+    /// <summary>
+    /// Fills the coordinate-label frame around the grid (the four margins and the corners between them) with the
+    /// background, wherever it meets <paramref name="clip"/>. Squares paint every pixel of the grid and the bands
+    /// draw their own, but a label is glyphs only, so nothing else ever overwrote a margin pixel. On a host whose
+    /// surface is not cleared between frames (the terminal) that left every frame of a drag ghost crossing the
+    /// margin in place, piled up under the rank digits, even through a full repaint. A GPU host clears the whole
+    /// frame to this same colour first, so for it this is a no-op.
+    /// </summary>
+    private void FillLabelFrame<TSurface>(Renderer<TSurface> renderer, in RectInt clip)
+    {
+        var m = _layout.LabelMargin;
+        if (m <= 0)
+        {
+            return;
+        }
+
+        var b = _layout.Board;
+        int left = b.UpperLeft.X, top = b.UpperLeft.Y, right = (int)b.LowerRight.X, bottom = (int)b.LowerRight.Y;
+
+        // (LowerRight, UpperLeft): RectInt's order, the opposite of the one that reads naturally.
+        Span<RectInt> strips =
+        [
+            new RectInt((right + m, top), (left - m, top - m)),          // top, corners included
+            new RectInt((right + m, bottom + m), (left - m, bottom)),    // bottom, corners included
+            new RectInt((left, bottom), (left - m, top)),                // left
+            new RectInt((right + m, bottom), (right, top)),              // right
+        ];
+
+        foreach (var strip in strips)
+        {
+            if (strip.OverlapsWith(clip))
+            {
+                renderer.FillRectangle(strip, _backgroundColor);
+            }
+        }
     }
 
     private void RenderBoard<TRenderer, TSurface>(TRenderer renderer, in RectInt clip)
