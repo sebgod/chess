@@ -138,21 +138,19 @@ rootCommand.SetAction(async (parseResult, cancellationToken) =>
         terminal.EnterAlternateScreen();
     }
 
-#if CONSOLE_INSPECTOR
     // The debug inspector: a loopback command server that can read this terminal's screen as TEXT and inject
-    // keys and clicks, so the TUI can be driven and asserted without a person at the keyboard. DEBUG-only and
-    // opt-in, at tianwen/Chess.GUI parity — set CHESS_INSPECTOR=1 and grep the port out of stderr.
+    // keys and clicks, so the TUI can be driven and asserted without a person at the keyboard. Console.Lib's, in
+    // every build: it listens only when the process is started with DIR_INSPECTOR=1 and DIR_INSPECTOR_TOKEN (the
+    // same opt-in as Chess.GUI's), and is otherwise inert, with Port -1 and Pump a no-op.
     //
     // Enabling the cell buffer is what gives it a screen to report: buffered writes go through the diff, so
-    // the FRONT buffer is the record of what was actually emitted.
-    ConsoleDebugInspector? inspector = null;
-    if (Environment.GetEnvironmentVariable("CHESS_INSPECTOR") is { Length: > 0 })
+    // the FRONT buffer is the record of what was actually emitted. Only then, so a normal run writes directly.
+    var inspector = ConsoleDebugInspector.Attach("Chess.Console", terminal, InspectorHooks.AppState);
+    if (inspector.Port >= 0)
     {
         terminal.EnableCellBuffer();
-        inspector = ConsoleDebugInspector.Attach("Chess.Console", terminal, InspectorHooks.AppState);
         InspectorHooks.Instance = inspector;
     }
-#endif
 
     // Play by Link: the courier the console did not have. Shared across restarts because a received
     // link ENDS one session and starts the next -- the game it decodes cannot be installed into the

@@ -209,10 +209,8 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
     private static bool IsNameChar(Rune r) =>
         Rune.IsLetterOrDigit(r) || r.Value == ' ' || r.Value == '-' || r.Value == '_';
 
-#if CONSOLE_INSPECTOR
     // Lets the inspector's queued commands run while the lobby waits for input.
     protected override void OnIdle() => InspectorHooks.Pump();
-#endif
 
     // Redraws only when the content changes. On the alternate screen the lobby is the menu panel's card over the
     // board (#84), as the startup menu is; otherwise a plain list, like MenuBase's normal mode.

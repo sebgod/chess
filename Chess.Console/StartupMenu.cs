@@ -16,10 +16,8 @@ internal class StartupMenu(IVirtualTerminal terminal, TimeProvider timeProvider,
     // On the alternate screen the menu is a card over the board the host drew first (#84), as on the other hosts.
     protected override bool UsePanel => true;
 
-#if CONSOLE_INSPECTOR
     // Lets the inspector's queued commands run while this menu waits for input (Console.Lib 5.31).
     protected override void OnIdle() => InspectorHooks.Pump();
-#endif
 
     protected override async Task<(GameMode Mode, Side ComputerSide, Side SideToMove, Difficulty Difficulty)> ShowAsyncCore(CancellationToken cancellationToken)
     {

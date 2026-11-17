@@ -23,10 +23,8 @@ namespace Chess.Console;
 internal sealed class ConsoleLinkPrompt(IVirtualTerminal terminal, TimeProvider timeProvider)
     : MenuBase<Game?>(terminal, timeProvider)
 {
-#if CONSOLE_INSPECTOR
     // Lets the inspector's queued commands run while this menu waits for input (Console.Lib 5.31).
     protected override void OnIdle() => InspectorHooks.Pump();
-#endif
 
     // Generous: GameLinkCodec caps a link at MaxPlies, and a 4096-ply game encodes far longer than
     // anyone will paste. This only exists so a runaway paste cannot grow the buffer without bound.
