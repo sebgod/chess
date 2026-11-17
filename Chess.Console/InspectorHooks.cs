@@ -1,4 +1,3 @@
-#if CONSOLE_INSPECTOR
 using Chess.Lib.UI;
 using Console.Lib;
 using DIR.Lib.Diagnostics;
@@ -12,8 +11,8 @@ namespace Chess.Console;
 /// <para>Static, which is not how production state is held here — <c>GameSession</c> owns that and every
 /// front-end hosts it. But the display is rebuilt per game by a factory inside the loop, and the input
 /// dispatch is three constructors away from where the inspector is created, so threading a reference through
-/// both would put DEBUG-only plumbing into production signatures. The whole file is <c>#if DEBUG</c>, so a
-/// release build has neither the state nor the calls.</para>
+/// both would put inspector plumbing into production signatures. <see cref="Instance"/> is set only when the
+/// inspector is listening, so in a normal run every call here is a null check.</para>
 /// </summary>
 internal static class InspectorHooks
 {
@@ -97,4 +96,3 @@ internal static class InspectorHooks
             "}";
     }
 }
-#endif

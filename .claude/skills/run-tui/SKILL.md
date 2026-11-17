@@ -51,22 +51,24 @@ sentence to the log while the window shows a bare help dump. Before re-guessing 
 
 ## Driving it yourself: the debug inspector
 
-Do **not** ask the user to click things you can drive. The TUI has a DEBUG-only inspector —
-a loopback JSON command server that reads the screen as TEXT and injects keys and clicks.
+Do **not** ask the user to click things you can drive. The TUI has Console.Lib's inspector, a
+loopback JSON command server that reads the screen as TEXT and injects keys and clicks.
 
-**It needs a Debug build AND local siblings**, and that second part is not optional: the
-inspector lives in Console.Lib/DIR.Lib behind `#if DEBUG`, and a *published* package is
-built in Release, so its inspector is compiled out. Chess gates its wiring on
-`CONSOLE_INSPECTOR`, defined only when `UseLocalSiblings=true` and `Configuration=Debug`.
-Locally that is the default (siblings auto-detect); in CI it is absent, which is why CI
-never compiles this code. Chess.GUI's SDL inspector has exactly the same rule.
+**It is in every build, Release and NuGet packages included, and listens only when opted in at run
+time**: start the app with `DIR_INSPECTOR=1` and `DIR_INSPECTOR_TOKEN=<a secret you choose>`, the
+same contract as Chess.GUI's SDL inspector. Without both it is inert (no listener, no cell buffer). A
+trimmed or NativeAOT publish drops it, so drive a `dotnet run`/`dotnet build` output, not a publish.
 
 ```
-cmd //c start "Chess TUI" cmd //k "set CHESS_INSPECTOR=1 && dotnet run --project Chess.Console -c Debug -- --mode pvc --side white 2> inspector.log"
-grep -oE "command server on 127\.0\.0\.1:([0-9]+)" inspector.log
+TOK=$(python -c "import secrets; print(secrets.token_hex(16))"); echo -n "$TOK" > "$TEMP/tui.tok"
+cmd //c start "Chess TUI" cmd //k "set DIR_INSPECTOR=1&& set DIR_INSPECTOR_TOKEN=$TOK&& dotnet run --project Chess.Console -c Release -- --mode pvc --side white 2> inspector.log"
+grep -oE "command server on [0-9.]+:([0-9]+)" inspector.log
 ```
 
-**Launch ONE instance and reuse it.** Each one holds the sibling DLLs open, so a stray
+Every request must carry the token as a top-level `"token"` field, or it is refused before it reaches
+the app. No space before `&&` inside the `set`: cmd would keep it as part of the value.
+
+**Launch ONE instance and reuse it.** Each one holds its build output open, so a stray
 instance makes the next `dotnet build` fail with MSB3021 file-in-use. `taskkill //F //IM
 Chess.Console.exe` before rebuilding.
 
@@ -95,7 +97,7 @@ Check for the process with the filtered form, `tasklist //FI "IMAGENAME eq Chess
 `tasklist | grep -i chess | head` is a trap — dozens of `dotnet.exe` rows sort first and the
 `head` cuts off before any `Chess.*` line, so a running app reads as absent.
 
-Protocol: newline-delimited JSON over TCP, `{"id":1,"method":"m","params":{}}` →
+Protocol: newline-delimited JSON over TCP, `{"id":1,"method":"m","params":{},"token":"<TOK>"}` →
 `{"id":1,"result":...}` or `{"id":1,"error":"..."}`.
 
 | method | what it gives you |
@@ -160,7 +162,7 @@ the move reaches both `app_state` and the history panel.
 - `key` takes an optional `mods` (`"Ctrl"`, `"Ctrl+Shift"`), so chords like Ctrl+F (flip board) are
   drivable. Unrecognised modifier text is **refused** rather than sent as a bare key — bare `f` is
   the file-f selector, so a silently-dropped Ctrl would do something else entirely.
-- `CHESS_INSPECTOR=1` also enables the cell buffer, which is what gives `screen` content.
+- Opting in (`DIR_INSPECTOR=1`) also enables the cell buffer, which is what gives `screen` content.
 - **`P:0 (0% partial)` is expected in a wide terminal, and it is not the cell-buffer diff.** In a
   layout with an external captured gutter (`Placement.HasCapturedGutter`, i.e. the flanked frame a
   wide terminal picks) the partial path is unreachable, because the two sets are disjoint: a

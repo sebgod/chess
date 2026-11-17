@@ -128,9 +128,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay, IConsol
         _renderer = renderer;
         _boardCanvas = new Canvas(_canvasHost.Viewport, encoder);
 
-#if CONSOLE_INSPECTOR
         InspectorHooks.Display = this;
-#endif
     }
 
     protected abstract (Renderer<TSurface> Renderer, ISixelEncoder Encoder) CreateRenderer(uint width, uint height);
@@ -340,12 +338,10 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay, IConsol
 
     public void HandleResize(Game game)
     {
-#if CONSOLE_INSPECTOR
         // GameLoop calls HandleResize every pump, which makes it the one per-iteration hook the loop hands a
         // display -- and it runs on the loop thread, the same one that mutates GameUI. That is exactly what
         // the inspector's commands need, so they run here rather than on the socket thread.
         InspectorHooks.Pump();
-#endif
 
         if (!ArrangeFrame())
             return;
