@@ -1428,6 +1428,34 @@ public class GameUITests
             "the margin on the kept surface must match a fresh render: no ghost left behind");
     }
 
+    /// <summary>The terminal's full repaint paints only the frame and the tray; the rest of its canvas stays
+    /// transparent, and Sixel draws no transparent pixel, so a ghost overhanging the frame (a piece dragged
+    /// below the bottom file labels) left that overhang on screen for good. With
+    /// <see cref="GameUI.GhostBounds"/> set, the ghost stops at the edge instead.</summary>
+    [Fact]
+    public void GhostBounds_KeepTheGhostInsideThem_WhereverThePointerGoes()
+    {
+        var ui = SetupUI(new Game());
+        var bounds = ui.ContentRect;
+        ui.GhostBounds = bounds;
+
+        var (px, py) = Centre(ui, B2);
+        ui.HandleMouseDown(px, py);
+
+        foreach (var (x, y) in new[] { (px, (int)bounds.LowerRight.Y + 5), (bounds.UpperLeft.X - 50, py), (-400, -400), (5000, 5000) })
+        {
+            ui.HandlePointerMove(x, y);
+            var ghost = ui.GhostRect.ShouldNotBeNull();
+            ghost.IsContainedWithin(bounds).ShouldBeTrue($"pointer ({x},{y}) put the ghost at {ghost}, outside {bounds}");
+            ghost.Width.ShouldBe(ui.SquareRect(B2).Width, "still exactly one square");
+        }
+
+        // Unbounded (the GPU hosts) it follows the pointer off the frame, as before.
+        ui.GhostBounds = null;
+        ui.HandlePointerMove(px, (int)bounds.LowerRight.Y + 5);
+        ui.GhostRect.ShouldNotBeNull().IsContainedWithin(bounds).ShouldBeFalse();
+    }
+
     /// <summary>Motion with nothing in hand must not touch state. The GPU hosts deliver pointer motion
     /// whether or not a button is down, so this is the arm that stops a plain hover painting a ghost;
     /// the terminal is exempt by construction, but the gate lives here so all four hosts get it.</summary>

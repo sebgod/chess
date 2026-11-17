@@ -371,6 +371,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay, IConsol
             topOffset: _placement.BoardTop,
             leftOffset: _placement.BoardLeft,
             capturedLayout: _placement.CapturedPieces);
+        UI.GhostBounds = RepaintedArea(UI);
 
         UI.HistoryViewportRows = _historyList.VisibleRows;
 
@@ -391,6 +392,7 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay, IConsol
             topOffset: _placement.BoardTop,
             leftOffset: _placement.BoardLeft,
             capturedLayout: _placement.CapturedPieces);
+        _gameUI.GhostBounds = RepaintedArea(_gameUI);
 
         // HandleResize is the other writer, but it only runs its body when the arrangement CHANGED, so a
         // game that is never resized would leave this at 0 -- and every scroll path divides the history
@@ -503,16 +505,31 @@ internal abstract class ConsoleGameDisplayBase<TSurface> : IGameDisplay, IConsol
     /// </summary>
     private void RenderCapturedTray(GameUI ui)
     {
+        if (TrayRect(ui) is not { } tray) return;
+
+        _renderer.FillRectangle(tray, GameUI.PlainBackgroundColor);
+        ui.RenderCapturedColumn<TSurface, Renderer<TSurface>>(_renderer, tray);
+    }
+
+    /// <summary>The captured tray's rect on the surface, or null when the frame has no gutter for it.</summary>
+    private RectInt? TrayRect(GameUI ui)
+    {
+        if (!_placement.HasCapturedGutter) return null;
+
         var content = ui.ContentRect;
         var width = Math.Min(_placement.CapturedWidth, ui.CapturedColumnWidth);
         var right = content.UpperLeft.X;
         var left = Math.Max(0, right - width);
-        if (right <= left) return;
-
-        var tray = new RectInt((right, (int)content.LowerRight.Y), (left, content.UpperLeft.Y));
-        _renderer.FillRectangle(tray, GameUI.PlainBackgroundColor);
-        ui.RenderCapturedColumn<TSurface, Renderer<TSurface>>(_renderer, tray);
+        return right <= left ? null : new RectInt((right, (int)content.LowerRight.Y), (left, content.UpperLeft.Y));
     }
+
+    /// <summary>
+    /// The part of the surface a full repaint actually paints: the board's frame and, beside it, the tray.
+    /// The rest is never painted, so it stays transparent, and Sixel emits no transparent pixel: what the
+    /// drag ghost draws out there can never be painted over. Hence <see cref="GameUI.GhostBounds"/>.
+    /// </summary>
+    private RectInt RepaintedArea(GameUI ui) =>
+        TrayRect(ui) is { } tray ? ui.ContentRect.Union(tray) : ui.ContentRect;
 
     public void Dispose()
     {

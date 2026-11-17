@@ -430,6 +430,23 @@ public class GameUI
     public PointInt GrabOffset { get; private set; }
 
     /// <summary>
+    /// The area the drag ghost is kept inside, in surface pixels, or null for anywhere. The ghost STOPS
+    /// at its edge and slides along it, rather than being cropped there: it is drawn as text, which no
+    /// renderer crops.
+    ///
+    /// <para>Set by a host whose surface is not cleared between frames and which can only repaint part of
+    /// it. That is the terminal: a full repaint fills the label frame and the captured tray, and the rest
+    /// of its canvas is never painted at all, so it stays transparent, and Sixel emits no transparent
+    /// pixel. Whatever a ghost drew out there, dragged off the frame's bottom edge, say, stayed on screen
+    /// for good, since no later frame could paint over it. The GPU hosts clear every frame and set
+    /// nothing.</para>
+    ///
+    /// <para>Not carried through <see cref="Resize"/>: it is the host's geometry, and a resize changes it,
+    /// so the host states it again.</para>
+    /// </summary>
+    public RectInt? GhostBounds { get; set; }
+
+    /// <summary>
     /// The square-sized rect the dragged piece is drawn into, or null when no ghost is showing.
     ///
     /// <para>It is EXACTLY one square, and that is a constraint to preserve rather than an
@@ -447,6 +464,12 @@ public class GameUI
 
             var x = point.X - GrabOffset.X;
             var y = point.Y - GrabOffset.Y;
+            if (GhostBounds is { } bounds)
+            {
+                // Max last, so a bound narrower than a square pins the ghost to its near edge.
+                x = Math.Max(bounds.UpperLeft.X, Math.Min(x, (int)bounds.LowerRight.X - _squareSize));
+                y = Math.Max(bounds.UpperLeft.Y, Math.Min(y, (int)bounds.LowerRight.Y - _squareSize));
+            }
             // (LowerRight, UpperLeft) — the same order SquareRect builds, and the opposite of the one
             // that reads naturally. Reversing it yields an INVERTED rect whose Width/Height are
             // absolute differences, so it reports a plausible size and trips no guard anywhere.
