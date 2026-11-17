@@ -20,6 +20,8 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
     private readonly string _saveDir;
     private readonly Side _preferredColor;
     private string _lastContent = "";
+    // The card's shape at the last backdrop redraw: terminal size, widest line and line count (see RenderList).
+    private string _lastShape = "";
     // The board behind the lobby's panel (#84), redrawn whenever the card changes; null draws none.
     private readonly System.Action? _drawBackdrop;
     // The card on the alternate screen, built on first use.
@@ -176,7 +178,8 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
         {
             RenderList(
                 ["♚ Network Game ♔", "", "Enter your name (Enter to confirm, Esc to cancel):", ""],
-                [$"> {typed}_"], 0);
+                // The card marks the selected row with its own ▶, so no "> " prompt here: it read "▶ > Seb_".
+                [$"{typed}_"], 0);
 
             if (!Terminal.HasInput())
             {
@@ -214,18 +217,33 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
 
     // Redraws only when the content changes. On the alternate screen the lobby is the menu panel's card over the
     // board (#84), as the startup menu is; otherwise a plain list, like MenuBase's normal mode.
+    // The terminal size is part of the key: this loop is the lobby's own, not MenuBase's (which redraws on a size
+    // change itself), so without it a resize redrew nothing and the card stayed centred for the old grid, clipped
+    // to a sliver at the right edge of a narrower window.
     private void RenderList(string[] header, IReadOnlyList<string> items, int selected)
     {
+        var (columns, rows) = Terminal.Size;
         if (Terminal.IsAlternateScreen)
         {
-            var key = $"{string.Join('|', header)}#{string.Join('|', items)}#{selected}";
+            var key = $"{columns}x{rows}#{string.Join('|', header)}#{string.Join('|', items)}#{selected}";
             if (key == _lastContent) return;
             _lastContent = key;
 
-            // The card cannot restore the cells beneath it, so the board goes back first (it clears).
-            _drawBackdrop?.Invoke();
+            // The card cannot restore the cells beneath it, so the board goes back first (it clears). But only when
+            // the card's shape may have changed: the backdrop is a full clear plus a Sixel blit, and redrawing it on
+            // every typed letter or arrow press flashed the whole screen. A card of the same shape paints over the
+            // old one cell for cell, so a selection move, or typing a name shorter than the prompt line, needs no
+            // board. The card is as wide as its longest line and as tall as its line count, so those are the shape.
+            var prompt = header.Length > 2 ? header[2] : "";
+            var widest = Math.Max(Math.Max(header[0].Length, prompt.Length), items.Count == 0 ? 0 : items.Max(i => i.Length));
+            var shape = $"{columns}x{rows}|{widest}|{items.Count}";
+            if (shape != _lastShape)
+            {
+                _lastShape = shape;
+                _drawBackdrop?.Invoke();
+            }
             _panel ??= new MenuWidget(Terminal);
-            _panel.Reset(header[0], header.Length > 2 ? header[2] : "", [.. items], selected);
+            _panel.Reset(header[0], prompt, [.. items], selected);
             _panel.RenderPanel();
             Terminal.Flush();
             return;
@@ -240,8 +258,8 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
         }
 
         var content = sb.ToString();
-        if (content == _lastContent) return;
-        _lastContent = content;
+        if ($"{columns}x{rows}#{content}" == _lastContent) return;
+        _lastContent = $"{columns}x{rows}#{content}";
 
         Terminal.Clear();
         Terminal.SetCursorPosition(0, 0);
