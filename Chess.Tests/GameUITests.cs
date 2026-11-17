@@ -1390,6 +1390,44 @@ public class GameUITests
         return (x, y);
     }
 
+    /// <summary>
+    /// A ghost dragged across the rank-label margin leaves no trace there once it moves on, on a surface that is
+    /// NOT cleared between frames — the terminal's. A label is glyphs only and nothing else painted the margin, so
+    /// every frame of the ghost stayed, piled up under the rank digits, even through a full repaint.
+    /// </summary>
+    [Fact]
+    public void DragGhost_CrossingTheLabelMargin_LeavesNoTraceOnAnUnclearedSurface()
+    {
+        const int size = 800;
+        var ui = SetupUI(new Game());
+        var surface = new RgbaImageRenderer(size, size); // kept across frames, like the terminal's
+        var full = new RectInt(new PointInt(size, size), PointInt.Origin);
+
+        void Frame(ImmutableArray<RectInt> clips)
+        {
+            var clip = clips.IsDefaultOrEmpty ? full : clips.Aggregate((a, b) => a.Union(b));
+            ui.Render<RgbaImage, Renderer<RgbaImage>>(surface, clip);
+        }
+
+        Frame([]);
+        var sq = (int)ui.SquareRect(A2).Width;
+        var (px, py) = Centre(ui, A2);
+        ui.HandleMouseDown(px, py);
+        Frame([]);
+
+        // Into the left label margin (half a square left: over the rank digits), then back over the board.
+        Frame(ui.HandlePointerMove(px - sq / 2, py).ClipRects);
+        Frame(ui.HandlePointerMove(px, py - 2 * sq).ClipRects);
+
+        var a8 = ui.SquareRect(A8);
+        var a1 = ui.SquareRect(A1);
+        var leftMargin = new RectInt(new PointInt(a8.UpperLeft.X, (int)a1.LowerRight.Y),
+            new PointInt(ui.ContentRect.UpperLeft.X, a8.UpperLeft.Y));
+
+        DifferingPixels(surface.Surface, RenderUI(ui), leftMargin).ShouldBe(0,
+            "the margin on the kept surface must match a fresh render: no ghost left behind");
+    }
+
     /// <summary>Motion with nothing in hand must not touch state. The GPU hosts deliver pointer motion
     /// whether or not a button is down, so this is the arm that stops a plain hover painting a ghost;
     /// the terminal is exempt by construction, but the gate lives here so all four hosts get it.</summary>
