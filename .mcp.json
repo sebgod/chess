@@ -8,12 +8,12 @@
     "tui-inspector": {
       "type": "stdio",
       "command": "dnx",
-      "args": ["Console.Lib.Inspector", "--yes"]
+      "args": ["Console.Lib.Inspector", "--version", "5.34.*", "--yes"]
     },
     "gui-inspector": {
       "type": "stdio",
       "command": "dnx",
-      "args": ["SdlVulkan.Renderer.Inspector", "--yes"]
+      "args": ["SdlVulkan.Renderer.Inspector", "--version", "7.99.*", "--yes"]
     }
   }
 }
