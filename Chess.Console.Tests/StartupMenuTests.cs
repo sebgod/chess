@@ -7,7 +7,8 @@ namespace Chess.Console.Tests;
 
 /// <summary>
 /// The TUI's startup wizard has no "Back" row (StartupWizardOptions.HeaderBack): a later step's way back is the panel's
-/// "&lt; Back" control and Esc, which MenuBase maps to Back on a step that has one.
+/// "&lt; Back" control, Esc and Backspace, which MenuBase maps to Back on a step that has one (Backspace since
+/// Console.Lib 5.33).
 /// </summary>
 public class StartupMenuTests
 {
@@ -21,13 +22,15 @@ public class StartupMenuTests
         return await menu.ShowAsync(TestContext.Current.CancellationToken);
     }
 
-    [Fact]
-    public async Task Esc_on_a_later_step_goes_back_to_the_first()
+    [Theory]
+    [InlineData(ConsoleKey.Escape)]
+    [InlineData(ConsoleKey.Backspace)]
+    public async Task Esc_or_Backspace_on_a_later_step_goes_back_to_the_first(ConsoleKey back)
     {
-        // Player vs Computer, then Esc back. Had Esc not gone back, "3" would answer the colour step (and fail, it has
+        // Player vs Computer, then back. Had the key not gone back, "3" would answer the colour step (and fail, it has
         // two rows), and no custom game would come out.
         var result = await RunAsync(
-            ConsoleKey.D2, ConsoleKey.Escape,
+            ConsoleKey.D2, back,
             ConsoleKey.D3, // Custom Game
             ConsoleKey.D2, // Standard Board
             ConsoleKey.D1, // White moves first
