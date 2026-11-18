@@ -108,4 +108,32 @@ public sealed class StartupWizardBackTests
         wizard.Back().ShouldBeTrue();
         wizard.Current.Prompt.ShouldBe("Play as:");
     }
+
+    [Fact]
+    public void Reopen_returns_to_the_completing_step_with_its_back_and_the_same_answer_completes_again()
+    {
+        var wizard = new StartupWizard(StartupWizardOptions.OnlinePlay | StartupWizardOptions.HeaderBack);
+        wizard.Confirm(wizard.Current.Items.IndexOf("Online game"));
+        wizard.Confirm(0); // White
+        wizard.IsComplete.ShouldBeTrue();
+        wizard.CanGoBack.ShouldBeFalse();
+
+        wizard.Reopen().ShouldBeTrue();
+
+        wizard.IsComplete.ShouldBeFalse();
+        wizard.Current.Prompt.ShouldBe("Play as:");
+        wizard.CanGoBack.ShouldBeTrue("the reopened step keeps its way back to the mode");
+        wizard.Confirm(1); // Black this time
+        wizard.IsComplete.ShouldBeTrue();
+        wizard.Result.Mode.ShouldBe(GameMode.OnlineGame);
+        wizard.Result.ComputerSide.ShouldBe(Side.White);
+    }
+
+    [Fact]
+    public void Reopen_does_nothing_before_the_flow_is_complete()
+    {
+        var wizard = new StartupWizard();
+        wizard.Reopen().ShouldBeFalse();
+        wizard.Current.Prompt.ShouldBe("Select game mode:");
+    }
 }

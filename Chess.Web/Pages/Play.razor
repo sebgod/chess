@@ -589,6 +589,14 @@
                 return;
             }
 
+            // In the lobby they leave it, as its "< Back" control does.
+            if (_screen == Screen.Lobby && key is InputKey.Escape or InputKey.Backspace)
+            {
+                BackFromLobby();
+                await RenderMenuAsync();
+                return;
+            }
+
             var confirmed = DispatchMenu(new InputEvent.KeyDown(key));
             if (confirmed is not { } sel)
             {
@@ -998,7 +1006,8 @@
         _display.Render();
         // Back top-left on a later wizard step (the router repaints after it runs). The lobby shares this widget and
         // keeps its own rows.
-        _menu.Back = _screen == Screen.Menu && _wizard.CanGoBack ? () => { _wizard.Back(); ShowWizardStep(); } : null;
+        _menu.Back = _screen == Screen.Lobby ? BackFromLobby
+            : _screen == Screen.Menu && _wizard.CanGoBack ? () => { _wizard.Back(); ShowWizardStep(); } : null;
         _menu.DpiScale = _dpr;
         _menu.RenderPanel();
         _webGl.Present(); // synchronous [JSImport] flush — one interop call per frame
@@ -1346,12 +1355,15 @@
     async Task EnterLobbyAsync()
     {
         _status = "Signing in…";
+        // The Play-as card stays up while signing in; a second pick there would start a second sign-in.
+        _busy = true;
         StateHasChanged();
 
         if (!await CloudCourier.InitAsync(Http))
         {
             // Configured but unreachable — offline, or the backend said no. The menu is the only
             // honest place to land, since there is nothing to show.
+            _busy = false;
             _screen = Screen.Menu;
             ShowWizardStep();
             _status = "Couldn't reach the online service. Play by Link still works.";
@@ -1361,9 +1373,38 @@
 
         _screen = Screen.Lobby;
         _lobbyLoading = true;
+        // The lobby card waits for its first rows: shown at once, its short "Looking for open games…" card was
+        // replaced a moment later by a wider one, so the card jumped under the reader. Until then the previous
+        // card stays up with input held (_busy), since its rows are not the lobby's; only a slow first answer
+        // shows the placeholder (ShowLobbyPlaceholderAsync).
+        _busy = true;
+        _status = "Looking for open games…";
+        StateHasChanged();
         CloudCourier.WatchOpen(OnLobbyRows);
+        _ = ShowLobbyPlaceholderAsync();
+    }
+
+    // How long the first lobby rows may take before the placeholder card is shown instead.
+    static readonly TimeSpan LobbyPlaceholderDelay = TimeSpan.FromMilliseconds(800);
+
+    async Task ShowLobbyPlaceholderAsync()
+    {
+        await Task.Delay(LobbyPlaceholderDelay);
+        if (_screen != Screen.Lobby || !_lobbyLoading) return; // the rows came, or we left
+        _busy = false;
         ShowLobbyMenu();
         await RenderMenuAsync();
+        StateHasChanged();
+    }
+
+    // The lobby's "< Back" control, Esc and Backspace: leave it for the wizard's last step (Play as).
+    void BackFromLobby()
+    {
+        _ = LeaveLobbyAsync();
+        _screen = Screen.Menu;
+        _wizard.Reopen(); // so the Play-as step keeps its own "< Back"
+        ShowWizardStep();
+        StateHasChanged(); // the lobby's toolbar goes with it
     }
 
     void OnLobbyRows(string? json) => _ = InvokeAsync(async () =>
@@ -1376,6 +1417,7 @@
             _lobby = [.. CloudCourier.ParseOpen(json)
                 .Where(row => !row.IsStale(now))
                 .OrderByDescending(row => row.Updated)];
+            if (_lobbyLoading) _busy = false; // the first rows end the wait EnterLobbyAsync started
             _lobbyLoading = false;
 
             ShowLobbyMenu();
@@ -1394,13 +1436,12 @@
         [
             .. _lobby.Select(LobbyItemText),
             "Post a game and wait",
-            "Back",
-        ];
+        ]; // no "Back" row: the card's "< Back" control leaves, as on the wizard's steps (RenderMenuAsync)
 
         var prompt = _lobbyLoading
             ? "Looking for open games…"
             : _lobby.Count == 0
-                ? "Nobody is waiting. Post a game and someone can join it later:"
+                ? "Nobody is waiting yet. Post a game:"
                 : "Open games — pick one to join:";
 
         _menu?.Reset(StartupWizard.Title, prompt, [.. items]);
@@ -1428,15 +1469,7 @@
         }
 
         if (selected == _lobby.Count)
-        {
             await PostGameAsync();
-            return;
-        }
-
-        await LeaveLobbyAsync();
-        _screen = Screen.Menu;
-        ShowWizardStep();
-        await RenderMenuAsync();
     }
 
     // Stop the subscription before anything else: a row arriving after we have left would put a
