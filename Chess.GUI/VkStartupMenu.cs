@@ -62,8 +62,8 @@ internal sealed class VkStartupMenu(BackgroundTaskTracker tasks, System.Action r
         _menu.Back = _wizard.CanGoBack ? () => StepBack() : null;
         _menu.Close = !_wizard.CanGoBack && canClose?.Invoke() == true ? () => CloseRequested = true : null;
         // The key list (F1) names the keys this class handles itself, below, as well as the menu's own.
-        _menu.HostHelp = _wizard.CanGoBack ? [new("Esc, Backspace", "Go back a step")]
-            : _menu.Close is not null ? [new("Esc", "Close the menu")]
+        _menu.HostHelp = _wizard.CanGoBack ? [new("Esc, Backspace", "Go back")]
+            : _menu.Close is not null ? [new("Esc", "Close")]
             : [];
         // The panel is sized in design units, so it needs the window's display scale to keep its size on a
         // high-DPI screen.
