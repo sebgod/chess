@@ -99,7 +99,7 @@ internal sealed class VkGamePicker : IWidget
         RefreshMenuContent();
         // Back to the menu is the panel's "< Back" control (and Esc or Backspace), not a row.
         _menu.Back = () => IsAborted = true;
-        _menu.HostHelp = [new("Esc, Backspace", "Go back to the menu")];
+        _menu.HostHelp = [new("Esc, Backspace", "Go back")];
         // The panel is sized in design units, so it needs the window's display scale to keep its size on a
         // high-DPI screen.
         _menu.DpiScale = dpiScale;

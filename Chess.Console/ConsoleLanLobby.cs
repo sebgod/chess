@@ -167,9 +167,9 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
     // What Esc does in each state, for the key list (F1); HandleEscape below is what it does.
     private static string EscapeAction(LobbyState state) => state switch
     {
-        LobbyState.IncomingInvite => "Decline the invitation",
+        LobbyState.IncomingInvite => "Decline",
         LobbyState.Inviting or LobbyState.Declined or LobbyState.Failed => "Cancel",
-        _ => "Leave the lobby",
+        _ => "Leave",
     };
 
     private static bool HandleEscape(ILobby lobby)
