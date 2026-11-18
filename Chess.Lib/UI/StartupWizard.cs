@@ -108,6 +108,19 @@ public sealed class StartupWizard(StartupWizardOptions options = StartupWizardOp
     /// must not be called after this.</summary>
     public bool IsComplete { get; private set; }
 
+    /// <summary>
+    /// Undoes completion, back onto the step that completed the flow, with its own <see cref="Back"/> still there.
+    /// For a host whose next screen can be left again (the web's online lobby, after "Play as"): leaving it lands
+    /// where the reader was, not on a step that has lost its way back. False, and nothing changes, when the flow is
+    /// not complete.
+    /// </summary>
+    public bool Reopen()
+    {
+        if (!IsComplete) return false;
+        IsComplete = false;
+        return true;
+    }
+
     /// <summary>The chosen configuration. <c>ComputerSide</c> is the side NOT locally
     /// controlled: the engine's colour for Player vs Computer / custom games, the remote
     /// correspondent's colour for <see cref="GameMode.PlayByLink"/>, and <c>Side.None</c> for

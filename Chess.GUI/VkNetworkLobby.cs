@@ -97,6 +97,9 @@ internal sealed class VkNetworkLobby : IWidget, IDisposable
     {
         string title, prompt;
         string[] items;
+        // Browsing leaves by the card's "< Back" control (and Esc or Backspace, HandleInput), not a "Back" row: a row
+        // among the players read as one more player. The other states' rows are their own answers.
+        var browsing = false;
 
         if (!_nameCommitted)
         {
@@ -138,10 +141,14 @@ internal sealed class VkNetworkLobby : IWidget, IDisposable
                         // The online posting is already up by the time this shows, so the wait is for
                         // someone to join it rather than a search.
                         : IsOnline ? "Your game is posted. Waiting for an opponent…" : "Searching for players on your network…";
-                    items = [.. _peers.Select(p => p.Label), "Back"];
+                    items = [.. _peers.Select(p => p.Label)];
+                    browsing = true;
                     break;
             }
         }
+
+        _menu!.Back = browsing ? () => IsAborted = true : null;
+        _menu.HostHelp = browsing ? [new("Esc, Backspace", "Leave")] : [];
 
         if (title == _shownTitle && prompt == _shownPrompt && items.AsSpan().SequenceEqual(_shownItems))
             return;
@@ -157,7 +164,18 @@ internal sealed class VkNetworkLobby : IWidget, IDisposable
         if (!_nameCommitted)
             return HandleNameEntry(evt);
 
-        if (_menu is null || _router is null || !_router.Handle(evt))
+        if (_menu is null || _router is null)
+            return false;
+
+        // Esc or Backspace leaves while browsing, as the "< Back" control does; taken before the router, whose modal
+        // panel would swallow it, and left to the key list (F1) while that is open.
+        if (evt is InputEvent.KeyDown { Key: InputKey.Escape or InputKey.Backspace } && _menu.Back is not null && !_menu.ShowingHelp)
+        {
+            IsAborted = true;
+            return true;
+        }
+
+        if (!_router.Handle(evt))
             return false;
 
         if (!_menu.IsConfirmed)
@@ -179,8 +197,6 @@ internal sealed class VkNetworkLobby : IWidget, IDisposable
             default: // Browsing
                 if (selected >= 0 && selected < _peers.Length)
                     _lobby.Invite(_peers[selected]);
-                else
-                    IsAborted = true; // "Back"
                 break;
         }
 
