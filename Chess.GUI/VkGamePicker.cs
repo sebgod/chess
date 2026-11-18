@@ -99,6 +99,7 @@ internal sealed class VkGamePicker : IWidget
         RefreshMenuContent();
         // Back to the menu is the panel's "< Back" control (and Esc or Backspace), not a row.
         _menu.Back = () => IsAborted = true;
+        _menu.HostHelp = [new("Esc, Backspace", "Go back to the menu")];
         // The panel is sized in design units, so it needs the window's display scale to keep its size on a
         // high-DPI screen.
         _menu.DpiScale = dpiScale;
@@ -133,7 +134,8 @@ internal sealed class VkGamePicker : IWidget
     {
         // Esc or Backspace goes back to the menu, as the panel's Back control does. Taken before the router, whose modal panel
         // would swallow it.
-        if (evt is InputEvent.KeyDown { Key: InputKey.Escape or InputKey.Backspace })
+        // Not while the key list (F1) is open: there Esc closes the list, through the router like every other key.
+        if (evt is InputEvent.KeyDown { Key: InputKey.Escape or InputKey.Backspace } && _menu?.ShowingHelp != true)
         {
             IsAborted = true;
             return true;

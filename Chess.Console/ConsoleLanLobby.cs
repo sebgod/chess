@@ -57,7 +57,7 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
 
             var (header, items) = BuildView(lobby, name);
             if (selected >= items.Count) selected = Math.Max(0, items.Count - 1);
-            RenderList(header, items, selected);
+            RenderList(header, items, selected, EscapeAction(lobby.State));
 
             if (!Terminal.HasInput())
             {
@@ -67,6 +67,16 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
             }
 
             var input = Terminal.TryReadInput();
+
+            // F1 opens the key list on the card; while it is open F1 or Esc close it and every other key is swallowed
+            // (MenuModel), so Esc closes the list here rather than leaving the lobby.
+            if (_panel is not null && Terminal.IsAlternateScreen && (input.Key == ConsoleKey.F1 || _panel.ShowingHelp))
+            {
+                var (helpKey, helpMods) = input.ToInput;
+                _panel.HandleKey(helpKey, helpMods);
+                continue;
+            }
+
             switch (input.Key)
             {
                 case ConsoleKey.UpArrow:
@@ -154,6 +164,14 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
         }
     }
 
+    // What Esc does in each state, for the key list (F1); HandleEscape below is what it does.
+    private static string EscapeAction(LobbyState state) => state switch
+    {
+        LobbyState.IncomingInvite => "Decline the invitation",
+        LobbyState.Inviting or LobbyState.Declined or LobbyState.Failed => "Cancel",
+        _ => "Leave the lobby",
+    };
+
     private static bool HandleEscape(ILobby lobby)
     {
         switch (lobby.State)
@@ -220,12 +238,15 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
     // The terminal size is part of the key: this loop is the lobby's own, not MenuBase's (which redraws on a size
     // change itself), so without it a resize redrew nothing and the card stayed centred for the old grid, clipped
     // to a sliver at the right edge of a narrower window.
-    private void RenderList(string[] header, IReadOnlyList<string> items, int selected)
+    // escHelp, when given, is what Esc does here, listed in the card's key list (F1). The list's open state is part of
+    // both keys below: opening or closing it redraws the card, at a different shape.
+    private void RenderList(string[] header, IReadOnlyList<string> items, int selected, string? escHelp = null)
     {
         var (columns, rows) = Terminal.Size;
         if (Terminal.IsAlternateScreen)
         {
-            var key = $"{columns}x{rows}#{string.Join('|', header)}#{string.Join('|', items)}#{selected}";
+            var help = _panel?.ShowingHelp == true;
+            var key = $"{columns}x{rows}#{help}#{escHelp}#{string.Join('|', header)}#{string.Join('|', items)}#{selected}";
             if (key == _lastContent) return;
             _lastContent = key;
 
@@ -236,13 +257,14 @@ internal sealed class ConsoleLanLobby : MenuBase<NetworkSession?>
             // board. The card is as wide as its longest line and as tall as its line count, so those are the shape.
             var prompt = header.Length > 2 ? header[2] : "";
             var widest = Math.Max(Math.Max(header[0].Length, prompt.Length), items.Count == 0 ? 0 : items.Max(i => i.Length));
-            var shape = $"{columns}x{rows}|{widest}|{items.Count}";
+            var shape = $"{columns}x{rows}|{help}|{widest}|{items.Count}";
             if (shape != _lastShape)
             {
                 _lastShape = shape;
                 _drawBackdrop?.Invoke();
             }
             _panel ??= new MenuWidget(Terminal);
+            _panel.HostHelp = escHelp is null ? [] : [new("Esc", escHelp)];
             _panel.Reset(header[0], prompt, [.. items], selected);
             _panel.RenderPanel();
             Terminal.Flush();

@@ -19,6 +19,9 @@ internal class StartupMenu(IVirtualTerminal terminal, TimeProvider timeProvider,
     // Lets the inspector's queued commands run while this menu waits for input (Console.Lib 5.31).
     protected override void OnIdle() => InspectorHooks.Pump();
 
+    // Opening or closing the key list (F1) resizes the card, which cannot restore the cells it no longer covers.
+    protected override void RedrawBackdrop() => drawBackdrop?.Invoke();
+
     protected override async Task<(GameMode Mode, Side ComputerSide, Side SideToMove, Difficulty Difficulty)> ShowAsyncCore(CancellationToken cancellationToken)
     {
         // The console can open sockets, so it offers LAN "Network game" (routes into ConsoleLanLobby),

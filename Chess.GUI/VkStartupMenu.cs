@@ -61,6 +61,10 @@ internal sealed class VkStartupMenu(BackgroundTaskTracker tasks, System.Action r
         // Back top-left on a later step, close top-right on the first when there is a game behind to close onto.
         _menu.Back = _wizard.CanGoBack ? () => StepBack() : null;
         _menu.Close = !_wizard.CanGoBack && canClose?.Invoke() == true ? () => CloseRequested = true : null;
+        // The key list (F1) names the keys this class handles itself, below, as well as the menu's own.
+        _menu.HostHelp = _wizard.CanGoBack ? [new("Esc, Backspace", "Go back a step")]
+            : _menu.Close is not null ? [new("Esc", "Close the menu")]
+            : [];
         // The panel is sized in design units, so it needs the window's display scale to keep its size on a
         // high-DPI screen.
         _menu.DpiScale = dpiScale;
@@ -83,7 +87,8 @@ internal sealed class VkStartupMenu(BackgroundTaskTracker tasks, System.Action r
         // Esc or Backspace on a later wizard step goes back one step, as the step's "Back" row does. On the first
         // step neither is consumed nor reaches the router (whose modal panel would swallow it), so the host can close
         // the menu onto the game behind it on Esc.
-        if (evt is InputEvent.KeyDown { Key: InputKey.Escape or InputKey.Backspace })
+        // Not while the key list (F1) is open: there Esc closes the list, through the router like every other key.
+        if (evt is InputEvent.KeyDown { Key: InputKey.Escape or InputKey.Backspace } && !_menu.ShowingHelp)
         {
             return StepBack();
         }
