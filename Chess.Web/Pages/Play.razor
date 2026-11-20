@@ -1359,14 +1359,23 @@
         _busy = true;
         StateHasChanged();
 
-        if (!await CloudCourier.InitAsync(Http))
+        // One sign-in at a time, and one that is still running is joined, not started again: the hold below gives
+        // way after a while, so a second pick can arrive while the first sign-in is still loading the SDK.
+        var signIn = _signIn is { IsCompleted: false } running ? running : _signIn = CloudCourier.InitAsync(Http);
+        var answered = await Task.WhenAny(signIn, Task.Delay(SignInGivesWayAfter)) == signIn;
+        if (!answered || !await signIn)
         {
-            // Configured but unreachable — offline, or the backend said no. The menu is the only
-            // honest place to land, since there is nothing to show.
+            // Configured but unreachable — offline, or the backend said no — or still loading after
+            // SignInGivesWayAfter. The menu is the only honest place to land, since there is nothing to show.
             _busy = false;
             _screen = Screen.Menu;
+            // The wizard is complete here, and a complete wizard has no way back: without this the Play-as card
+            // came back with no "< Back" and Esc did nothing, the defect BackFromLobby fixes for the lobby.
+            _wizard.Reopen();
             ShowWizardStep();
-            _status = "Couldn't reach the online service. Play by Link still works.";
+            _status = answered
+                ? "Couldn't reach the online service. Play by Link still works."
+                : "Signing in is taking too long. Pick a colour to try again, or play by Link.";
             await RenderMenuAsync();
             return;
         }
@@ -1381,20 +1390,41 @@
         _status = "Looking for open games…";
         StateHasChanged();
         CloudCourier.WatchOpen(OnLobbyRows);
-        _ = ShowLobbyPlaceholderAsync();
+        _ = ShowLobbyPlaceholderAsync(++_lobbyEntry);
     }
+
+    // The sign-in in flight, if any (see EnterLobbyAsync).
+    Task<bool>? _signIn;
+
+    // How long a sign-in may hold the card. InitAsync loads the SDK over the network and has no timeout of its own,
+    // and while the card is held every key and click is dropped, Esc included: without a limit a stalled load left a
+    // reload as the only way out.
+    static readonly TimeSpan SignInGivesWayAfter = TimeSpan.FromSeconds(15);
 
     // How long the first lobby rows may take before the placeholder card is shown instead.
     static readonly TimeSpan LobbyPlaceholderDelay = TimeSpan.FromMilliseconds(800);
 
-    async Task ShowLobbyPlaceholderAsync()
+    // Counts entries into the lobby, so a placeholder timer acts only in the entry that started it. Leaving and
+    // coming back inside the delay used to let the first entry's timer show the placeholder early in the second.
+    int _lobbyEntry;
+
+    async Task ShowLobbyPlaceholderAsync(int entry)
     {
         await Task.Delay(LobbyPlaceholderDelay);
-        if (_screen != Screen.Lobby || !_lobbyLoading) return; // the rows came, or we left
-        _busy = false;
-        ShowLobbyMenu();
-        await RenderMenuAsync();
-        StateHasChanged();
+        // The rows came, we left, or this is an earlier entry's timer.
+        if (entry != _lobbyEntry || _screen != Screen.Lobby || !_lobbyLoading) return;
+        try
+        {
+            _busy = false;
+            ShowLobbyMenu();
+            await RenderMenuAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            // Nothing awaits this task, so a failed render (JS interop) would otherwise go unseen, as in OnLobbyRows.
+            Console.Error.WriteLine($"[chess-web] lobby placeholder failed: {ex}");
+        }
     }
 
     // The lobby's "< Back" control, Esc and Backspace: leave it for the wizard's last step (Play as).
