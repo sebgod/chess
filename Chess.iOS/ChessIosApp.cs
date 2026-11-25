@@ -11,8 +11,11 @@ namespace Chess.iOS;
 /// The iPad chess head: <see cref="SdlVulkanIosApp"/> brings up SDL3 + Vulkan (MoltenVK) and calls
 /// <see cref="OnRendererReady"/>, which hands the renderer to the shared touch game
 /// (<see cref="TouchChessGame"/>, the same one Chess.Droid runs). What stays here is what only iOS
-/// does (<see cref="ITouchPlatform"/>): a log the Files app can show, the name dialog, and where the
-/// app may write.
+/// does (<see cref="ITouchPlatform"/>): the name dialog, and where the app may write. The log the
+/// Files app shows, Documents/chess.log, is the host's default (named after <see cref="WindowTitle"/>):
+/// replaced on every launch, headed by the version, the device and the OS, and started before the
+/// bring-up, so it also holds a failure there. stderr still gets every line, for a Mac with
+/// Console.app.
 /// </summary>
 public sealed class ChessIosApp : SdlVulkanIosApp, ITouchPlatform
 {
@@ -24,7 +27,6 @@ public sealed class ChessIosApp : SdlVulkanIosApp, ITouchPlatform
 
     protected override void OnRendererReady(VkRenderer renderer, SdlEventLoop loop)
     {
-        StartLog();
         foreach (var font in new[] { FontPaths.DejaVuSans, FontPaths.Merida })
         {
             if (!File.Exists(font))
@@ -32,35 +34,6 @@ public sealed class ChessIosApp : SdlVulkanIosApp, ITouchPlatform
         }
         new TouchChessGame(this).Attach(renderer, loop, SdlWindow);
         IosDiagnostics.Start(loop, renderer, SdlWindow);
-    }
-
-    // ── The log ─────────────────────────────────────────────────────────────────────────────────
-
-    // Reading a device's console from Windows is awkward, so the renderer's diagnostics also go to
-    // Documents/chess.log, which the Files app shows (UIFileSharingEnabled in Info.plist): a tester
-    // opens it on the iPad and sends it. Replaced on every launch, so it holds the run being asked
-    // about. stderr still gets every line, for a Mac with Console.app.
-    private static void StartLog()
-    {
-        var stderr = SdlEventLoop.DiagnosticLog;
-        TextWriter? file = null;
-        try
-        {
-            var path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "chess.log");
-            // Synchronized: IosDiagnostics writes from its own thread too.
-            file = TextWriter.Synchronized(new StreamWriter(path, append: false) { AutoFlush = true });
-            file.WriteLine($"Chess {NSBundle.MainBundle.InfoDictionary["CFBundleShortVersionString"]} on {UIDevice.CurrentDevice.Model} iPadOS {UIDevice.CurrentDevice.SystemVersion}, started {DateTimeOffset.Now:O}");
-        }
-        catch (Exception ex)
-        {
-            stderr?.Invoke($"[chess] no log file: {ex.Message}");
-        }
-
-        SdlEventLoop.DiagnosticLog = m =>
-        {
-            stderr?.Invoke(m);
-            try { file?.WriteLine($"{DateTimeOffset.Now:HH:mm:ss.fff} {m}"); } catch { /* a full disk must not end the game */ }
-        };
     }
 
     // ── ITouchPlatform ──────────────────────────────────────────────────────────────────────────
@@ -123,9 +96,9 @@ public sealed class ChessIosApp : SdlVulkanIosApp, ITouchPlatform
         return top;
     }
 
-    // Nothing to hold. Receiving UDP broadcast on iOS 14+ needs the multicast networking entitlement,
-    // which Apple grants on request and a free signing account cannot carry, so a sideloaded build is
-    // not expected to see LAN peers; the cloud lobby is the iPad's network game. See docs/ios.md.
+    // Nothing to hold: iOS has no multicast lock to take. Apple documents its multicast networking
+    // entitlement (which a free signing account cannot carry) as needed to receive UDP broadcast on iOS
+    // 14+, yet a sideloaded build does see LAN peers (2026-11-15). See docs/ios.md.
     void ITouchPlatform.AcquireLanDiscovery() { }
 
     void ITouchPlatform.ReleaseLanDiscovery() { }

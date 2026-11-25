@@ -47,6 +47,10 @@ public sealed class MainActivity : SdlVulkanActivity, ITouchPlatform
 {
     protected override string WindowTitle => "Chess";
 
+    // The renderer's diagnostics go to logcat under this tag from before the bring-up on (the host's default
+    // sink), so `adb logcat -s chessdroid` shows them with the crash trace below.
+    protected override string LogTag => "chessdroid";
+
     // Match the display's own canvas background so the raw-cleared surface and the margins GameUI
     // paints don't band (same rationale as the desktop GUI).
     protected override RGBAColor32 BackgroundColor => PixelGameDisplay<VulkanContext>.Background;
@@ -54,21 +58,15 @@ public sealed class MainActivity : SdlVulkanActivity, ITouchPlatform
     private WifiManager.MulticastLock? _multicastLock;
 
     // First thing, before SDL starts: an uncaught exception (on any thread, or a faulted task nobody awaited) goes to
-    // logcat under the app's tag. Until this the Android head had no trace of a crash at all: the renderer's
-    // diagnostics only reach logcat from OnRendererReady on, and an exception before that left nothing.
+    // logcat under the app's tag. Until this the Android head had no trace of a crash at all.
     protected override void OnCreate(Android.OS.Bundle? savedInstanceState)
     {
-        CrashTrace.Install(text => Android.Util.Log.Error("chessdroid", text));
+        CrashTrace.Install(text => Android.Util.Log.Error(LogTag, text));
         base.OnCreate(savedInstanceState);
     }
 
     protected override void OnRendererReady(VkRenderer renderer, SdlEventLoop loop)
     {
-        // Route the renderer's loop diagnostics to logcat (Android has no console) — surfaces the
-        // background/foreground surface-recreation traces. The renderer's DebugLog is compiled in only
-        // for DEBUG or ANDROID, so this costs nothing on desktop Release. Tag: "chessdroid".
-        SdlEventLoop.DiagnosticLog = m => Android.Util.Log.Info("chessdroid", m);
-
         // Match the navigation-bar (home button row) background to the app background — the system
         // default otherwise clashes below our status bar when the bars are visible. UI-thread call.
         RunOnUiThread(() =>

@@ -374,6 +374,5 @@ Chess.Droid/firebase-config.json
 *.token
 *.secret
 
-# Chess.iOS: the native frameworks scripts/fetch-ios-frameworks.sh downloads, and the backend config CI writes
-Chess.iOS/Frameworks/
+# Chess.iOS: the backend config CI writes
 Chess.iOS/firebase-config.json
