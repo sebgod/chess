@@ -6,9 +6,9 @@
     <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Console.Lib" Version="5.35.*" />
+    <PackageVersion Include="Console.Lib" Version="5.38.*" />
     <PackageVersion Include="coverlet.collector" Version="10.1.0" />
-    <PackageVersion Include="DIR.Lib" Version="11.81.*" />
+    <PackageVersion Include="DIR.Lib" Version="11.99.*" />
     <!-- Chess.Web's Blazor WebAssembly deps. They used to ride inline in Chess.Web.csproj, which
          opted out of CPM entirely; that also hid the WebGl.Renderer pin below from every
          solution-wide sweep, which is how it twice ended up two minors behind DIR.Lib. -->
@@ -34,7 +34,7 @@
          surfaced as "MCP server chess: Connection closed" rather than as a build error. 3.11.* -> 3.14.*. -->
     <!-- The cloud courier's Realtime Database client, lifted out of Chess.Net/Cloud (SharpAstro/Firebase). -->
     <PackageVersion Include="SharpAstro.Firebase" Version="1.0.*" />
-    <PackageVersion Include="SharpAstro.Png" Version="3.34.*" />
+    <PackageVersion Include="SharpAstro.Png" Version="3.41.*" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.11.0" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.11.1" />
     <!-- Browser automation for Chess.Web.E2E.Tests. That project stays OUT of Chess.sln on purpose
@@ -45,13 +45,13 @@
     <PackageVersion Include="Microsoft.Playwright" Version="1.64.1" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
     <PackageVersion Include="SDL3-CS" Version="3.5.0-preview.20260213-150035" />
-    <PackageVersion Include="SdlVulkan.Renderer" Version="7.100.*" />
+    <PackageVersion Include="SdlVulkan.Renderer" Version="7.109.5661-pr206" />
     <!-- The inspector's typed client, for the GUI smoke test (Chess.Tests/GuiSmokeTests.cs). Same release as the renderer. -->
-    <PackageVersion Include="SdlVulkan.Renderer.Inspector.Client" Version="7.100.*" />
+    <PackageVersion Include="SdlVulkan.Renderer.Inspector.Client" Version="7.109.5661-pr206" />
     <!-- Single-instance gate + window activation for chess:// hand-off. It already arrived
          transitively under SdlVulkan.Renderer (which implements IActivatableWindow); Chess.GUI now
          uses InstanceGate directly, and a type you call by name deserves a reference you can see. -->
-    <PackageVersion Include="SharpAstro.AppShell" Version="1.3.*" />
+    <PackageVersion Include="SharpAstro.AppShell" Version="1.4.*" />
     <PackageVersion Include="SDL3-CS.Native" Version="3.5.0-preview.20260205-174353" />
     <PackageVersion Include="Vortice.Vulkan" Version="3.2.3" />
     <PackageVersion Include="Vortice.VulkanMemoryAllocator" Version="1.7.0" />
