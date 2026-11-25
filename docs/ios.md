@@ -20,6 +20,11 @@ is needed to try it: a sideloading installer signs it on install with the tester
 
 ## Install with AltStore
 
+The device side in full (the Windows setup and its traps, USB or Wi-Fi, installing in place with pymobiledevice3,
+logs and crash reports) is the org's
+[docs/ios-device.md](https://github.com/SharpAstro/.github/blob/main/docs/ios-device.md), shared with every iOS app on
+the stack. In short:
+
 Once:
 
 1. On a computer on the same Wi-Fi as the iPad (or with it on USB), install AltServer from
