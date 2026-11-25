@@ -172,6 +172,36 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
     // System.Action, not Chess.Lib.Action (the repo's classic name collision).
     public System.Action? SetupStartRequested { get; set; }
 
+    /// <summary>The click id of the status bar's menu chip, its own so no other tap can be read as it.</summary>
+    private const string MenuChipListId = "MenuChip";
+
+    /// <summary>The menu chip's label. Never shrunk or cut: it is drawn whole or not at all.</summary>
+    private const string MenuChipLabel = "‹ Menu";
+
+    /// <summary>
+    /// Offers a "‹ Menu" chip at the far end of the status bar, for a host with no other way from a game
+    /// back to its menu: the touch heads (iOS has no back key at all, and Android's is a gesture nobody
+    /// finds). Off by default, which is the desktop: it has Esc. The chip is drawn only where the status
+    /// text, at its own size, leaves room for it; it never squeezes the text, so a status too long to
+    /// share the bar simply has the bar to itself until it is shorter again.
+    ///
+    /// <para>The display only draws it. The host asks <see cref="IsMenuChipHit"/> before handing a tap to
+    /// the game, so the chip works whoever's turn it is: routed through the session like the other chips,
+    /// a tap would wait out a remote opponent's move.</para>
+    /// </summary>
+    public bool MenuChip { get; set; }
+
+    /// <summary>Where the menu chip was last drawn, or null when it was not (off, or no room).</summary>
+    public RectF32? MenuChipBounds { get; private set; }
+
+    /// <summary>
+    /// Whether a tap at (<paramref name="x"/>, <paramref name="y"/>) lands on the menu chip as last drawn.
+    /// Content coordinates, as the host already has them for the board (after inverting any frame turn),
+    /// since the chip's click region is bound in the same space it is drawn in.
+    /// </summary>
+    public bool IsMenuChipHit(float x, float y)
+        => MenuChip && HitTest(x, y) is HitResult.ListItemHit { ListId: MenuChipListId };
+
     /// <summary>
     /// Exact bounds of the top display cutout (the camera punch-hole) in pixels, when the host can
     /// query them (Android: <c>DisplayCutout.BoundingRectTop</c>). The notch strip then centers its
@@ -628,14 +658,42 @@ public class PixelGameDisplay<TSurface> : PixelWidgetBase<TSurface>, IPixelGameD
     {
         var status = StatusOverride
             ?? (_game is null || _gameUI is null ? "" : _gameUI.StatusLine(KeyboardHints));
+        var chromeFont = ChromeFontSize;
 
+        // The menu chip's strip: its label plus a little either side, which is both the gap to the status text
+        // and touch slop. It goes in only if the status keeps its own size beside it (see MenuChip).
+        var chipStrip = 0f;
+        if (MenuChip)
+        {
+            var strip = Renderer.MeasureText(MenuChipLabel.AsSpan(), _labelFont, chromeFont).Width + chromeFont * 1.2f;
+            var statusWidth = Renderer.MeasureText(status.AsSpan(), _labelFont, chromeFont).Width + 16f;
+            if (statusWidth + strip <= rect.Width) chipStrip = strip;
+        }
+        MenuChipBounds = chipStrip > 0f
+            ? new RectF32(rect.X + rect.Width - chipStrip, rect.Y, chipStrip, rect.Height)
+            : null;
+
+        var textWidth = rect.Width - chipStrip;
         // The bar doesn't clip: scale a too-long status down rather than overflow the screen edge.
-        var fontSize = FitFontSize(status, _labelFont, ChromeFontSize, rect.Width - 16f);
+        var fontSize = FitFontSize(status, _labelFont, chromeFont, textWidth - 16f);
 
+        if (chipStrip > 0f) FillRect(rect.X, rect.Y, rect.Width, rect.Height, StatusBarBg);
         RenderTextBar(status, _labelFont,
-            rect.X, rect.Y, rect.Width, rect.Height,
+            rect.X, rect.Y, textWidth, rect.Height,
             fontSize, StatusBarBg, FontColor,
             horizontalPadding: 8f, alignX: TextAlign.Near, alignY: TextAlign.Center);
+
+        if (chipStrip > 0f)
+        {
+            // In the colour of the history header's chips, the other controls in this chrome. Its click region is
+            // bound to the drawn rect by the layout paint, so what the host hit-tests is what is on screen.
+            var chip = Layout.Builder
+                .Text(MenuChipLabel, chromeFont, PlaybackHighlightText, TextAlign.Center, TextAlign.Center)
+                .Stretch()
+                .Clickable(new HitResult.ListItemHit(MenuChipListId, 0));
+            RenderLayout(Layout.Builder.Dock(Layout.Builder.Spacer(), Layout.Builder.Right(chip, chipStrip)),
+                rect, _labelFont, scale: DesignScale.One);
+        }
     }
 
     /// <summary>
