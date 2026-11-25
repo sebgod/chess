@@ -443,6 +443,17 @@ public sealed class TouchChessGame(ITouchPlatform platform)
 
         if (_display is null) return false;
 
+        // The status bar's "‹ Menu" chip, taken here rather than through the session: the session serves taps
+        // only on the local player's turn, so routed through it the chip would wait out an opponent's move. Exactly
+        // what the back key does mid-game (the game is saved move by move). The finger is let go of, so its release
+        // is not read as a tap on the menu that now sits where the chip was.
+        if (_display.IsMenuChipHit(x, y))
+        {
+            _pointerDown = null;
+            ShowMenu();
+            return true;
+        }
+
         // In-game (including LAN): hand the tap to the session's input player. Render applies it and
         // everything that follows from it — the engine's or peer's reply, the save, the relay, the
         // frame turn — on the frame this tap has already scheduled. Tapping out of turn is a no-op
@@ -520,6 +531,9 @@ public sealed class TouchChessGame(ITouchPlatform platform)
         display.SetupStartRequested = FinishSetup;
         // Touch-only: no keyboard hints in the status bar; playback exits via the history chip.
         display.KeyboardHints = false;
+        // The way back to the menu that a touch screen otherwise lacks: iOS has no back key, and Android's is a
+        // gesture. Drawn in the status bar where there is room (see PixelGameDisplay.MenuChip).
+        display.MenuChip = true;
 
         // The shared turn model (Chess.Lib.UI.GameSession) — the same one the desktop's GameLoop
         // drives, ticked here from Render instead of from a loop of its own. It calls ResetGame, so
@@ -801,6 +815,8 @@ public sealed class TouchChessGame(ITouchPlatform platform)
         UpdateAcrossTheTableTransform(); // identity here + insets/cutout
         display.TopStripLabel = $"{(cloud ? "Online" : "LAN")} ({_netLocalSide})";
         display.KeyboardHints = false;
+        // Back to the menu whoever is to move (HandleTap takes the chip before the session queue).
+        display.MenuChip = true;
 
         // The peer is just another opponent in the shared session: NetworkPlayer drains its moves on
         // its turn and reports a departure as NeedsRestart. Create resets the display, so the UI

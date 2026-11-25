@@ -266,6 +266,77 @@ public sealed class PixelGameDisplayLayoutTests
         }
     }
 
+    // The touch heads' way back to the menu (iOS has no back key): a "‹ Menu" chip at the status bar's far end,
+    // drawn where the status leaves room. Pins that it is there on the devices it was made for, in both
+    // orientations, that a tap on it is recognised and a tap on the status text is not, and that it sits inside
+    // the status bar. PNGs beside the test binary show it.
+    [Theory]
+    [InlineData(2360, 1640, 0, 40, "ipad-landscape")]  // iPad Air 11" (iPad15,3); 20 pt home indicator at 2x
+    [InlineData(1640, 2360, 0, 40, "ipad-portrait")]
+    [InlineData(1080, 2408, 100, 60, "phone-portrait")] // the Android phone with a punch-hole and a gesture bar
+    public void Menu_chip_sits_at_the_status_bars_far_end(int width, int height, int top, int bottom, string label)
+    {
+        using var renderer = new RgbaImageRenderer((uint)width, (uint)height);
+        FillBackground(renderer.Surface.Pixels, PixelGameDisplay<RgbaImage>.Background);
+        var display = new PixelGameDisplay<RgbaImage>(renderer)
+        {
+            SafeAreaInsets = (0, top, 0, bottom),
+            KeyboardHints = false,
+            MenuChip = true,
+        };
+        display.ResetGame(new Game());
+        display.Render();
+        File.WriteAllBytes(Path.Combine(AppContext.BaseDirectory, $"pixelgamedisplay-menuchip-{label}.png"),
+            PngWriter.Encode(renderer.Surface.Pixels, renderer.Surface.Width, renderer.Surface.Height));
+
+        var chip = display.MenuChipBounds.ShouldNotBeNull($"{label}: no room found for the chip");
+        // Far end of the bar, above the bottom inset, and the bar's full height. Apple asks 44 pt (88 px at 2x) of a
+        // touch target; the bar is two chrome fonts deep, which is 41 pt in iPad landscape, so the chip is a little
+        // short there and makes it up in width (over 90 pt). 80 px pins that it never gets shallower than that.
+        (chip.X + chip.Width).ShouldBe(width, 1f);
+        (chip.Y + chip.Height).ShouldBe(height - bottom, 1f);
+        chip.Height.ShouldBeGreaterThanOrEqualTo(80f);
+        chip.Width.ShouldBeGreaterThanOrEqualTo(176f);
+
+        display.IsMenuChipHit(chip.X + chip.Width / 2, chip.Y + chip.Height / 2).ShouldBeTrue();
+        display.IsMenuChipHit(chip.X + 2, chip.Y + 2).ShouldBeTrue("the slop around the label is part of the chip");
+        display.IsMenuChipHit(20, chip.Y + chip.Height / 2).ShouldBeFalse("the status text is not the chip");
+        display.IsMenuChipHit(width / 2f, height / 2f).ShouldBeFalse("the board is not the chip");
+    }
+
+    [Fact]
+    public void Menu_chip_never_squeezes_the_status()
+    {
+        // A status too long to share the bar keeps the bar, at its own size, and the chip waits for a shorter one.
+        using var renderer = new RgbaImageRenderer(1080, 2408);
+        var display = new PixelGameDisplay<RgbaImage>(renderer)
+        {
+            KeyboardHints = false,
+            MenuChip = true,
+            StatusOverride = "Waiting for your opponent to reconnect to the game over the network",
+        };
+        display.ResetGame(new Game());
+        display.Render();
+        display.MenuChipBounds.ShouldBeNull();
+        display.IsMenuChipHit(1000, 2408 - 40).ShouldBeFalse();
+
+        display.StatusOverride = null; // "White to move." fits beside it
+        display.Render();
+        display.MenuChipBounds.ShouldNotBeNull();
+    }
+
+    [Fact]
+    public void Menu_chip_is_off_unless_the_host_asks_for_it()
+    {
+        // The desktop has Esc, and its status bar keeps the hints the chip would crowd.
+        using var renderer = new RgbaImageRenderer(1600, 1000);
+        var display = new PixelGameDisplay<RgbaImage>(renderer);
+        display.ResetGame(new Game());
+        display.Render();
+        display.MenuChipBounds.ShouldBeNull();
+        display.IsMenuChipHit(1550, 980).ShouldBeFalse();
+    }
+
     private static void FillBackground(byte[] px, RGBAColor32 c)
     {
         for (var i = 0; i + 3 < px.Length; i += 4)
