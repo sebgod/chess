@@ -28,6 +28,15 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" PrivateAssets="all" />
   </ItemGroup>
 
+  <!-- emcc runs the node .NET 10's wasm workload bundles (v18.17.1, fixed with emscripten 3.1.56 for every 10.0.x),
+       and that node refuses to start when NODE_OPTIONS holds a flag newer than itself: a machine-wide
+       NODE_OPTIONS naming use-system-ca (a Node 22.15+ flag, for TLS through a corporate proxy) failed every Release
+       link with "use-system-ca is not allowed in NODE_OPTIONS" (exit 9). The link needs no node options, so they are cleared
+       for emcc alone, the way the SDK clears PYTHONHOME; nothing else on the machine changes. -->
+  <ItemGroup>
+    <EmscriptenEnvVars Include="NODE_OPTIONS=" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\Chess.Lib\Chess.Lib.csproj" />
     <!-- For UciMove + GameLinkCodec only (Play by Link). NOT a TrimmerRootAssembly: the
